@@ -129,6 +129,18 @@ describe("EntryScreen URL field", () => {
     expect(field()).toHaveValue("nimbus.app/pricing");
   });
 
+  it("drops the prefix once the value states its own scheme", () => {
+    renderScreen();
+    const prefix = () =>
+      field().closest("[data-slot='input-wrapper']")?.querySelector("[data-slot='input-prefix']");
+
+    typeUrl("http://legacy.test");
+    expect(prefix()).toBeNull();
+
+    typeUrl("legacy.test");
+    expect(prefix()).toHaveTextContent("https://");
+  });
+
   it("keeps a typed http:// scheme so plain http stays possible", async () => {
     let capturedUrl: string | undefined;
     server.use(

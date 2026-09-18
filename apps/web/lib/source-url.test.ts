@@ -1,6 +1,29 @@
 import { describe, expect, it } from "vitest";
 
-import { hostAndPath, normalizeSourceUrl, stripHttpsScheme } from "./source-url";
+import {
+  hasExplicitScheme,
+  hostAndPath,
+  normalizeSourceUrl,
+  stripHttpsScheme,
+} from "./source-url";
+
+describe("hasExplicitScheme", () => {
+  it.each(["http://nimbus.app", "HTTP://nimbus.app", "ftp://nimbus.app"])(
+    "is true for %s",
+    (value) => {
+      expect(hasExplicitScheme(value)).toBe(true);
+    },
+  );
+
+  it.each([
+    ["nimbus.app/pricing", "no scheme"],
+    ["nimbus.app:8080/pricing", "a port, not a scheme"],
+    ["", "empty"],
+    ["http:/nimbus.app", "one slash short of a scheme"],
+  ])("is false for %j (%s)", (value) => {
+    expect(hasExplicitScheme(value)).toBe(false);
+  });
+});
 
 describe("stripHttpsScheme", () => {
   it("removes the scheme the field's prefix already shows", () => {
@@ -41,6 +64,10 @@ describe("normalizeSourceUrl", () => {
 
   it("trims surrounding whitespace", () => {
     expect(normalizeSourceUrl("  nimbus.app  ")).toBe("https://nimbus.app/");
+  });
+
+  it("reads a port as a port, not as a scheme", () => {
+    expect(normalizeSourceUrl("nimbus.app:8080/pricing")).toBe("https://nimbus.app:8080/pricing");
   });
 
   it.each([

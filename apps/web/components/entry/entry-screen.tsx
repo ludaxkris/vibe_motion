@@ -15,7 +15,12 @@ import {
   rememberRecentProject,
   subscribeRecentProjects,
 } from "@/lib/recent-projects";
-import { hostAndPath, normalizeSourceUrl, stripHttpsScheme } from "@/lib/source-url";
+import {
+  hasExplicitScheme,
+  hostAndPath,
+  normalizeSourceUrl,
+  stripHttpsScheme,
+} from "@/lib/source-url";
 
 import {
   CloneRequestError,
@@ -170,7 +175,9 @@ export function EntryScreen() {
                 spellCheck={false}
                 placeholder="nimbus.app/pricing"
                 size="xl"
-                prefix="https://"
+                // Hidden once the value states its own scheme: "https://" in
+                // front of "http://nimbus.app" would name the wrong request.
+                prefix={hasExplicitScheme(value) ? undefined : "https://"}
                 className="flex-1"
                 value={value}
                 onChange={(event) => handleChange(event.target.value)}

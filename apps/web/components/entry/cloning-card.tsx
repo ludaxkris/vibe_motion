@@ -65,7 +65,7 @@ export function CloningCard({
           type="button"
           variant="link"
           onClick={onCancel}
-          className="ms-auto text-vm-ink-2 hover:text-vm-ink"
+          className="ms-auto font-normal text-vm-ink-2 hover:text-vm-ink"
         >
           Cancel
         </Button>
