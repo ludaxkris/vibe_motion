@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: vibe-motion-db
+    environment:
+      POSTGRES_DB: vibe_motion
+      POSTGRES_USER: vibe_motion
+      POSTGRES_PASSWORD: vibe_motion
+    ports:
+      - "5433:5432" # 5433 on the host: Homebrew Postgres commonly owns 5432
+    volumes:
+      - vibe-motion-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vibe_motion -d vibe_motion"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  vibe-motion-pgdata:

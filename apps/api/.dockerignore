@@ -1,0 +1,5 @@
+# Used when apps/api is the build context. The image is normally built from the repo
+# root instead (see Dockerfile.dockerignore and render.yaml).
+build/
+.gradle/
+.kotlin/

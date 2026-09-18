@@ -11,7 +11,7 @@ flowchart LR
   designer([Designer's browser])
 
   subgraph render["Render (blueprint: render.yaml)"]
-    web["web · Next.js 15<br/>App Router, TypeScript<br/>Node runtime"]
+    web["web · Next.js 16<br/>App Router, TypeScript<br/>Node runtime"]
     api["api · Kotlin / Ktor 3<br/>Docker, JDK 21"]
     db[("Postgres 16<br/>projects, versions")]
   end

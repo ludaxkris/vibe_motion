@@ -1,0 +1,485 @@
+openapi: 3.1.0
+info:
+  title: Vibe Motion API
+  version: 0.1.0
+  description: |
+    Contract between `apps/web` and `apps/api`. Frozen at the end of Phase 0.
+    After that, changes must be additive (new paths, new optional fields).
+    Renames and removals require a docs/deferred_tasks.md entry and a memory.md notice.
+
+    Key semantics (see docs/build_plan.md):
+    - A project holds one immutable cloned page (`base_html`) with `data-vm-id` on every element.
+    - Versions are created only when the user clicks Save. Each stores a diff from its parent.
+    - Full state is materialised by folding diffs from v0. Never stored.
+    - Every assignment pins `catalogVersion`. CSS is derived from the pinned catalog entry, never stored.
+servers:
+  - url: http://localhost:8080
+    description: local
+tags:
+  - name: health
+  - name: catalog
+  - name: projects
+  - name: versions
+  - name: export
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      operationId: getHealth
+      summary: Liveness and DB reachability
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: Service up but a dependency is down
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /catalog:
+    get:
+      tags: [catalog]
+      operationId: getCurrentCatalog
+      summary: The catalog version the editor authors against (`current`)
+      responses:
+        "200":
+          description: Catalog
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Catalog" }
+
+  /catalog/versions:
+    get:
+      tags: [catalog]
+      operationId: listCatalogVersions
+      summary: All published catalog versions
+      responses:
+        "200":
+          description: Versions, ascending semver
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [current, versions]
+                properties:
+                  current: { $ref: "#/components/schemas/Semver" }
+                  versions:
+                    type: array
+                    items: { $ref: "#/components/schemas/Semver" }
+
+  /catalog/{version}:
+    get:
+      tags: [catalog]
+      operationId: getCatalogVersion
+      summary: One published catalog version
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/Semver" }
+      responses:
+        "200":
+          description: Catalog
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Catalog" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /projects:
+    post:
+      tags: [projects]
+      operationId: createProject
+      summary: Clone a page and create a project with version 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  description: Public http(s) URL. Private, loopback, link-local and metadata ranges are rejected.
+      responses:
+        "201":
+          description: Project created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "413":
+          description: Source page exceeds the size cap
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: URL blocked (SSRF guard) or unreachable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: Rate limited
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /projects/{projectId}:
+    parameters:
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags: [projects]
+      operationId: getProject
+      summary: Project metadata and current version pointer
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [projects]
+      operationId: deleteProject
+      summary: Delete a project and all versions (used by e2e cleanup)
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /projects/{projectId}/page:
+    parameters:
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags: [projects]
+      operationId: getProjectPage
+      summary: The cloned page with the bridge script injected. Used as the editor iframe `src`.
+      responses:
+        "200":
+          description: HTML document
+          content:
+            text/html:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /projects/{projectId}/versions:
+    parameters:
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags: [versions]
+      operationId: listVersions
+      summary: Version history, ascending by seq
+      responses:
+        "200":
+          description: Versions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [currentVersionId, versions]
+                properties:
+                  currentVersionId: { type: string, format: uuid }
+                  versions:
+                    type: array
+                    items: { $ref: "#/components/schemas/Version" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [versions]
+      operationId: createVersion
+      summary: Save. Append a version holding the diff from the current version.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateVersionRequest" }
+      responses:
+        "201":
+          description: Version created and made current
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Version" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: parentVersionId is not the project's current version (saved elsewhere)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaleParentError" }
+        "422":
+          description: Diff references an unknown catalog version or animation id, or invalid params
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /projects/{projectId}/versions/{versionId}/state:
+    parameters:
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/versionId"
+    get:
+      tags: [versions]
+      operationId: getVersionState
+      summary: Materialised full state at this version (fold of diffs v0..N)
+      responses:
+        "200":
+          description: State
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [versionId, state]
+                properties:
+                  versionId: { type: string, format: uuid }
+                  state: { $ref: "#/components/schemas/State" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /projects/{projectId}/versions/{versionId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/versionId"
+    post:
+      tags: [versions]
+      operationId: restoreVersion
+      summary: Create a new version whose diff returns the project to this version's state
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string, maxLength: 200 }
+      responses:
+        "201":
+          description: New version created and made current
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Version" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /projects/{projectId}/export:
+    parameters:
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags: [export]
+      operationId: exportProject
+      summary: HTML, CSS and optional JS for a saved version
+      parameters:
+        - name: versionId
+          in: query
+          required: false
+          description: Defaults to the current version
+          schema: { type: string, format: uuid }
+        - name: mode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [full, snippet]
+            default: full
+        - name: vmId
+          in: query
+          required: false
+          description: Required when mode=snippet. Export only this element's assignment.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Export bundle
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExportBundle" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  parameters:
+    projectId:
+      name: projectId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    versionId:
+      name: versionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: Malformed request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Semver:
+      type: string
+      pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
+      examples: ["1.0.0"]
+
+    Health:
+      type: object
+      required: [status, db]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        db: { type: string, enum: [ok, down] }
+        version: { type: string, description: Build version or git sha }
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+
+    StaleParentError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          required: [currentVersion]
+          properties:
+            currentVersion: { $ref: "#/components/schemas/Version" }
+
+    Catalog:
+      description: Mirrors packages/animation-catalog/schema.json. Kept loose here; the JSON Schema is authoritative.
+      type: object
+      required: [version, entries]
+      properties:
+        version: { $ref: "#/components/schemas/Semver" }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/CatalogEntry" }
+
+    CatalogEntry:
+      type: object
+      required: [id, name, category, description, keyframes, params, triggers]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        category: { type: string, enum: [entrance, exit, attention, emphasis, continuous, hover] }
+        description: { type: string }
+        keyframes: { type: string }
+        params:
+          type: array
+          items: { $ref: "#/components/schemas/CatalogParam" }
+        triggers:
+          type: array
+          items: { $ref: "#/components/schemas/Trigger" }
+        defaultTrigger: { $ref: "#/components/schemas/Trigger" }
+        baseStyles: { type: string }
+
+    CatalogParam:
+      type: object
+      required: [key, type, default]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        type: { type: string, enum: [duration, easing, iteration, direction, length, number, angle, percentage, color, select] }
+        default: { type: string }
+        min: { type: string }
+        max: { type: string }
+        step: { type: string }
+        options: { type: array, items: { type: string } }
+        cssVar: { type: string }
+
+    Trigger:
+      type: string
+      enum: [load, hover, in-view]
+
+    Project:
+      type: object
+      required: [id, sourceUrl, title, currentVersionId, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        sourceUrl: { type: string, format: uri }
+        title: { type: string }
+        currentVersionId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+
+    Assignment:
+      description: One element's animation. CSS is derived from (animationId, catalogVersion) + params.
+      type: object
+      required: [animationId, catalogVersion, trigger, params]
+      properties:
+        animationId: { type: string }
+        catalogVersion: { $ref: "#/components/schemas/Semver" }
+        trigger: { $ref: "#/components/schemas/Trigger" }
+        params:
+          type: object
+          description: Param key to CSS value string. Keys must exist on the catalog entry.
+          additionalProperties: { type: string }
+
+    State:
+      description: Materialised map of data-vm-id to Assignment.
+      type: object
+      additionalProperties: { $ref: "#/components/schemas/Assignment" }
+
+    Diff:
+      description: Delta from the parent version. `set` is applied, then `remove`.
+      type: object
+      required: [set, remove]
+      properties:
+        set:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/Assignment" }
+        remove:
+          type: array
+          items: { type: string }
+
+    Version:
+      type: object
+      required: [id, projectId, parentVersionId, seq, label, catalogVersion, diff, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        parentVersionId:
+          type: [string, "null"]
+          format: uuid
+        seq: { type: integer, minimum: 0 }
+        label: { type: string }
+        catalogVersion:
+          description: Catalog the editor authored against at save time (informational; the pin that matters is per assignment).
+          $ref: "#/components/schemas/Semver"
+        diff: { $ref: "#/components/schemas/Diff" }
+        createdAt: { type: string, format: date-time }
+
+    CreateVersionRequest:
+      type: object
+      required: [parentVersionId, catalogVersion, diff]
+      properties:
+        parentVersionId: { type: string, format: uuid }
+        catalogVersion: { $ref: "#/components/schemas/Semver" }
+        label: { type: string, maxLength: 200, description: Optional; server generates one from the diff when omitted }
+        diff: { $ref: "#/components/schemas/Diff" }
+
+    ExportBundle:
+      type: object
+      required: [versionId, mode, html, css, js, files]
+      properties:
+        versionId: { type: string, format: uuid }
+        mode: { type: string, enum: [full, snippet] }
+        html:
+          type: [string, "null"]
+          description: Full page in mode=full. Null in snippet mode.
+        css: { type: string }
+        js:
+          type: [string, "null"]
+          description: Present only when some assignment uses the in-view trigger.
+        files:
+          type: array
+          description: Suggested file names for the zip, in order
+          items:
+            type: object
+            required: [name, contentType]
+            properties:
+              name: { type: string }
+              contentType: { type: string }

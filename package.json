@@ -1,0 +1,19 @@
+{
+  "name": "vibe-motion",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "gen:client": "pnpm --filter web gen:client",
+    "gen:types": "pnpm --filter animation-catalog gen:types",
+    "gates": "node scripts/gates.mjs",
+    "gates:web": "node scripts/gates.mjs web",
+    "gates:api": "node scripts/gates.mjs api",
+    "gates:catalog": "node scripts/gates.mjs catalog",
+    "gates:e2e": "node scripts/gates.mjs e2e"
+  }
+}

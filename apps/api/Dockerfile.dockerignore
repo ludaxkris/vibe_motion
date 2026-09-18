@@ -1,0 +1,16 @@
+# The API image is built with the REPO ROOT as context (render.yaml: dockerContext .).
+# BuildKit honours "<dockerfile path>.dockerignore" in preference to the context root's
+# .dockerignore, so this file keeps the context small without reaching outside apps/api.
+.git
+.worktrees
+**/node_modules
+**/.next
+**/.turbo
+**/coverage
+**/test-results
+**/playwright-report
+apps/api/build
+apps/api/.gradle
+apps/api/.kotlin
+apps/web
+docs
