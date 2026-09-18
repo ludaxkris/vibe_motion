@@ -7,8 +7,11 @@ on:
     branches: [main]
 
 concurrency:
-  group: gates-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: gates-${{ github.event.pull_request.number || github.sha }}
+  # Only PR runs are cancellable. On main every commit must finish its own run: Render deploys
+  # on `autoDeployTrigger: checksPass` per commit, and a cancelled run means that commit never
+  # deploys (a docs(memory) push 41s after the Phase 2 merge did exactly that, 2026-09-18).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
