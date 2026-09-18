@@ -10,7 +10,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const generated = ["packages/animation-catalog/src", "apps/web/lib/api-client/schema.d.ts"];
+const generated = [
+  "packages/animation-catalog/src",
+  "packages/animation-catalog/manifest.json",
+  "apps/web/lib/api-client/schema.d.ts",
+];
 
 function files(p) {
   const abs = path.join(root, p);

@@ -67,6 +67,7 @@ val catalogResources =
             into("versions")
         }
         from(catalogSource.file("current"))
+        from(catalogSource.file("manifest.json"))
         doLast {
             val out = destinationDir
             val versions =
