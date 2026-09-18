@@ -1,8 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { initialEditorState, useEditorStore } from "@/lib/store";
-
 const notFound = vi.fn(() => {
   throw new Error("NEXT_NOT_FOUND");
 });
@@ -29,13 +27,23 @@ describe("/dev", () => {
   beforeEach(() => {
     vi.resetModules();
     notFound.mockClear();
-    useEditorStore.setState({ ...initialEditorState });
+    // `doMock` registrations outlive `resetModules`, so the one test that
+    // takes an entry out of the catalog does not get to keep it out.
+    vi.doUnmock("@/lib/catalog");
   });
 
+  /**
+   * `vi.resetModules()` gives each test its own module registry, so the page
+   * graph gets its *own* copy of `@/lib/store` — a copy this file's own import
+   * would never see. The store comes back from here, loaded after the render
+   * and so from the same registry the gallery just used.
+   */
   async function renderGallery() {
     vi.doMock("@/lib/env", () => ({ env: { isProduction: false } }));
     const { default: DevPage } = await import("./page");
-    return render(<DevPage />);
+    const result = render(<DevPage />);
+    const store = await import("@/lib/store");
+    return { ...result, store };
   }
 
   it("renders a labelled frame for every state", async () => {
@@ -122,6 +130,50 @@ describe("/dev", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("takes the Save dialog's meta straight from the catalog", async () => {
+    await renderGallery();
+
+    // fade-in-up at its catalog defaults is the handoff's own example string.
+    expect(
+      within(screen.getByTestId("dev-frame-dialog-save")).getByText("600ms · ease-out · 24px"),
+    ).toBeInTheDocument();
+  });
+
+  it("never stages a live-looking Save that cannot save", async () => {
+    await renderGallery();
+
+    for (const [frame, name] of [
+      ["dev-frame-dialog-unsaved-guard", "Save"],
+      ["dev-frame-dialog-save", "Save version"],
+    ] as const) {
+      expect(within(screen.getByTestId(frame)).getByRole("button", { name })).toBeDisabled();
+    }
+  });
+
+  it("survives an animation the catalog no longer has, rather than failing the build", async () => {
+    // A module-scope `throw` here would take the whole production build down
+    // with it — `next build` renders this route to decide it is a 404.
+    vi.doMock("@/lib/env", () => ({ env: { isProduction: false } }));
+    vi.doMock("@/lib/catalog", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/catalog")>("@/lib/catalog");
+      return {
+        ...actual,
+        getCatalogEntry: (id: string) => (id === "pulse" ? undefined : actual.getCatalogEntry(id)),
+      };
+    });
+    const { default: DevPage } = await import("./page");
+
+    expect(() => render(<DevPage />)).not.toThrow();
+
+    const scale = screen.getByTestId("dev-frame-panel-tuning-scale");
+    expect(within(scale).getByText(/pulse is not in catalog/)).toBeInTheDocument();
+    // Everything that does not depend on the missing entry still renders.
+    expect(
+      within(screen.getByTestId("dev-frame-panel-tuning-distance")).getByText("Fade In Up"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("dev-frame-dialog-save")).toBeInTheDocument();
+  });
+
   it("shows a standing toast and offers a real one", async () => {
     await renderGallery();
 
@@ -142,10 +194,10 @@ describe("/dev", () => {
   });
 
   it("never touches the editor store", async () => {
-    await renderGallery();
+    const { store } = await renderGallery();
 
-    const { panel, draftState, currentVersionState, mode } = useEditorStore.getState();
-    expect({ panel, draftState, currentVersionState, mode }).toEqual(initialEditorState);
+    const { panel, draftState, currentVersionState, mode } = store.useEditorStore.getState();
+    expect({ panel, draftState, currentVersionState, mode }).toEqual(store.initialEditorState);
   });
 
   it("calls notFound() in production", async () => {
