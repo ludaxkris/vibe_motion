@@ -42,6 +42,7 @@ describe("animation catalog", () => {
             if (!entry.baseStyles) return;
             let decl = entry.baseStyles;
             for (const p of entry.params) if (p.cssVar) decl = decl.replaceAll(`var(${p.cssVar})`, p.default);
+            expect(decl).not.toContain("var(--vm-");
             const errors: string[] = [];
             parse(decl, { context: "declarationList", onParseError: (e) => errors.push(e.message) });
             expect(errors).toEqual([]);

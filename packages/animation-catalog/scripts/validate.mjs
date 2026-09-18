@@ -59,6 +59,20 @@ for (const { version, file } of files) {
         }
       }
     }
+    // The cssVar <-> keyframes/baseStyles relationship must hold in both directions: the check
+    // above catches a declared cssVar that's never referenced; this catches the reverse — a
+    // var(--vm-x) referenced in keyframes or baseStyles that no param on this entry declares via
+    // cssVar, which would render as an unset custom property (falling back to nothing) rather
+    // than the intended value.
+    const declaredCssVars = new Set(entry.params.filter((p) => p.cssVar).map((p) => p.cssVar));
+    const usedCssVars = new Set(
+      [...`${entry.keyframes} ${entry.baseStyles ?? ""}`.matchAll(/var\((--vm-[a-zA-Z0-9-]+)/g)].map((m) => m[1]),
+    );
+    for (const usedVar of usedCssVars) {
+      if (!declaredCssVars.has(usedVar)) {
+        problems.push(`${version}/${entry.id}: ${usedVar} is referenced in keyframes or baseStyles but not declared by any param's cssVar`);
+      }
+    }
     if (entry.defaultTrigger && !entry.triggers.includes(entry.defaultTrigger)) {
       problems.push(`${version}/${entry.id}: defaultTrigger ${entry.defaultTrigger} not in triggers`);
     }
@@ -79,10 +93,12 @@ for (const { version, file } of files) {
 //
 // What CLAUDE.md's semver contract still requires within a shared MAJOR is a superset relation:
 // a MINOR (or PATCH) release must not drop an animation or a param an earlier release in the
-// same major already published — that would be a breaking change disguised as non-major. So for
-// any two published versions A < B sharing a MAJOR: every animationId in A must exist in B, and
-// for every id both declare, every param key in A must exist in B (an id/key may be added going
-// forward, never removed, within a major).
+// same major already published — that would be a breaking change disguised as non-major. The
+// relation is transitive (A ⊆ B ⊆ C implies A ⊆ C), so it is enough to check each consecutive
+// pair of versions within a major: every animationId in version N must exist in version N+1, and
+// for every id both declare, every param key in N must exist in N+1 (an id/key may be added going
+// forward, never removed, within a major). This does not check that a minor's new default
+// reproduces the previous rendering — that half of the semver contract is a review responsibility.
 const byMajor = new Map(); // major -> [{ version, catalog }] ascending
 for (const { version } of files) {
   const catalog = catalogsByVersion.get(version);
@@ -91,29 +107,27 @@ for (const { version } of files) {
   if (!byMajor.has(major)) byMajor.set(major, []);
   byMajor.get(major).push({ version, catalog });
 }
-for (const versionsInMajor of byMajor.values()) {
-  for (let i = 0; i < versionsInMajor.length; i++) {
-    for (let j = i + 1; j < versionsInMajor.length; j++) {
-      const a = versionsInMajor[i];
-      const b = versionsInMajor[j];
-      const bEntries = new Map(b.catalog.entries.map((e) => [e.id, e]));
-      for (const entryA of a.catalog.entries) {
-        const entryB = bEntries.get(entryA.id);
-        if (!entryB) {
+for (const [major, versionsInMajor] of byMajor) {
+  for (let i = 0; i + 1 < versionsInMajor.length; i++) {
+    const earlier = versionsInMajor[i];
+    const later = versionsInMajor[i + 1];
+    const laterEntries = new Map(later.catalog.entries.map((e) => [e.id, e]));
+    for (const entry of earlier.catalog.entries) {
+      const laterEntry = laterEntries.get(entry.id);
+      if (!laterEntry) {
+        problems.push(
+          `${earlier.version}/${entry.id}: missing from ${later.version} (both major ${major}); ` +
+            `a minor/patch release must not drop an animation an earlier release in the same major already published`,
+        );
+        continue;
+      }
+      const laterKeys = new Set(laterEntry.params.map((p) => p.key));
+      for (const p of entry.params) {
+        if (!laterKeys.has(p.key)) {
           problems.push(
-            `${entryA.id}: present in ${a.version} but missing from ${b.version} (both major ${a.version.split(".")[0]}); ` +
-              `a minor/patch release must not drop an animation an earlier release in the same major already published`,
+            `${earlier.version}/${entry.id}: param ${p.key} missing from ${later.version} (both major ${major}); ` +
+              `a minor/patch release must not drop a param an earlier release already published`,
           );
-          continue;
-        }
-        const keysB = new Set(entryB.params.map((p) => p.key));
-        for (const p of entryA.params) {
-          if (!keysB.has(p.key)) {
-            problems.push(
-              `${a.version}/${entryA.id}: param ${p.key} exists in ${a.version} but not in ${b.version} ` +
-                `(both major ${a.version.split(".")[0]}); a minor/patch release must not drop a param an earlier release already published`,
-            );
-          }
         }
       }
     }

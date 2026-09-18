@@ -7,7 +7,7 @@
 import { compile } from "json-schema-to-typescript";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { listVersionFiles, pkgRoot, readCatalog, readCurrent, readSchema } from "./lib.mjs";
+import { listVersionFiles, pkgRoot, readCatalog, readCurrent, readSchema, SEMVER } from "./lib.mjs";
 
 const srcDir = path.join(pkgRoot, "src");
 mkdirSync(srcDir, { recursive: true });
@@ -24,6 +24,20 @@ writeFileSync(path.join(srcDir, "schema.ts"), types);
 
 const files = listVersionFiles();
 const current = readCurrent();
+
+// Parse each versions/*.json exactly once; every generated artifact below (manifest.json's
+// `versions` and `keyframesNames`) is derived from this same map instead of re-reading files.
+// keyframesName() itself only ever sees versions that passed this check, so a version file name
+// that is not strict MAJOR.MINOR.PATCH fails loudly here instead of silently producing a bad
+// `vm-<id>-v<bad-name-with-dashes>` keyframes name downstream.
+const catalogsByVersion = new Map(
+  files.map(({ version, file }) => {
+    if (!SEMVER.test(version)) {
+      throw new Error(`gen-types: versions/${version}.json is not named with a strict MAJOR.MINOR.PATCH semver`);
+    }
+    return [version, readCatalog(file)];
+  }),
+);
 
 const imports = files
   .map(({ version }, i) => `import v${i} from "../versions/${version}.json" with { type: "json" };`)
@@ -76,19 +90,23 @@ writeFileSync(path.join(srcDir, "index.ts"), index);
 //
 // keyframesNames additionally pins the expected keyframesName() output for every
 // (version, id) pair, so the TS and Kotlin implementations of keyframesName() can each be
-// proven to agree with this committed manifest without importing each other's code.
+// proven to agree with this committed manifest without importing each other's code. Derived from
+// the already-parsed `catalogsByVersion` map above, and from the same string template as the
+// generated `keyframesName()` (every version here already passed the SEMVER check above).
 function keyframesNameForManifest(animationId, version) {
   return `vm-${animationId}-v${version.split(".").join("-")}`;
 }
 
 const manifest = {
   current,
-  versions: Object.fromEntries(files.map(({ version, file }) => [version, readCatalog(file).entries.map((e) => e.id)])),
+  versions: Object.fromEntries(
+    files.map(({ version }) => [version, catalogsByVersion.get(version).entries.map((e) => e.id)]),
+  ),
   keyframesNames: Object.fromEntries(
-    files.map(({ version, file }) => [
+    files.map(({ version }) => [
       version,
       Object.fromEntries(
-        readCatalog(file).entries.map((e) => [e.id, keyframesNameForManifest(e.id, version)]),
+        catalogsByVersion.get(version).entries.map((e) => [e.id, keyframesNameForManifest(e.id, version)]),
       ),
     ]),
   ),
