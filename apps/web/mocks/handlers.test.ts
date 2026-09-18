@@ -145,6 +145,95 @@ describe("mock API: create -> get -> versions -> state fold -> 409 -> restore", 
   });
 });
 
+describe("mock API: 422 diff validation on createVersion", () => {
+  async function createProjectAndCatalog() {
+    const created = await apiClient.POST("/projects", { body: { url: "https://example.com" } });
+    const project = created.data!;
+    const catalog = await apiClient.GET("/catalog");
+    return { project, catalog: catalog.data! };
+  }
+
+  it("422s for an unknown animationId", async () => {
+    const { project, catalog } = await createProjectAndCatalog();
+
+    const result = await apiClient.POST("/projects/{projectId}/versions", {
+      params: { path: { projectId: project.id } },
+      body: {
+        parentVersionId: project.currentVersionId,
+        catalogVersion: catalog.version,
+        diff: {
+          set: {
+            "vm-heading": {
+              animationId: "not-a-real-animation",
+              catalogVersion: catalog.version,
+              trigger: "load",
+              params: {},
+            },
+          },
+          remove: [],
+        },
+      },
+    });
+
+    expect(result.response.status).toBe(422);
+    expect(result.error?.code).toBeTruthy();
+  });
+
+  it("422s for an unpublished catalogVersion", async () => {
+    const { project, catalog } = await createProjectAndCatalog();
+    const entry = catalog.entries[0];
+
+    const result = await apiClient.POST("/projects/{projectId}/versions", {
+      params: { path: { projectId: project.id } },
+      body: {
+        parentVersionId: project.currentVersionId,
+        catalogVersion: catalog.version,
+        diff: {
+          set: {
+            "vm-heading": {
+              animationId: entry.id,
+              catalogVersion: "9.9.9",
+              trigger: entry.triggers[0],
+              params: {},
+            },
+          },
+          remove: [],
+        },
+      },
+    });
+
+    expect(result.response.status).toBe(422);
+    expect(result.error?.code).toBeTruthy();
+  });
+
+  it("422s for an unknown param key", async () => {
+    const { project, catalog } = await createProjectAndCatalog();
+    const entry = catalog.entries[0];
+
+    const result = await apiClient.POST("/projects/{projectId}/versions", {
+      params: { path: { projectId: project.id } },
+      body: {
+        parentVersionId: project.currentVersionId,
+        catalogVersion: catalog.version,
+        diff: {
+          set: {
+            "vm-heading": {
+              animationId: entry.id,
+              catalogVersion: catalog.version,
+              trigger: entry.triggers[0],
+              params: { "not-a-real-param": "1s" },
+            },
+          },
+          remove: [],
+        },
+      },
+    });
+
+    expect(result.response.status).toBe(422);
+    expect(result.error?.code).toBeTruthy();
+  });
+});
+
 describe("mock API: catalog", () => {
   it("serves the current catalog and its versions", async () => {
     const current = await apiClient.GET("/catalog");
