@@ -15,6 +15,7 @@ Rules
 | Worktree | Branch | Agent / session | Phase | Task | Status | Started | Touches shared contract? |
 |---|---|---|---|---|---|---|---|
 | (primary) | main | Claude Fable 5.1 (planning session with Chris) | planning + 0 | Planning docs (done), Phase 0 foundation PR #1 (merged), agent PR comments + cleanup PR #2 (merged) | done 2026-09-18 | 2026-09-17 | no |
+| `.worktrees/feat/2-api-core` | feat/2-api-core | Claude Fable 5.1 (session with Chris) | 2 | Projects + clone service (SSRF guard, jsoup rewrite, data-vm-id), versions (diff, stateAt, 409, 422, restore), page serving | in-progress | 2026-09-18 | additive only if needed; Flyway V2+ only |
 
 ## Notices (newest first)
 
@@ -35,7 +36,7 @@ Agents claim a task here before creating a worktree so two agents do not pick th
 
 | Task | Claimed by | Date |
 |---|---|---|
-| — | — | — |
+| Phase 2 — API core (projects, clone service, versions, stateAt, restore) | Claude Fable 5.1 (session with Chris) · worktree `.worktrees/feat/2-api-core` | 2026-09-18 |
 
 ## Facts other agents need
 
