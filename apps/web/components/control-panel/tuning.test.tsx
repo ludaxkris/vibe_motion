@@ -1,7 +1,9 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { initialEditorState, useEditorStore } from "@/lib/store";
+import type { Assignment, CatalogEntry } from "@/lib/api-client";
+import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
+import { easingCurvePath } from "@/lib/easing-curve";
 
 import { TuningPanel } from "./tuning";
 
@@ -15,10 +17,6 @@ class ResizeObserverStub {
 }
 
 beforeEach(() => {
-  useEditorStore.setState({ ...initialEditorState });
-  useEditorStore.getState().dispatchPanel({ type: "SELECT", vmId: "vm-1" });
-  useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
-  useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in" });
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
 });
 
@@ -35,83 +33,204 @@ function selectOption(option: HTMLElement) {
   fireEvent.click(option);
 }
 
+function entryFor(animationId: string): CatalogEntry {
+  const entry = getCatalogEntry(animationId);
+  if (!entry) throw new Error(`no catalog entry ${animationId}`);
+  return entry;
+}
+
+function assignmentFor(entry: CatalogEntry, params?: Record<string, string>): Assignment {
+  return {
+    animationId: entry.id,
+    catalogVersion: CURRENT_CATALOG_VERSION,
+    trigger: entry.defaultTrigger ?? entry.triggers[0],
+    params: { ...resolveCatalogParams(entry), ...params },
+  };
+}
+
+function renderTuning(
+  animationId: string,
+  props: Partial<React.ComponentProps<typeof TuningPanel>> = {},
+) {
+  const entry = entryFor(animationId);
+  const onParamChange = vi.fn();
+  const onTriggerChange = vi.fn();
+  const onChangeAnimation = vi.fn();
+  const onRemove = vi.fn();
+  const view = render(
+    <TuningPanel
+      vmId="vm-1"
+      entry={entry}
+      assignment={assignmentFor(entry)}
+      onParamChange={onParamChange}
+      onTriggerChange={onTriggerChange}
+      onChangeAnimation={onChangeAnimation}
+      onRemove={onRemove}
+      {...props}
+    />,
+  );
+  return { ...view, entry, onParamChange, onTriggerChange, onChangeAnimation, onRemove };
+}
+
 describe("TuningPanel", () => {
-  // jsdom has no layout, so Base UI's Slider cannot compute a thumb position:
-  // the thumb (and its nested `<input type="range">`, the actual slider role)
-  // stays `visibility: hidden` until it can. Per the accname spec a hidden
-  // node's accessible name is "" even when `aria-label` is set and even when
-  // the query includes hidden nodes — so these query the range input
-  // directly by its param id instead of by accessible name. The id is
-  // `useId()`-prefixed (so two panels on one page never collide), so the
-  // query matches on the "-param-duration" suffix rather than the exact id.
-  it("renders a slider for each duration/length/number/angle/percentage param, seeded from the draft", () => {
-    const { container } = render(<TuningPanel vmId="vm-1" animationId="fade-in" />);
+  it("heads the panel with the element, the animation and a way back to the picker", () => {
+    const { onChangeAnimation } = renderTuning("fade-in-up");
 
-    // fade-in: duration (slider), delay (slider), easing (select).
-    const durationSlider = container.querySelector<HTMLInputElement>(
-      '[id$="-param-duration"] input[type="range"]',
+    expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
+    expect(screen.getByText("vm-1")).toBeInTheDocument();
+    expect(screen.getByText("Fade In Up")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    expect(onChangeAnimation).toHaveBeenCalledOnce();
+  });
+
+  it("offers only the triggers the entry declares, in the handoff's words", () => {
+    const { entry, onTriggerChange } = renderTuning("fade-in-up");
+
+    const group = screen.getByRole("radiogroup", { name: "Trigger" });
+    expect(within(group).getAllByRole("radio")).toHaveLength(entry.triggers.length);
+    expect(within(group).getByRole("radio", { name: "On load" })).toBeChecked();
+    expect(within(group).queryByRole("radio", { name: "On hover" })).not.toBeInTheDocument();
+
+    fireEvent.click(within(group).getByRole("radio", { name: "In view" }));
+    expect(onTriggerChange).toHaveBeenCalledWith("in-view");
+  });
+
+  it("renders duration and delay as slider rows seeded from the assignment", () => {
+    renderTuning("fade-in");
+
+    const duration = screen.getByLabelText("Duration");
+    expect(duration.tagName).toBe("INPUT");
+    expect(duration).toHaveAttribute("aria-valuenow", "600");
+    expect(duration).toHaveAttribute("min", "100");
+    expect(duration).toHaveAttribute("max", "5000");
+
+    expect(screen.getByRole("spinbutton", { name: "Duration value" })).toHaveValue("600");
+    expect(screen.getByRole("spinbutton", { name: "Delay value" })).toHaveValue("0");
+  });
+
+  it("writes a slider change back with the catalog's unit", () => {
+    const { onParamChange } = renderTuning("fade-in");
+
+    const duration = screen.getByLabelText("Duration");
+    duration.focus();
+    fireEvent.keyDown(duration, { key: "ArrowRight" });
+
+    expect(onParamChange).toHaveBeenCalledWith("duration", "650ms");
+  });
+
+  it("commits a typed number, clamped to the catalog's range", () => {
+    const { onParamChange } = renderTuning("fade-in");
+
+    const field = screen.getByRole("spinbutton", { name: "Duration value" });
+    fireEvent.change(field, { target: { value: "99999" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    expect(onParamChange).toHaveBeenCalledWith("duration", "5000ms");
+  });
+
+  it("renders an entry's distance in px, from the catalog's range", () => {
+    renderTuning("fade-in-up");
+
+    const distance = screen.getByLabelText("Distance");
+    expect(distance).toHaveAttribute("aria-valuenow", "24");
+    expect(distance).toHaveAttribute("max", "200");
+    expect(screen.getByText("px")).toBeInTheDocument();
+  });
+
+  it("renders an entry's scale as the handoff's × multiplier", () => {
+    renderTuning("pulse");
+
+    expect(screen.getByLabelText("Peak scale")).toHaveAttribute("aria-valuenow", "1.05");
+    expect(screen.getByText("×")).toBeInTheDocument();
+  });
+
+  it("renders repeat as the dense 1 / 2 / 3 / ∞ segmented", () => {
+    const { onParamChange } = renderTuning("pulse");
+
+    const repeat = screen.getByRole("radiogroup", { name: "Repeat" });
+    expect(within(repeat).getByRole("radio", { name: "∞" })).toBeChecked();
+
+    fireEvent.click(within(repeat).getByRole("radio", { name: "2" }));
+    expect(onParamChange).toHaveBeenCalledWith("iteration", "2");
+  });
+
+  it("renders direction as a segmented of the standard CSS values", () => {
+    const { onParamChange } = renderTuning("spin");
+
+    const direction = screen.getByRole("radiogroup", { name: "Direction" });
+    expect(within(direction).getByRole("radio", { name: "normal" })).toBeChecked();
+
+    fireEvent.click(within(direction).getByRole("radio", { name: "reverse" }));
+    expect(onParamChange).toHaveBeenCalledWith("direction", "reverse");
+  });
+
+  it("renders fill mode as a segmented too", () => {
+    renderTuning("fade-in");
+
+    expect(
+      within(screen.getByRole("radiogroup", { name: "Fill mode" })).getByRole("radio", {
+        name: "both",
+      }),
+    ).toBeChecked();
+  });
+
+  it("renders easing as a select with the curve drawn beside it", async () => {
+    const { container, onParamChange } = renderTuning("fade-in");
+
+    const easing = screen.getByRole("combobox", { name: "Easing" });
+    expect(easing).toHaveTextContent("ease-out");
+
+    const curve = container.querySelector("[data-testid='easing-curve'] path");
+    expect(curve).toHaveAttribute("d", easingCurvePath("ease-out", 40, 16));
+
+    fireEvent.click(easing);
+    const listbox = await screen.findByRole("listbox");
+    selectOption(within(listbox).getByRole("option", { name: "linear" }));
+
+    await waitFor(() => expect(onParamChange).toHaveBeenCalledWith("easing", "linear"));
+  });
+
+  it("draws a straight line for an easing it cannot parse", () => {
+    const entry = entryFor("fade-in");
+    const { container } = render(
+      <TuningPanel
+        vmId="vm-1"
+        entry={entry}
+        assignment={assignmentFor(entry, { easing: "steps(4, end)" })}
+      />,
     );
-    expect(durationSlider).not.toBeNull();
-    expect(durationSlider).toHaveAttribute("aria-valuenow", "600");
-    expect(durationSlider).toHaveAttribute("aria-label", "duration");
+
+    expect(container.querySelector("[data-testid='easing-curve'] path")).toHaveAttribute(
+      "d",
+      "M 0 16 L 40 0",
+    );
   });
 
-  it("dragging a slider (keyboard) updates the draft param, preserving the unit", () => {
-    const { container } = render(<TuningPanel vmId="vm-1" animationId="fade-in" />);
+  it("renders a text field for colour params — catalog colours are rgba()", () => {
+    const { onParamChange } = renderTuning("glow");
 
-    const durationSlider = container.querySelector<HTMLInputElement>(
-      '[id$="-param-duration"] input[type="range"]',
-    )!;
-    durationSlider.focus();
-    fireEvent.keyDown(durationSlider, { key: "ArrowRight" });
+    const colour = screen.getByLabelText("Glow color");
+    expect(colour).toHaveValue("rgba(99, 102, 241, 0.6)");
 
-    const state = useEditorStore.getState();
-    expect(state.draftState["vm-1"].params.duration).not.toBe("600ms");
-    expect(state.draftState["vm-1"].params.duration.endsWith("ms")).toBe(true);
+    fireEvent.change(colour, { target: { value: "#ff0000" } });
+    expect(onParamChange).toHaveBeenCalledWith("color", "#ff0000");
   });
 
-  it("changing the trigger select writes to the draft", () => {
-    render(<TuningPanel vmId="vm-1" animationId="fade-in" />);
+  it("keeps Replay disabled until the preview bridge exists, and removes on request", () => {
+    const { onRemove } = renderTuning("fade-in");
 
-    fireEvent.click(screen.getByRole("combobox", { name: /trigger/i }));
-    const listbox = screen.getByRole("listbox");
-    selectOption(within(listbox).getByRole("option", { name: "in-view" }));
+    expect(screen.getByRole("button", { name: "Replay" })).toBeDisabled();
 
-    expect(useEditorStore.getState().draftState["vm-1"].trigger).toBe("in-view");
+    fireEvent.click(screen.getByRole("button", { name: "Remove animation" }));
+    expect(onRemove).toHaveBeenCalledOnce();
   });
 
-  it("Back dispatches BACK, returning to choosing and keeping the draft", () => {
-    render(<TuningPanel vmId="vm-1" animationId="fade-in" />);
+  it("renders a row for every param the entry declares", () => {
+    const { container, entry } = renderTuning("glow");
 
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
-
-    const state = useEditorStore.getState();
-    expect(state.panel).toEqual({ status: "choosing", vmId: "vm-1" });
-    expect(state.draftState["vm-1"]).toBeDefined();
-  });
-
-  it("Remove drops the draft assignment and dispatches CLEAR, returning to selected", () => {
-    render(<TuningPanel vmId="vm-1" animationId="fade-in" />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-
-    const state = useEditorStore.getState();
-    expect(state.panel).toEqual({ status: "selected", vmId: "vm-1" });
-    expect(state.draftState["vm-1"]).toBeUndefined();
-  });
-
-  it("renders a color input for color params (glow's Glow color)", () => {
-    useEditorStore.getState().dispatchPanel({ type: "BACK" });
-    useEditorStore.getState().dispatchPanel({ type: "BACK" });
-    useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
-    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "glow" });
-
-    render(<TuningPanel vmId="vm-1" animationId="glow" />);
-
-    const colorInput = screen.getByLabelText("Glow color");
-    expect(colorInput).toHaveValue("rgba(99, 102, 241, 0.6)");
-
-    fireEvent.change(colorInput, { target: { value: "#ff0000" } });
-    expect(useEditorStore.getState().draftState["vm-1"].params.color).toBe("#ff0000");
+    for (const param of entry.params) {
+      expect(container.querySelector(`[data-param='${param.key}']`)).not.toBeNull();
+    }
   });
 });

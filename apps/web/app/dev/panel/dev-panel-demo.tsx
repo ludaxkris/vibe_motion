@@ -68,8 +68,11 @@ export function DevPanelDemo() {
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
   const panel = useEditorStore((state) => state.panel);
   const setSelectedVmId = useEditorStore((state) => state.setSelectedVmId);
+  const updateDraftParam = useEditorStore((state) => state.updateDraftParam);
 
   const liveDraftAnimationId = draftState[LIVE_VM_ID]?.animationId;
+  const galleryEntry = getCatalogEntry(GALLERY_ANIMATION_ID);
+  const galleryAssignment = draftState[GALLERY_VM_ID];
 
   return (
     <div className="flex flex-col gap-10 p-8">
@@ -99,7 +102,15 @@ export function DevPanelDemo() {
             />
           </StateCard>
           <StateCard title="tuning">
-            <TuningPanel vmId={GALLERY_VM_ID} animationId={GALLERY_ANIMATION_ID} />
+            {galleryEntry && galleryAssignment ? (
+              <TuningPanel
+                vmId={GALLERY_VM_ID}
+                entry={galleryEntry}
+                assignment={galleryAssignment}
+                onParamChange={(key, value) => updateDraftParam(GALLERY_VM_ID, key, value)}
+                onChangeAnimation={() => dispatchPanel({ type: "BACK" })}
+              />
+            ) : null}
           </StateCard>
         </div>
       </section>

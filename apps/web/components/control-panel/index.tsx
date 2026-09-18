@@ -3,6 +3,8 @@
 import { useState } from "react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { Trigger } from "@/lib/api-client";
+import { getCatalogEntry } from "@/lib/catalog";
 import { useEditorStore } from "@/lib/store";
 
 import { ALL_CATEGORIES, ChoosingPanel } from "./choosing";
@@ -43,6 +45,61 @@ function ChoosingSection({ vmId }: { vmId: string }) {
       onCategoryChange={setCategory}
       onPick={(animationId) => dispatchPanel({ type: "PICK", animationId })}
       onBack={() => dispatchPanel({ type: "BACK" })}
+    />
+  );
+}
+
+/**
+ * Resolves the catalog entry and the draft assignment the tuning panel edits.
+ *
+ * Both lookups should always succeed — the machine only reaches `tuning` via
+ * PICK, which resolves the entry and creates the assignment together — but the
+ * two failure modes are distinct (a catalog entry that has gone away vs. a
+ * draft cleared out from under a mounted panel) and worth telling apart.
+ */
+function TuningSection({ vmId, animationId }: { vmId: string; animationId: string }) {
+  const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
+  const setDraftAssignment = useEditorStore((state) => state.setDraftAssignment);
+  const updateDraftParam = useEditorStore((state) => state.updateDraftParam);
+  const removeDraftAssignment = useEditorStore((state) => state.removeDraftAssignment);
+  const assignment = useEditorStore((state) => state.draftState[vmId]);
+
+  const entry = getCatalogEntry(animationId);
+  if (!entry) {
+    return (
+      <PanelCard data-testid="panel-tuning-missing-entry">
+        <PanelSection>
+          <p className="text-sm leading-body text-vm-ink-2">
+            This animation is no longer in the catalog.
+          </p>
+        </PanelSection>
+      </PanelCard>
+    );
+  }
+  if (!assignment) {
+    return (
+      <PanelCard data-testid="panel-tuning-missing-draft">
+        <PanelSection>
+          <p className="text-sm leading-body text-vm-ink-2">
+            No draft assignment for this element yet.
+          </p>
+        </PanelSection>
+      </PanelCard>
+    );
+  }
+
+  return (
+    <TuningPanel
+      vmId={vmId}
+      entry={entry}
+      assignment={assignment}
+      onTriggerChange={(trigger: Trigger) => setDraftAssignment(vmId, { ...assignment, trigger })}
+      onParamChange={(key, value) => updateDraftParam(vmId, key, value)}
+      onChangeAnimation={() => dispatchPanel({ type: "BACK" })}
+      onRemove={() => {
+        removeDraftAssignment(vmId);
+        dispatchPanel({ type: "CLEAR" });
+      }}
     />
   );
 }
@@ -89,7 +146,7 @@ export function ControlPanel() {
               <ChoosingSection key={panel.vmId} vmId={panel.vmId} />
             )}
             {panel.status === "tuning" && (
-              <TuningPanel vmId={panel.vmId} animationId={panel.animationId} />
+              <TuningSection vmId={panel.vmId} animationId={panel.animationId} />
             )}
           </TabsContent>
 

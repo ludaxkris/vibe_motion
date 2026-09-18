@@ -1,9 +1,13 @@
 "use client";
 
-import { useId } from "react";
+import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ElementTag } from "@/components/ui/element-tag";
 import { Input } from "@/components/ui/input";
+import { NumberField } from "@/components/ui/number-field";
+import { SectionLabel } from "@/components/ui/section-label";
+import { Segmented } from "@/components/ui/segmented";
 import {
   Select,
   SelectContent,
@@ -12,208 +16,236 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import type { CatalogParam, Trigger } from "@/lib/api-client";
-import { getCatalogEntry } from "@/lib/catalog";
-import { useEditorStore } from "@/lib/store";
+import type { Assignment, CatalogEntry, CatalogParam, Trigger } from "@/lib/api-client";
+import { easingCurvePath } from "@/lib/easing-curve";
 
+import { PanelCard, PanelSection } from "./panel-card";
+import { paramControl, paramLabel } from "./param-control";
 import { joinValue, splitValue } from "./param-value";
 
-/** Param types that render as a slider + numeric value. */
-const SLIDER_TYPES: ReadonlySet<CatalogParam["type"]> = new Set([
-  "duration",
-  "length",
-  "number",
-  "angle",
-  "percentage",
-]);
+/** The handoff's words for the three triggers. */
+const TRIGGER_LABELS: Readonly<Record<Trigger, string>> = {
+  load: "On load",
+  hover: "On hover",
+  "in-view": "In view",
+};
 
-// The catalog does not always declare `options` for these types (schema.json:
-// "options" is required only to be meaningful for `select`, and "the
-// suggested list" for `easing`) — fall back to a standard CSS list, always
-// including the param's own default so it stays selectable.
-const ITERATION_OPTIONS = ["1", "2", "3", "4", "5", "infinite"];
-const EASING_OPTIONS = ["linear", "ease", "ease-in", "ease-out", "ease-in-out"];
-const DIRECTION_OPTIONS = ["normal", "reverse", "alternate", "alternate-reverse"];
+/** The easing preview box: 62x28, with the curve drawn 40x16 inside it. */
+const CURVE_WIDTH = 40;
+const CURVE_HEIGHT = 16;
 
-function withDefault(options: readonly string[], defaultValue: string): string[] {
-  return options.includes(defaultValue) ? [...options] : [...options, defaultValue];
+function EasingCurve({ value }: { value: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="easing-curve"
+      className="flex h-[var(--control-h-xs)] w-[62px] shrink-0 items-center justify-center rounded-sm bg-vm-panel"
+    >
+      <svg
+        width={CURVE_WIDTH}
+        height={CURVE_HEIGHT}
+        viewBox={`0 0 ${CURVE_WIDTH} ${CURVE_HEIGHT}`}
+        // A spring overshoots the box on purpose; let it.
+        className="overflow-visible"
+      >
+        <path
+          d={easingCurvePath(value, CURVE_WIDTH, CURVE_HEIGHT)}
+          fill="none"
+          stroke="var(--vm-accent)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      </svg>
+    </span>
+  );
 }
 
-function selectOptions(param: CatalogParam): string[] {
-  if (param.options?.length) return withDefault(param.options, param.default);
-  const fallback =
-    param.type === "iteration"
-      ? ITERATION_OPTIONS
-      : param.type === "direction"
-        ? DIRECTION_OPTIONS
-        : param.type === "easing"
-          ? EASING_OPTIONS
-          : [];
-  return withDefault(fallback, param.default);
+/** Label (56px) · control, the shape every param row takes. */
+function ParamRow({ param, children }: { param: CatalogParam; children: ReactNode }) {
+  return (
+    <div data-param={param.key} className="flex items-center gap-2.5">
+      <span className="w-14 shrink-0 text-sm text-vm-ink-2">{paramLabel(param)}</span>
+      {children}
+    </div>
+  );
+}
+
+function ParamControlFor({
+  param,
+  value,
+  onChange,
+}: {
+  param: CatalogParam;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const control = paramControl(param);
+  const label = paramLabel(param);
+
+  if (control.kind === "slider") {
+    const { amount, unit } = splitValue(value);
+    const commit = (next: number) => onChange(joinValue(next, unit || splitValue(param.default).unit));
+
+    return (
+      <>
+        <Slider
+          aria-label={label}
+          className="flex-1"
+          min={control.min}
+          max={control.max}
+          step={control.step}
+          value={[amount]}
+          onValueChange={(next) => {
+            const nextAmount = Array.isArray(next) ? (next[0] ?? amount) : next;
+            commit(nextAmount);
+          }}
+        />
+        <NumberField
+          // The slider carries the param's own name; this is the same value
+          // in a second form, so it says which form it is.
+          aria-label={`${label} value`}
+          value={amount}
+          min={control.min}
+          max={control.max}
+          step={control.step}
+          unit={control.unit}
+          onCommit={commit}
+        />
+      </>
+    );
+  }
+
+  if (control.kind === "segmented") {
+    return (
+      <Segmented
+        dense
+        aria-label={label}
+        options={control.options}
+        value={value}
+        onValueChange={onChange}
+        // Four CSS keywords ("alternate-reverse") in a 320px panel: let the
+        // segments share what space there is rather than overflow the card.
+        className="min-w-0 flex-1 [&>*]:min-w-0 [&>*]:truncate [&>*]:px-1"
+      />
+    );
+  }
+
+  if (control.kind === "color") {
+    return (
+      <Input
+        size="sm"
+        aria-label={label}
+        className="flex-1"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
+  }
+
+  // easing / any select with more options than a segmented row can hold
+  return (
+    <>
+      <Select
+        value={value}
+        onValueChange={(next) => {
+          if (typeof next === "string") onChange(next);
+        }}
+      >
+        <SelectTrigger
+          aria-label={label}
+          icon="▾"
+          className="h-[var(--control-h-xs)] min-w-0 flex-1 rounded-sm border-vm-border-strong py-0 font-mono text-sm"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {control.options.map((option) => (
+            <SelectItem key={option} value={option} className="font-mono text-sm">
+              {option}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {control.kind === "easing" ? <EasingCurve value={value} /> : null}
+    </>
+  );
 }
 
 /**
- * One control per catalog param, rendered from `param.type`: duration / length
- * / number / angle / percentage as a slider + numeric value; easing /
- * direction / select / iteration as a select; color as a text input (catalog
- * color defaults are `rgba(...)` / `currentColor`, not hex, so a native
- * `<input type="color">` cannot round-trip them). Every control writes to the
- * draft only.
+ * Tuning an element's animation (`docs/design/README.md` "2. Editor",
+ * tuning): the element and its animation, the trigger, one row per catalog
+ * param, and the way back out.
+ *
+ * Every row is rendered from the catalog entry — the handoff's Duration,
+ * Delay, Distance, Scale, Easing and Repeat rows are what the catalog's own
+ * params happen to produce (`param-control.ts`), so a new param needs no code
+ * here. Controls write to the draft only; nothing on this panel calls the API.
+ *
+ * Presentational: the store-connected `ControlPanel` resolves the entry and
+ * the assignment and supplies the callbacks.
  */
-export function TuningPanel({ vmId, animationId }: { vmId: string; animationId: string }) {
-  const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
-  const updateDraftParam = useEditorStore((state) => state.updateDraftParam);
-  const setDraftAssignment = useEditorStore((state) => state.setDraftAssignment);
-  const removeDraftAssignment = useEditorStore((state) => state.removeDraftAssignment);
-  const assignment = useEditorStore((state) => state.draftState[vmId]);
-  const uid = useId();
-
-  const entry = getCatalogEntry(animationId);
-
-  // Defensive: the machine only reaches `tuning` via PICK, which always both
-  // resolves the catalog entry and creates the draft assignment together, so
-  // neither of these should happen in practice — but the two failure modes
-  // are distinct (a stale/removed catalog entry vs. a draft that was cleared
-  // out from under an already-mounted panel) and worth telling apart rather
-  // than folding into one generic message.
-  if (!entry) {
-    return (
-      <p className="text-sm text-muted-foreground" data-testid="panel-tuning-missing-entry">
-        This animation is no longer in the catalog.
-      </p>
-    );
-  }
-  if (!assignment) {
-    return (
-      <p className="text-sm text-muted-foreground" data-testid="panel-tuning-missing-draft">
-        No draft assignment for this element yet.
-      </p>
-    );
-  }
-
-  const handleRemove = () => {
-    removeDraftAssignment(vmId);
-    dispatchPanel({ type: "CLEAR" });
-  };
-
-  const handleTriggerChange = (trigger: string | null) => {
-    if (!trigger) return;
-    setDraftAssignment(vmId, { ...assignment, trigger: trigger as Trigger });
-  };
-
+export function TuningPanel({
+  vmId,
+  entry,
+  assignment,
+  onTriggerChange,
+  onParamChange,
+  onChangeAnimation,
+  onRemove,
+}: {
+  vmId: string;
+  entry: CatalogEntry;
+  assignment: Assignment;
+  onTriggerChange?: (trigger: Trigger) => void;
+  onParamChange?: (key: string, value: string) => void;
+  /** The "Change" link: back to the picker. */
+  onChangeAnimation?: () => void;
+  onRemove?: () => void;
+}) {
   return (
-    <div className="flex flex-col gap-4" data-testid="panel-tuning">
-      <p className="text-sm">
-        Tuning <span className="font-medium">{entry.name}</span> on{" "}
-        <span className="font-mono text-xs">{vmId}</span>
-      </p>
+    <PanelCard data-testid="panel-tuning">
+      <PanelSection>
+        <div className="flex min-w-0 items-center gap-2">
+          <ElementTag>{vmId}</ElementTag>
+          <span className="min-w-0 flex-1 truncate text-md font-semibold">{entry.name}</span>
+          <Button variant="link" className="text-sm" onClick={onChangeAnimation}>
+            Change
+          </Button>
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <label className="text-xs text-muted-foreground" htmlFor={`${uid}-trigger-select`}>
-          Trigger
-        </label>
-        <Select value={assignment.trigger} onValueChange={handleTriggerChange}>
-          <SelectTrigger id={`${uid}-trigger-select`} className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {entry.triggers.map((trigger) => (
-              <SelectItem key={trigger} value={trigger}>
-                {trigger}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+        <SectionLabel>Trigger</SectionLabel>
+        <Segmented
+          aria-label="Trigger"
+          options={entry.triggers.map((trigger) => ({
+            value: trigger,
+            label: TRIGGER_LABELS[trigger],
+          }))}
+          value={assignment.trigger}
+          onValueChange={(next) => onTriggerChange?.(next as Trigger)}
+        />
+      </PanelSection>
 
-      {entry.params.map((param) => {
-        const value = assignment.params[param.key] ?? param.default;
-        const label = param.label ?? param.key;
-        // Prefixed with this component instance's `useId()` so two
-        // `TuningPanel`s mounted at once on the same page (e.g. /dev/panel's
-        // gallery plus its live instance) never collide on `id`.
-        const controlId = `${uid}-param-${param.key}`;
+      <PanelSection className="gap-3.5">
+        {entry.params.map((param) => (
+          <ParamRow key={param.key} param={param}>
+            <ParamControlFor
+              param={param}
+              value={assignment.params[param.key] ?? param.default}
+              onChange={(value) => onParamChange?.(param.key, value)}
+            />
+          </ParamRow>
+        ))}
+      </PanelSection>
 
-        if (SLIDER_TYPES.has(param.type)) {
-          const { amount, unit } = splitValue(value);
-          const min = param.min ? splitValue(param.min).amount : 0;
-          const max = param.max ? splitValue(param.max).amount : 100;
-          const step = param.step ? splitValue(param.step).amount : 1;
-
-          return (
-            <div key={param.key} className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <label htmlFor={controlId}>{label}</label>
-                <span>{value}</span>
-              </div>
-              <Slider
-                id={controlId}
-                aria-label={label}
-                min={min}
-                max={max}
-                step={step}
-                value={[amount]}
-                onValueChange={(next) => {
-                  const nextAmount = Array.isArray(next) ? (next[0] ?? amount) : next;
-                  updateDraftParam(vmId, param.key, joinValue(nextAmount, unit));
-                }}
-              />
-            </div>
-          );
-        }
-
-        if (param.type === "color") {
-          return (
-            <div key={param.key} className="flex flex-col gap-1.5">
-              <label className="text-xs text-muted-foreground" htmlFor={controlId}>
-                {label}
-              </label>
-              <Input
-                id={controlId}
-                type="text"
-                value={value}
-                onChange={(event) => updateDraftParam(vmId, param.key, event.target.value)}
-              />
-            </div>
-          );
-        }
-
-        // easing / direction / select / iteration
-        const options = selectOptions(param);
-        return (
-          <div key={param.key} className="flex flex-col gap-1.5">
-            <label className="text-xs text-muted-foreground" htmlFor={controlId}>
-              {label}
-            </label>
-            <Select
-              value={value}
-              onValueChange={(next) => {
-                if (next !== null) updateDraftParam(vmId, param.key, next);
-              }}
-            >
-              <SelectTrigger id={controlId} className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {options.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        );
-      })}
-
-      <div className="flex items-center justify-between gap-2 pt-2">
-        <Button variant="ghost" size="sm" onClick={() => dispatchPanel({ type: "BACK" })}>
-          Back
+      <PanelSection className="flex-row items-center gap-2">
+        {/* Re-triggering the animation in the preview needs the bridge (Phase 4). */}
+        <Button variant="secondary" size="sm" glyph="↻" disabled>
+          Replay
         </Button>
-        <Button variant="destructive" size="sm" onClick={handleRemove}>
-          Remove
+        <Button variant="danger-link" className="ml-auto" onClick={onRemove}>
+          Remove animation
         </Button>
-      </div>
-    </div>
+      </PanelSection>
+    </PanelCard>
   );
 }
