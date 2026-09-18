@@ -86,6 +86,25 @@ tasks.processResources {
     }
 }
 
+// manifest.json is only read by CatalogManifestTest (a test-only cross-language parity check
+// against packages/animation-catalog's TypeScript side); the running service never needs it, so
+// it is copied into test resources only, not the production jar built by processResources above.
+val catalogManifestDir = layout.buildDirectory.dir("generated/catalogManifest")
+
+val catalogManifestResources =
+    tasks.register<Sync>("catalogManifestResources") {
+        description = "Copies packages/animation-catalog/manifest.json into API test resources only."
+        group = "build"
+        into(catalogManifestDir.map { it.dir("catalog") })
+        from(catalogSource.file("manifest.json"))
+    }
+
+sourceSets {
+    test {
+        resources.srcDir(files(catalogManifestDir).builtBy(catalogManifestResources))
+    }
+}
+
 ktlint {
     version.set(libs.versions.ktlint.get())
     reporters {

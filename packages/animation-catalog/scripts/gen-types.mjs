@@ -7,7 +7,7 @@
 import { compile } from "json-schema-to-typescript";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { listVersionFiles, pkgRoot, readCurrent, readSchema } from "./lib.mjs";
+import { listVersionFiles, pkgRoot, readCatalog, readCurrent, readSchema } from "./lib.mjs";
 
 const srcDir = path.join(pkgRoot, "src");
 mkdirSync(srcDir, { recursive: true });
@@ -64,4 +64,15 @@ export function keyframesName(animationId: string, version: string): string {
 `;
 writeFileSync(path.join(srcDir, "index.ts"), index);
 
-console.log(`gen-types: wrote src/schema.ts and src/index.ts (${files.length} version(s), current ${current})`);
+// manifest.json: a tiny, committed cross-language source of truth for the set of
+// (version, animationId) pairs, so Kotlin and TS tests can assert they agree without
+// either side importing the other's tooling. Ascending semver, ids in file order.
+const manifest = {
+  current,
+  versions: Object.fromEntries(files.map(({ version, file }) => [version, readCatalog(file).entries.map((e) => e.id)])),
+};
+writeFileSync(path.join(pkgRoot, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+
+console.log(
+  `gen-types: wrote src/schema.ts, src/index.ts and manifest.json (${files.length} version(s), current ${current})`,
+);

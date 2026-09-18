@@ -70,7 +70,7 @@
         },
         "params": {
           "type": "array",
-          "description": "Adjustable variables. The five standard keys (duration, delay, easing, iteration, direction) map to animation-* properties; any other key must declare cssVar and is set as a custom property on the element.",
+          "description": "Adjustable variables. The six standard keys (duration, delay, easing, iteration, direction, fillMode) map to animation-* properties; any other key must declare cssVar and is set as a custom property on the element.",
           "items": {
             "allOf": [
               {
@@ -86,7 +86,8 @@
                           "delay",
                           "easing",
                           "iteration",
-                          "direction"
+                          "direction",
+                          "fillMode"
                         ]
                       }
                     }
