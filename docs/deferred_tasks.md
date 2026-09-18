@@ -29,12 +29,15 @@ Status: `open` · `in-progress` · `done` · `wont-do`.
 | DT-017 | perf | Checkpoint snapshots for version history so `stateAt(N)` does not replay every diff on long histories | P3 | later | post-v0 | — | open | Trigger: a project exceeding ~200 versions. Fold cost is negligible at v0 scale. |
 | DT-018 | chore | Protect the `pr_screenshot` branch from deletion and force-push | P2 | this-phase | 0 | Chris | in-progress | Branch created and pushed 2026-09-18 with a README. Remaining: add a branch protection or ruleset in GitHub settings (needs repo admin; may require a paid plan on private repos). |
 | DT-019 | feature | "Upgrade to latest catalog" action for saved assignments pinned to an older catalog version | P3 | later | post-v0 | — | open | Explicit user action producing a new version whose diff rewrites `catalogVersion` and remaps params. v0 never auto-upgrades. |
-| DT-020 | tech-debt | `apps/web/lib/catalog.ts` hardcodes `CURRENT_CATALOG_VERSION` and the 1.0.0 import path; must be bumped by hand on a catalog release | P2 | this-phase | 3 | — | open | Phase 3 should import from `animation-catalog` (CATALOGS/CURRENT_VERSION) or read `GET /catalog`. A test asserts the constant equals the file's version so drift fails loudly. |
+| DT-020 | tech-debt | `apps/web/lib/catalog.ts` hardcodes `CURRENT_CATALOG_VERSION` and the 1.0.0 import path; must be bumped by hand on a catalog release | P2 | this-phase | 3 | — | open | Phase 3 should import from `animation-catalog` (CATALOGS/CURRENT_VERSION) or read `GET /catalog`. The web test now reads `packages/animation-catalog/current`, so a pointer bump without a web update fails the web unit gate. Still should import from `animation-catalog` in Phase 3. |
 | DT-021 | feature | MSW handlers implementing openapi.yaml so the web shell is clickable without the API | P2 | this-phase | 3 | — | open | Planned in build_plan Phase 3. |
 | DT-022 | feature | Draggable Control Panel resizer clamped 20–30% | P3 | this-phase | 3 | — | open | Phase 0 uses CSS `clamp(20%, 25%, 30%)`. |
 | DT-023 | chore | Upgrade Kotest 5.9 → 6.x | P3 | later | — | — | open | Brief pinned 5.x; 6.2.5 is current stable. |
 | DT-024 | perf | API Docker image is 547 MB; evaluate jlink or alpine JRE base | P3 | later | 8 | — | open | Starter plan pulls this on every deploy. |
 | DT-025 | chore | Root `pnpm-workspace.yaml` `onlyBuiltDependencies` list needs revisiting when deps change | P3 | later | — | — | open | Added esbuild, unrs-resolver, sharp to silence pnpm 10 build-script prompts. |
+| DT-026 | tech-debt | Web Zustand store is a module-scope singleton, shared across requests during SSR | P2 | this-phase | 4 | — | open | Harmless while nothing writes during render; Phase 4/5 populate per-user draft state. Use a context-based store factory like the QueryClient in providers.tsx. |
+| DT-027 | test | Playwright e2e runs against `next dev`, not the production build Render serves | P3 | later | 8 | — | open | Add a CI variant running against `next build && next start`. |
+| DT-028 | chore | Add a Flyway V2 discipline note: V1 baseline was edited in place before merge; local DBs migrated earlier need `docker compose down -v` | P3 | now | 0 | — | done | One-time; after PR #1 merges, migrations are append-only. |
 
 ## Bugs
 
