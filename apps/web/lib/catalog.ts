@@ -8,9 +8,14 @@
  * a live catalog is needed; assignments always resolve against the version
  * they pinned.
  */
-import { CURRENT_VERSION, getCatalog as getCatalogByVersion } from "animation-catalog";
+import {
+  CURRENT_VERSION,
+  getCatalog as getCatalogByVersion,
+  type CatalogEntry as CatalogPackageEntry,
+} from "animation-catalog";
 
 import type { Catalog, CatalogEntry } from "@/lib/api-client";
+import { resolveParams } from "@/lib/runtime-css";
 
 /**
  * Mirrors `packages/animation-catalog/current`. The editor authors against this
@@ -33,6 +38,23 @@ export function getCatalogEntries(): readonly CatalogEntry[] {
 /** One entry by id, or `undefined` when the id is not in the current catalog. */
 export function getCatalogEntry(id: string): CatalogEntry | undefined {
   return catalog.entries.find((entry) => entry.id === id);
+}
+
+/**
+ * `resolveParams` (Task 1, `lib/runtime-css`) types against the
+ * `animation-catalog` package's own `CatalogEntry` (`triggers` is a
+ * non-empty tuple, since the catalog schema requires `minItems: 1`), while
+ * this module types entries against the OpenAPI-generated `CatalogEntry`
+ * (a plain `triggers: Trigger[]`). Both describe the same runtime object —
+ * this is the one place that bridges them (the same way `getCatalog()`
+ * above already bridges the catalog file itself), so no other call site
+ * needs its own cast.
+ */
+export function resolveCatalogParams(
+  entry: CatalogEntry,
+  params?: Readonly<Record<string, string>>,
+): Record<string, string> {
+  return resolveParams(entry as unknown as CatalogPackageEntry, params);
 }
 
 export type { Catalog, CatalogEntry };

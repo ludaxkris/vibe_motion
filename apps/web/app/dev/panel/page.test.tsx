@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const notFound = vi.fn(() => {
@@ -19,10 +19,22 @@ describe("/dev/panel", () => {
 
     render(<DevPanelPage />);
 
-    expect(screen.getAllByTestId("panel-idle").length).toBeGreaterThan(0);
-    expect(screen.getByTestId("dev-panel-card-selected")).toBeInTheDocument();
-    expect(screen.getByTestId("dev-panel-card-choosing")).toBeInTheDocument();
-    expect(screen.getByTestId("dev-panel-card-tuning")).toBeInTheDocument();
+    // Each card's own wrapper testid renders regardless of its children (a
+    // card showing TuningPanel's "no draft" fallback would still satisfy a
+    // `dev-panel-card-tuning`-only assertion) — assert the panel components'
+    // own testids *inside* each card instead, so a stuck fallback fails loudly.
+    expect(
+      within(screen.getByTestId("dev-panel-card-idle")).getByTestId("panel-idle"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("dev-panel-card-selected")).getByTestId("panel-selected"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("dev-panel-card-choosing")).getByTestId("panel-choosing"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("dev-panel-card-tuning")).getByTestId("panel-tuning"),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("dev-panel-live-status")).toHaveTextContent("idle");
     expect(notFound).not.toHaveBeenCalled();
   });

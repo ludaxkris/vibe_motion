@@ -51,6 +51,9 @@ describe("transition", () => {
     it("SELECT of a different element -> selected { b }", () => {
       expect(transition(selectedA, events.SELECT_B)).toEqual({ status: "selected", vmId: "b" });
     });
+    it("SELECT of the same element with no draft is a no-op (identity)", () => {
+      expect(transition(selectedA, events.SELECT_A)).toBe(selectedA);
+    });
     it("SELECT of the same element with a draft -> tuning", () => {
       expect(transition(selectedA, events.SELECT_A_WITH_DRAFT)).toEqual(tuningA);
     });
@@ -66,14 +69,17 @@ describe("transition", () => {
     it("BACK is a no-op (nothing below selected)", () => {
       expect(transition(selectedA, events.BACK)).toBe(selectedA);
     });
-    it("CLEAR -> selected (idempotent)", () => {
-      expect(transition(selectedA, events.CLEAR)).toEqual(selectedA);
+    it("CLEAR is a no-op (identity — already selected, nothing to clear back from)", () => {
+      expect(transition(selectedA, events.CLEAR)).toBe(selectedA);
     });
   });
 
   describe("from choosing { vmId: a }", () => {
     it("SELECT of a different element -> selected { b }", () => {
       expect(transition(choosingA, events.SELECT_B)).toEqual({ status: "selected", vmId: "b" });
+    });
+    it("SELECT of the same element with no draft is a no-op (identity, not a collapse to selected)", () => {
+      expect(transition(choosingA, events.SELECT_A)).toBe(choosingA);
     });
     it("SELECT with a draft -> tuning", () => {
       expect(transition(choosingA, events.SELECT_A_WITH_DRAFT)).toEqual(tuningA);
@@ -102,6 +108,9 @@ describe("transition", () => {
   describe("from tuning { vmId: a, animationId: fade-in }", () => {
     it("SELECT of a different element -> selected { b }", () => {
       expect(transition(tuningA, events.SELECT_B)).toEqual({ status: "selected", vmId: "b" });
+    });
+    it("SELECT of the same element with no draft is a no-op (identity, not a collapse to selected)", () => {
+      expect(transition(tuningA, events.SELECT_A)).toBe(tuningA);
     });
     it("SELECT of the same element with a draft -> tuning (possibly a different animation)", () => {
       const event: PanelEvent = { type: "SELECT", vmId: "a", draftAnimationId: "scale-in" };

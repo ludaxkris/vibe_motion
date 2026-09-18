@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,7 @@ function groupByCategory(entries: readonly CatalogEntry[]): Map<string, CatalogE
 export function ChoosingPanel({ vmId }: { vmId: string }) {
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
   const [filter, setFilter] = useState("");
+  const filterId = useId();
 
   const filtered = useMemo(() => {
     const query = filter.trim().toLowerCase();
@@ -37,10 +38,10 @@ export function ChoosingPanel({ vmId }: { vmId: string }) {
       <p className="text-sm text-muted-foreground">
         Choose an animation for <span className="font-mono text-xs">{vmId}</span>
       </p>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground" htmlFor="animation-filter">
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground" htmlFor={filterId}>
         Filter
         <Input
-          id="animation-filter"
+          id={filterId}
           placeholder="Search animations…"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}

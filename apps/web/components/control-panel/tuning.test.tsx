@@ -41,13 +41,15 @@ describe("TuningPanel", () => {
   // stays `visibility: hidden` until it can. Per the accname spec a hidden
   // node's accessible name is "" even when `aria-label` is set and even when
   // the query includes hidden nodes — so these query the range input
-  // directly by its param id instead of by accessible name.
+  // directly by its param id instead of by accessible name. The id is
+  // `useId()`-prefixed (so two panels on one page never collide), so the
+  // query matches on the "-param-duration" suffix rather than the exact id.
   it("renders a slider for each duration/length/number/angle/percentage param, seeded from the draft", () => {
     const { container } = render(<TuningPanel vmId="vm-1" animationId="fade-in" />);
 
     // fade-in: duration (slider), delay (slider), easing (select).
     const durationSlider = container.querySelector<HTMLInputElement>(
-      '#param-duration input[type="range"]',
+      '[id$="-param-duration"] input[type="range"]',
     );
     expect(durationSlider).not.toBeNull();
     expect(durationSlider).toHaveAttribute("aria-valuenow", "600");
@@ -58,7 +60,7 @@ describe("TuningPanel", () => {
     const { container } = render(<TuningPanel vmId="vm-1" animationId="fade-in" />);
 
     const durationSlider = container.querySelector<HTMLInputElement>(
-      '#param-duration input[type="range"]',
+      '[id$="-param-duration"] input[type="range"]',
     )!;
     durationSlider.focus();
     fireEvent.keyDown(durationSlider, { key: "ArrowRight" });

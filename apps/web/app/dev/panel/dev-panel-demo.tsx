@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { ControlPanel } from "@/components/control-panel";
 import { ChoosingPanel } from "@/components/control-panel/choosing";
@@ -8,10 +8,8 @@ import { IdlePanel } from "@/components/control-panel/idle";
 import { SelectedPanel } from "@/components/control-panel/selected";
 import { TuningPanel } from "@/components/control-panel/tuning";
 import { Button } from "@/components/ui/button";
-import { CURRENT_CATALOG_VERSION, getCatalogEntry } from "@/lib/catalog";
-import { resolveParams } from "@/lib/runtime-css";
+import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
 import { useEditorStore } from "@/lib/store";
-import type { CatalogEntry as CatalogPackageEntry } from "animation-catalog";
 
 /** Fixed `data-vm-id` for the static four-states gallery below. */
 const GALLERY_VM_ID = "dev-vm-gallery";
@@ -25,16 +23,28 @@ const GALLERY_ANIMATION_ID = "fade-in";
  */
 const LIVE_VM_ID = "dev-vm-live";
 
-function seedGalleryDraft() {
+/**
+ * Seeds the gallery's `tuning` card draft assignment synchronously, at
+ * module load — *not* in a mount effect. An effect runs after the first
+ * paint, so the `tuning` card would flash `TuningPanel`'s "no draft"
+ * fallback before the effect caught up; seeding here means `draftState`
+ * already has it by the time `DevPanelDemo` renders for the first time.
+ * Guarded and idempotent, since this module (and so this top-level call)
+ * only ever runs once per process/test.
+ */
+function seedGalleryDraftOnce(): void {
+  const store = useEditorStore.getState();
+  if (store.draftState[GALLERY_VM_ID]) return;
   const entry = getCatalogEntry(GALLERY_ANIMATION_ID);
-  if (!entry) return null;
-  return {
+  if (!entry) return;
+  store.setDraftAssignment(GALLERY_VM_ID, {
     animationId: entry.id,
     catalogVersion: CURRENT_CATALOG_VERSION,
     trigger: entry.defaultTrigger ?? entry.triggers[0],
-    params: resolveParams(entry as unknown as CatalogPackageEntry),
-  };
+    params: resolveCatalogParams(entry),
+  });
 }
+seedGalleryDraftOnce();
 
 function StateCard({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -55,17 +65,8 @@ function StateCard({ title, children }: { title: string; children: ReactNode }) 
  */
 export function DevPanelDemo() {
   const draftState = useEditorStore((state) => state.draftState);
-  const setDraftAssignment = useEditorStore((state) => state.setDraftAssignment);
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
   const panel = useEditorStore((state) => state.panel);
-
-  useEffect(() => {
-    if (draftState[GALLERY_VM_ID]) return;
-    const assignment = seedGalleryDraft();
-    if (assignment) setDraftAssignment(GALLERY_VM_ID, assignment);
-    // Seed once, on mount only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const liveDraftAnimationId = draftState[LIVE_VM_ID]?.animationId;
 

@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { CURRENT_CATALOG_VERSION, getCatalogEntry } from "@/lib/catalog";
-import { resolveParams } from "@/lib/runtime-css";
-import type { CatalogEntry as CatalogPackageEntry } from "animation-catalog";
+import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
 
-import { initialEditorState, useEditorStore } from "./index";
+import { initialEditorState, selectSelectedVmId, selectUnsaved, useEditorStore } from "./index";
 
 beforeEach(() => {
   useEditorStore.setState({ ...initialEditorState });
@@ -14,15 +12,15 @@ describe("useEditorStore panel/draft integration", () => {
   it("starts idle with no selection and clean draft", () => {
     const state = useEditorStore.getState();
     expect(state.panel).toEqual({ status: "idle" });
-    expect(state.selectedVmId).toBeNull();
-    expect(state.unsaved).toBe(false);
+    expect(selectSelectedVmId(state)).toBeNull();
+    expect(selectUnsaved(state)).toBe(false);
   });
 
   it("setSelectedVmId dispatches SELECT and keeps selectedVmId in sync", () => {
     useEditorStore.getState().setSelectedVmId("vm-1");
     const state = useEditorStore.getState();
     expect(state.panel).toEqual({ status: "selected", vmId: "vm-1" });
-    expect(state.selectedVmId).toBe("vm-1");
+    expect(selectSelectedVmId(state)).toBe("vm-1");
   });
 
   it("setSelectedVmId(null) dispatches DESELECT", () => {
@@ -30,7 +28,7 @@ describe("useEditorStore panel/draft integration", () => {
     useEditorStore.getState().setSelectedVmId(null);
     const state = useEditorStore.getState();
     expect(state.panel).toEqual({ status: "idle" });
-    expect(state.selectedVmId).toBeNull();
+    expect(selectSelectedVmId(state)).toBeNull();
   });
 
   it("selecting an element with a draft assignment lands on tuning", () => {
@@ -56,9 +54,9 @@ describe("useEditorStore panel/draft integration", () => {
       animationId: "fade-in",
       catalogVersion: CURRENT_CATALOG_VERSION,
       trigger: entry.defaultTrigger,
-      params: resolveParams(entry as unknown as CatalogPackageEntry),
+      params: resolveCatalogParams(entry),
     });
-    expect(state.unsaved).toBe(true);
+    expect(selectUnsaved(state)).toBe(true);
     expect(state.panel).toEqual({ status: "tuning", vmId: "vm-1", animationId: "fade-in" });
   });
 
@@ -71,7 +69,7 @@ describe("useEditorStore panel/draft integration", () => {
 
     const state = useEditorStore.getState();
     expect(state.draftState["vm-1"].params.duration).toBe("900ms");
-    expect(state.unsaved).toBe(true);
+    expect(selectUnsaved(state)).toBe(true);
   });
 
   it("updateDraftParam is a no-op when the vmId has no draft assignment", () => {
@@ -84,13 +82,13 @@ describe("useEditorStore panel/draft integration", () => {
     useEditorStore.getState().setSelectedVmId("vm-1");
     useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
     useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in" });
-    expect(useEditorStore.getState().unsaved).toBe(true);
+    expect(selectUnsaved(useEditorStore.getState())).toBe(true);
 
     useEditorStore.getState().removeDraftAssignment("vm-1");
 
     const state = useEditorStore.getState();
     expect(state.draftState["vm-1"]).toBeUndefined();
-    expect(state.unsaved).toBe(false);
+    expect(selectUnsaved(state)).toBe(false);
   });
 
   it("unsaved reflects a deep comparison against currentVersionState, not identity", () => {
@@ -99,7 +97,7 @@ describe("useEditorStore panel/draft integration", () => {
       animationId: "fade-in",
       catalogVersion: CURRENT_CATALOG_VERSION,
       trigger: entry.defaultTrigger!,
-      params: resolveParams(entry as unknown as CatalogPackageEntry),
+      params: resolveCatalogParams(entry),
     };
     useEditorStore.setState({
       currentVersionState: { "vm-1": assignment },
@@ -108,10 +106,32 @@ describe("useEditorStore panel/draft integration", () => {
     // A structurally-identical but distinct object assigned to the draft
     // must not be flagged unsaved.
     useEditorStore.getState().setDraftAssignment("vm-1", { ...assignment, params: { ...assignment.params } });
-    expect(useEditorStore.getState().unsaved).toBe(false);
+    expect(selectUnsaved(useEditorStore.getState())).toBe(false);
 
     useEditorStore.getState().updateDraftParam("vm-1", "duration", "1200ms");
-    expect(useEditorStore.getState().unsaved).toBe(true);
+    expect(selectUnsaved(useEditorStore.getState())).toBe(true);
+  });
+
+  it("unsaved is derived: changing currentVersionState alone (no draft action) flips it, e.g. after a Phase 6 save/load/restore", () => {
+    const entry = getCatalogEntry("fade-in")!;
+    const assignment = {
+      animationId: "fade-in",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: entry.defaultTrigger!,
+      params: resolveCatalogParams(entry),
+    };
+
+    useEditorStore.setState({ draftState: { "vm-1": assignment } });
+    expect(selectUnsaved(useEditorStore.getState())).toBe(true);
+
+    // Nothing that touches `unsaved` directly is called — only
+    // `currentVersionState` changes (e.g. a version load/restore would do
+    // exactly this), and the derived selector still reflects it.
+    useEditorStore.setState({ currentVersionState: { "vm-1": assignment } });
+    expect(selectUnsaved(useEditorStore.getState())).toBe(false);
+
+    useEditorStore.setState({ currentVersionState: {} });
+    expect(selectUnsaved(useEditorStore.getState())).toBe(true);
   });
 
   it("reset restores the initial state", () => {

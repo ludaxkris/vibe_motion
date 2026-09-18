@@ -2,14 +2,19 @@
  * Editor store.
  *
  * Shape follows docs/architecture.md §4: the shell keeps
- * `selectedVmId · draftState · currentVersionState · unsaved · mode` in one
- * Zustand store, which the Control Panel and the bridge client both read.
+ * `draftState · currentVersionState · mode` in one Zustand store, plus the
+ * Control Panel's `panel` state machine, which the Control Panel and the
+ * bridge client both read.
  *
- * The Control Panel is driven by an explicit state machine
- * (`lib/store/panel-machine.ts`, `panel` + `dispatchPanel`). `selectedVmId`
- * and `unsaved` stay real state fields — not computed selectors — so the
- * existing readers (`components/editor/editor-shell.tsx`) keep working
- * unchanged; both are recomputed inside every action that can change them.
+ * `selectedVmId` and `unsaved` are *derived*, not stored: `selectedVmId` is a
+ * pure function of `panel`, and `unsaved` a deep comparison of `draftState`
+ * against `currentVersionState`. Mirroring them as their own state fields
+ * would require every action that can change either input to remember to
+ * recompute them — `currentVersionState` will get its own writers in Phase 6
+ * (save/load/restore) that have no reason to know about `unsaved` — so
+ * instead they're plain selectors (`selectSelectedVmId`, `selectUnsaved`)
+ * plus hook wrappers (`useSelectedVmId`, `useUnsaved`) that can never drift
+ * out of sync with the state they're computed from.
  *
  * Live preview edits stay in `draftState` and never hit the API;
  * `currentVersionState` only changes when a version is saved, loaded or
@@ -18,15 +23,7 @@
 import { create } from "zustand";
 
 import type { Assignment, EditorStateMap } from "@/lib/api-client";
-import { CURRENT_CATALOG_VERSION, getCatalogEntry } from "@/lib/catalog";
-import { resolveParams } from "@/lib/runtime-css";
-// `lib/catalog.ts` types entries against the OpenAPI-generated `CatalogEntry`
-// (a plain `triggers: Trigger[]`), while `resolveParams` types against the
-// `animation-catalog` package's own `CatalogEntry` (a non-empty tuple, since
-// the catalog schema requires `minItems: 1`). Both describe the same runtime
-// object — `lib/catalog.ts` already bridges this with a cast — so bridge it
-// here too rather than widening either module's public type.
-import type { CatalogEntry as CatalogPackageEntry } from "animation-catalog";
+import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
 
 import {
   initialPanelState,
@@ -44,14 +41,10 @@ export type EditorMode = "editing" | "viewing";
 export type EditorState = {
   /** Control Panel state machine (idle / selected / choosing / tuning). */
   panel: PanelState;
-  /** `data-vm-id` of the element selected in the preview iframe, or null when nothing is selected. Derived from `panel`. */
-  selectedVmId: string | null;
   /** Client-side draft: what the iframe currently shows. Never persisted until Save. */
   draftState: EditorStateMap;
   /** Materialised state of the version the draft was forked from. */
   currentVersionState: EditorStateMap;
-  /** True when `draftState` differs from `currentVersionState`. */
-  unsaved: boolean;
   mode: EditorMode;
 };
 
@@ -78,16 +71,10 @@ export type EditorStore = EditorState & EditorActions;
 
 export const initialEditorState: EditorState = {
   panel: initialPanelState,
-  selectedVmId: null,
   draftState: {},
   currentVersionState: {},
-  unsaved: false,
   mode: "editing",
 };
-
-function vmIdOf(panel: PanelState): string | null {
-  return panel.status === "idle" ? null : panel.vmId;
-}
 
 function assignmentsEqual(a: Assignment | undefined, b: Assignment | undefined): boolean {
   if (a === b) return true;
@@ -110,13 +97,23 @@ function statesEqual(a: EditorStateMap, b: EditorStateMap): boolean {
   return aKeys.every((key) => assignmentsEqual(a[key], b[key]));
 }
 
+/** `data-vm-id` of the element selected in the preview iframe, or null when nothing is selected. */
+export function selectSelectedVmId(state: EditorState): string | null {
+  return state.panel.status === "idle" ? null : state.panel.vmId;
+}
+
+/** True when `draftState` differs from `currentVersionState`. */
+export function selectUnsaved(state: EditorState): boolean {
+  return !statesEqual(state.draftState, state.currentVersionState);
+}
+
 export const useEditorStore = create<EditorStore>((set, get) => ({
   ...initialEditorState,
 
   dispatchPanel: (event) =>
     set((state) => {
       const panel = transition(state.panel, event);
-      const selectedVmId = vmIdOf(panel);
+      if (panel === state.panel) return state;
 
       // PICK's job is purely to choose an animation; creating the draft
       // assignment it implies (catalog defaults, pinned catalogVersion, the
@@ -129,19 +126,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
             animationId: entry.id,
             catalogVersion: CURRENT_CATALOG_VERSION,
             trigger: entry.defaultTrigger ?? entry.triggers[0],
-            params: resolveParams(entry as unknown as CatalogPackageEntry),
+            params: resolveCatalogParams(entry),
           };
-          const draftState = { ...state.draftState, [panel.vmId]: assignment };
-          return {
-            panel,
-            selectedVmId,
-            draftState,
-            unsaved: !statesEqual(draftState, state.currentVersionState),
-          };
+          return { panel, draftState: { ...state.draftState, [panel.vmId]: assignment } };
         }
       }
 
-      return { panel, selectedVmId };
+      return { panel };
     }),
 
   setSelectedVmId: (vmId) => {
@@ -154,20 +145,18 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   setDraftAssignment: (vmId, assignment) =>
-    set((state) => {
-      const draftState = { ...state.draftState, [vmId]: assignment };
-      return { draftState, unsaved: !statesEqual(draftState, state.currentVersionState) };
-    }),
+    set((state) => ({ draftState: { ...state.draftState, [vmId]: assignment } })),
 
   updateDraftParam: (vmId, key, value) =>
     set((state) => {
       const existing = state.draftState[vmId];
       if (!existing) return state;
-      const draftState = {
-        ...state.draftState,
-        [vmId]: { ...existing, params: { ...existing.params, [key]: value } },
+      return {
+        draftState: {
+          ...state.draftState,
+          [vmId]: { ...existing, params: { ...existing.params, [key]: value } },
+        },
       };
-      return { draftState, unsaved: !statesEqual(draftState, state.currentVersionState) };
     }),
 
   removeDraftAssignment: (vmId) =>
@@ -175,13 +164,23 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       if (!(vmId in state.draftState)) return state;
       const draftState = { ...state.draftState };
       delete draftState[vmId];
-      return { draftState, unsaved: !statesEqual(draftState, state.currentVersionState) };
+      return { draftState };
     }),
 
   setMode: (mode) => set({ mode }),
 
   reset: () => set({ ...initialEditorState }),
 }));
+
+/** `useEditorStore(selectSelectedVmId)`, as a named hook. */
+export function useSelectedVmId(): string | null {
+  return useEditorStore(selectSelectedVmId);
+}
+
+/** `useEditorStore(selectUnsaved)`, as a named hook. */
+export function useUnsaved(): boolean {
+  return useEditorStore(selectUnsaved);
+}
 
 export type { Assignment, EditorStateMap };
 export { transition, type PanelEvent, type PanelState } from "./panel-machine";

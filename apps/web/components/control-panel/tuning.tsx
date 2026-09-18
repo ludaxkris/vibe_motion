@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -33,8 +35,12 @@ const ITERATION_OPTIONS = ["1", "2", "3", "4", "5", "infinite"];
 const EASING_OPTIONS = ["linear", "ease", "ease-in", "ease-out", "ease-in-out"];
 const DIRECTION_OPTIONS = ["normal", "reverse", "alternate", "alternate-reverse"];
 
+function withDefault(options: readonly string[], defaultValue: string): string[] {
+  return options.includes(defaultValue) ? [...options] : [...options, defaultValue];
+}
+
 function selectOptions(param: CatalogParam): string[] {
-  if (param.options?.length) return param.options;
+  if (param.options?.length) return withDefault(param.options, param.default);
   const fallback =
     param.type === "iteration"
       ? ITERATION_OPTIONS
@@ -43,7 +49,7 @@ function selectOptions(param: CatalogParam): string[] {
         : param.type === "easing"
           ? EASING_OPTIONS
           : [];
-  return fallback.includes(param.default) ? fallback : [...fallback, param.default];
+  return withDefault(fallback, param.default);
 }
 
 /**
@@ -60,17 +66,27 @@ export function TuningPanel({ vmId, animationId }: { vmId: string; animationId: 
   const setDraftAssignment = useEditorStore((state) => state.setDraftAssignment);
   const removeDraftAssignment = useEditorStore((state) => state.removeDraftAssignment);
   const assignment = useEditorStore((state) => state.draftState[vmId]);
+  const uid = useId();
 
   const entry = getCatalogEntry(animationId);
 
-  if (!entry || !assignment) {
-    // Defensive: the machine only reaches `tuning` via PICK, which always
-    // creates the draft assignment first, so this should not happen in
-    // practice — but the panel must still render something sensible if the
-    // draft and the panel state ever disagree.
+  // Defensive: the machine only reaches `tuning` via PICK, which always both
+  // resolves the catalog entry and creates the draft assignment together, so
+  // neither of these should happen in practice — but the two failure modes
+  // are distinct (a stale/removed catalog entry vs. a draft that was cleared
+  // out from under an already-mounted panel) and worth telling apart rather
+  // than folding into one generic message.
+  if (!entry) {
     return (
-      <p className="text-sm text-muted-foreground" data-testid="panel-tuning-empty">
-        This animation is no longer available.
+      <p className="text-sm text-muted-foreground" data-testid="panel-tuning-missing-entry">
+        This animation is no longer in the catalog.
+      </p>
+    );
+  }
+  if (!assignment) {
+    return (
+      <p className="text-sm text-muted-foreground" data-testid="panel-tuning-missing-draft">
+        No draft assignment for this element yet.
       </p>
     );
   }
@@ -93,11 +109,11 @@ export function TuningPanel({ vmId, animationId }: { vmId: string; animationId: 
       </p>
 
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs text-muted-foreground" htmlFor="trigger-select">
+        <label className="text-xs text-muted-foreground" htmlFor={`${uid}-trigger-select`}>
           Trigger
         </label>
         <Select value={assignment.trigger} onValueChange={handleTriggerChange}>
-          <SelectTrigger id="trigger-select" className="w-full">
+          <SelectTrigger id={`${uid}-trigger-select`} className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -113,7 +129,10 @@ export function TuningPanel({ vmId, animationId }: { vmId: string; animationId: 
       {entry.params.map((param) => {
         const value = assignment.params[param.key] ?? param.default;
         const label = param.label ?? param.key;
-        const controlId = `param-${param.key}`;
+        // Prefixed with this component instance's `useId()` so two
+        // `TuningPanel`s mounted at once on the same page (e.g. /dev/panel's
+        // gallery plus its live instance) never collide on `id`.
+        const controlId = `${uid}-param-${param.key}`;
 
         if (SLIDER_TYPES.has(param.type)) {
           const { amount, unit } = splitValue(value);

@@ -8,7 +8,7 @@ import { ControlPanel } from "@/components/control-panel";
 import { Button } from "@/components/ui/button";
 import { apiClient, type Project } from "@/lib/api-client";
 import { previewPageUrl } from "@/lib/preview-url";
-import { useEditorStore } from "@/lib/store";
+import { useEditorStore, useUnsaved } from "@/lib/store";
 
 import { SplitPane } from "./split-pane";
 
@@ -36,7 +36,7 @@ async function fetchProject(projectId: string): Promise<Project> {
  */
 export function EditorShell({ projectId }: { projectId: string }) {
   const reset = useEditorStore((state) => state.reset);
-  const unsaved = useEditorStore((state) => state.unsaved);
+  const unsaved = useUnsaved();
 
   // A fresh project means a fresh draft: the previous project's selection and
   // client-side draft must not leak across navigations.

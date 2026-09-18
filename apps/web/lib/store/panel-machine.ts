@@ -31,26 +31,36 @@ export const initialPanelState: PanelState = { status: "idle" };
 
 /**
  * Pure and total: every (state, event) pair returns a `PanelState`. An event
- * that does not apply to the current state returns `state` unchanged.
+ * that does not apply to the current state returns `state` unchanged — by
+ * identity (`===`), not just by value, so a store built on this (Zustand's
+ * `set`) never re-renders subscribers over a no-op.
  *
- * - `SELECT` always lands on `selected { vmId }`, or `tuning { vmId, animationId }`
+ * - `SELECT` lands on `selected { vmId }`, or `tuning { vmId, animationId }`
  *   when `draftAnimationId` is given (the element already has a draft
- *   assignment) — from any current state, including reselecting the same
- *   element.
+ *   assignment) — from any current state. Reselecting the *same* element
+ *   with no draft is a no-op (identity): it must not collapse `choosing` or
+ *   `tuning` back down to `selected`, since nothing about the element
+ *   actually changed.
  * - `DESELECT` returns to `idle` from any non-idle state.
  * - `CHOOSE_CUSTOM` only applies from `selected` -> `choosing`.
  * - `PICK` only applies from `choosing` -> `tuning`.
  * - `BACK` walks tuning -> choosing -> selected; a no-op elsewhere.
- * - `CLEAR` drops back to `selected { vmId }` from `choosing`/`tuning`/`selected`
+ * - `CLEAR` drops back to `selected { vmId }` from `choosing`/`tuning`
  *   (used when the draft assignment for the current element is removed); a
- *   no-op from `idle`.
+ *   no-op from `idle` or `selected` (already there — nothing to clear back
+ *   from).
  */
 export function transition(state: PanelState, event: PanelEvent): PanelState {
   switch (event.type) {
-    case "SELECT":
-      return event.draftAnimationId
-        ? { status: "tuning", vmId: event.vmId, animationId: event.draftAnimationId }
-        : { status: "selected", vmId: event.vmId };
+    case "SELECT": {
+      const sameElement = state.status !== "idle" && state.vmId === event.vmId;
+
+      if (event.draftAnimationId) {
+        return { status: "tuning", vmId: event.vmId, animationId: event.draftAnimationId };
+      }
+
+      return sameElement ? state : { status: "selected", vmId: event.vmId };
+    }
 
     case "DESELECT":
       return state.status === "idle" ? state : { status: "idle" };
@@ -69,7 +79,9 @@ export function transition(state: PanelState, event: PanelEvent): PanelState {
       return state;
 
     case "CLEAR":
-      return state.status === "idle" ? state : { status: "selected", vmId: state.vmId };
+      return state.status === "choosing" || state.status === "tuning"
+        ? { status: "selected", vmId: state.vmId }
+        : state;
 
     default:
       return state;

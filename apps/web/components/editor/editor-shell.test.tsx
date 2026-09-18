@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { apiClient, type Project } from "@/lib/api-client";
 import { env } from "@/lib/env";
-import { initialEditorState, useEditorStore } from "@/lib/store";
+import { initialEditorState, selectSelectedVmId, useEditorStore } from "@/lib/store";
 import { server } from "@/mocks/server";
 
 import { EditorShell } from "./editor-shell";
@@ -113,7 +113,7 @@ describe("EditorShell", () => {
   it("resets the editor store when the project id changes", async () => {
     const projectA = await createProject();
     const projectB = await createProject();
-    useEditorStore.setState({ selectedVmId: "vm-something" });
+    useEditorStore.getState().dispatchPanel({ type: "SELECT", vmId: "vm-something" });
 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     function Wrapper({ children }: { children: ReactNode }) {
@@ -122,12 +122,12 @@ describe("EditorShell", () => {
     const { rerender } = render(<EditorShell projectId={projectA.id} />, { wrapper: Wrapper });
     await screen.findByText(projectA.title);
 
-    expect(useEditorStore.getState().selectedVmId).toBeNull();
+    expect(selectSelectedVmId(useEditorStore.getState())).toBeNull();
 
-    useEditorStore.setState({ selectedVmId: "vm-something-else" });
+    useEditorStore.getState().dispatchPanel({ type: "SELECT", vmId: "vm-something-else" });
     rerender(<EditorShell projectId={projectB.id} />);
     await screen.findByText(projectB.title);
 
-    expect(useEditorStore.getState().selectedVmId).toBeNull();
+    expect(selectSelectedVmId(useEditorStore.getState())).toBeNull();
   });
 });
