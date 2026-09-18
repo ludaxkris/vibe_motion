@@ -68,8 +68,14 @@ export type Harness = {
   /** Payloads of every message of `type` the bridge posted, oldest first. */
   payloads(type: string): unknown[];
   el(vmId: string): HTMLElement;
+  /** The bridge's own `<style id="vm-runtime">`, which is the last one if the page had one too. */
   runtimeStyle(): HTMLStyleElement | null;
+  runtimeSheet(): CSSStyleSheet | null;
+  /** Its rules as text. The bridge drives the sheet through CSSOM, so the element has no text. */
   runtimeCss(): string;
+  runtimeRules(): string[];
+  /** The names of the `@keyframes` rules currently in the sheet, in order. */
+  keyframeNames(): string[];
   overlay(): HTMLElement | null;
   /** Fire the shared IntersectionObserver for one element. */
   intersect(vmId: string, isIntersecting: boolean): void;
@@ -90,6 +96,30 @@ export type Harness = {
   ): void;
   destroy(): void;
 };
+
+/**
+ * The bridge's own `<style id="vm-runtime">`. A page may already carry that id (a page Vibe
+ * Motion exported earlier, then re-cloned), and the bridge deliberately does not adopt it, so
+ * the two are told apart by the cursor rule the bridge always inserts first.
+ */
+function bridgeStyle(document: Document): HTMLStyleElement | null {
+  const all = Array.from(document.querySelectorAll<HTMLStyleElement>("style#vm-runtime"));
+  const ours = all.find((style) => {
+    const sheet = style.sheet;
+    return !!sheet && Array.from(sheet.cssRules).some((rule) => rule.cssText.indexOf("data-vm-mode") >= 0);
+  });
+  return ours ?? null;
+}
+
+/**
+ * Every harness built so far. Each one holds a JSDOM window with document-level capture
+ * listeners on it, so `afterEach(destroyAll)` in each spec file keeps them from piling up.
+ */
+const live: Harness[] = [];
+
+export function destroyAll(): void {
+  while (live.length) live.pop()?.destroy();
+}
 
 export function loadBridge(html: string, opts: { parentOrigin?: string | null } = {}): Harness {
   const parentOrigin = opts.parentOrigin === undefined ? PARENT_ORIGIN : opts.parentOrigin;
@@ -192,7 +222,7 @@ export function loadBridge(html: string, opts: { parentOrigin?: string | null } 
     return found;
   }
 
-  return {
+  const harness: Harness = {
     window,
     document,
     sent,
@@ -223,11 +253,29 @@ export function loadBridge(html: string, opts: { parentOrigin?: string | null } 
     },
     el,
     runtimeStyle() {
-      return document.getElementById("vm-runtime") as HTMLStyleElement | null;
+      return bridgeStyle(document);
+    },
+    runtimeSheet() {
+      return bridgeStyle(document)?.sheet ?? null;
+    },
+    runtimeRules() {
+      const sheet = bridgeStyle(document)?.sheet;
+      return sheet ? Array.from(sheet.cssRules).map((rule) => rule.cssText) : [];
     },
     runtimeCss() {
-      const style = document.getElementById("vm-runtime");
-      return style ? (style.textContent ?? "") : "";
+      const sheet = bridgeStyle(document)?.sheet;
+      return sheet
+        ? Array.from(sheet.cssRules)
+            .map((rule) => rule.cssText)
+            .join("\n")
+        : "";
+    },
+    keyframeNames() {
+      const sheet = bridgeStyle(document)?.sheet;
+      if (!sheet) return [];
+      return Array.from(sheet.cssRules)
+        .filter((rule): rule is CSSKeyframesRule => rule.type === 7)
+        .map((rule) => rule.name);
     },
     overlay() {
       return document.querySelector<HTMLElement>("[data-vm-overlay]");
@@ -272,6 +320,8 @@ export function loadBridge(html: string, opts: { parentOrigin?: string | null } 
       window.close();
     },
   };
+  live.push(harness);
+  return harness;
 }
 
 /**

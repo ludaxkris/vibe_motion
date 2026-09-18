@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 
-import { FIXTURE, PARENT_ORIGIN, loadBridge } from "./harness";
+import { FIXTURE, PARENT_ORIGIN, destroyAll, loadBridge } from "./harness";
+
+afterEach(destroyAll);
 
 describe("handshake", () => {
   it("sends ready once on load with the tagged element count and the protocol version", () => {
@@ -90,6 +92,43 @@ describe("handshake", () => {
 
     expect(h.payloads("ready")).toHaveLength(2);
     expect(h.acks()).toEqual([]);
+  });
+
+  it("normalises the parent origin, so a trailing slash is not a half-dead bridge", () => {
+    const h = loadBridge(FIXTURE, { parentOrigin: `${PARENT_ORIGIN}/editor/` });
+
+    h.send({ type: "hello", payload: {}, seq: 1 }, { origin: PARENT_ORIGIN });
+
+    expect(h.sent[0].targetOrigin).toBe(PARENT_ORIGIN);
+    expect(h.lastAck()).toMatchObject({ seq: 1, ok: true });
+  });
+
+  it("treats an unparseable parent origin as no parent at all", () => {
+    const h = loadBridge(FIXTURE, { parentOrigin: "not a url" });
+
+    h.send({ type: "hello", payload: {}, seq: 1 });
+
+    expect(h.sent).toEqual([]);
+  });
+
+  it("stays an ordinary page when there is no shell to talk to", () => {
+    // Someone opened GET /projects/{id}/page directly: it must behave like the page it clones.
+    const h = loadBridge(
+      `<!doctype html><html><body>
+         <a href="https://example.test/away" data-vm-id="vm-link">away</a>
+         <form action="/post"><button type="submit">go</button></form>
+       </body></html>`,
+      { parentOrigin: null },
+    );
+
+    expect(h.overlay()).toBeNull();
+    expect(h.document.documentElement.getAttribute("data-vm-mode")).toBeNull();
+    expect(h.document.documentElement.style.cursor).toBe("");
+    expect(h.click(h.el("vm-link")).defaultPrevented).toBe(false);
+    const form = h.document.querySelector("form") as HTMLFormElement;
+    const submit = new h.window.Event("submit", { bubbles: true, cancelable: true });
+    form.dispatchEvent(submit);
+    expect(submit.defaultPrevented).toBe(false);
   });
 
   it("keeps the clone from navigating: clicks and submits are prevented in the capture phase", () => {

@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 
-import { FIXTURE, applied, loadBridge, page } from "./harness";
+import { FIXTURE, applied, destroyAll, loadBridge, page } from "./harness";
 import { IN_VIEW_THRESHOLD } from "../src/protocol";
+
+afterEach(destroyAll);
 
 const hostPage = page(`
   <h1 data-vm-id="vm-heading" style="animation-duration: 9s">Heading</h1>
@@ -393,7 +395,8 @@ describe("replay", () => {
       payload: applied({ keyframesName: "vm-scale-in-v1-1-0", keyframesCss: "@keyframes vm-scale-in-v1-1-0 { to { transform: none } }" }),
       seq: 3,
     });
-    expect(names).toEqual(["vm-scale-in-v1-1-0", "none", "vm-scale-in-v1-1-0"]);
+    // `none` then the new name, with no discarded full render in front of it.
+    expect(names).toEqual(["none", "vm-scale-in-v1-1-0"]);
   });
 });
 
@@ -482,6 +485,31 @@ describe("preview", () => {
 
     h.send({ type: "clear", payload: { vmId: "vm-button" }, seq: 4 });
     expect(h.runtimeCss()).not.toContain("@keyframes vm-fade-in-up-v1-1-0");
+  });
+
+  it("is not restarted by an apply underneath it (spec D6)", () => {
+    const h = loadBridge(hostPage);
+    h.send({ type: "apply", payload: applied(), seq: 1 });
+    h.send({ type: "preview", payload: previewAssignment, seq: 2 });
+    const writes: string[] = [];
+    const el = h.el("vm-heading");
+    const write = el.style.setProperty.bind(el.style);
+    vi.spyOn(el.style, "setProperty").mockImplementation((prop: string, value: string | null, priority?: string) => {
+      if (prop === "animation-name") writes.push(value ?? "");
+      write(prop, value, priority);
+    });
+
+    h.send({
+      type: "apply",
+      payload: applied({
+        keyframesName: "vm-scale-in-v1-1-0",
+        keyframesCss: "@keyframes vm-scale-in-v1-1-0 { to { transform: none } }",
+      }),
+      seq: 3,
+    });
+
+    expect(writes).toEqual([]);
+    expect(el.style.getPropertyValue("animation-name")).toBe("vm-pulse-v1-1-0");
   });
 
   it("is dropped by state:load", () => {

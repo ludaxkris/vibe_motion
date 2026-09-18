@@ -43,9 +43,35 @@
   // Wiring
   // ---------------------------------------------------------------------------------------
 
+  /**
+   * `WEB_ORIGIN` is injected as-is, and a value with a trailing slash or a path would still work
+   * as an outbound `targetOrigin` (the browser parses it) while never matching an inbound
+   * `event.origin`: a frame that loads, handshakes, and then silently ignores everything. Parse
+   * it once here so that failure mode cannot exist.
+   *
+   * @param {string | null | undefined} value
+   * @returns {string | null}
+   */
+  function normaliseOrigin(value) {
+    if (!value) return null;
+    try {
+      var origin = new URL(value).origin;
+      return origin && origin !== "null" ? origin : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   // Read at evaluation time: `document.currentScript` is only meaningful while the script runs.
   var ownScript = document.currentScript;
-  var parentOrigin = (ownScript && ownScript.dataset && ownScript.dataset.vmParentOrigin) || null;
+  var parentOrigin = normaliseOrigin(ownScript && ownScript.dataset ? ownScript.dataset.vmParentOrigin : null);
+
+  /**
+   * No shell to talk to means this is not a preview: someone opened the cloned page directly.
+   * It then stays an ordinary page (spec D7 / §2) — no overlay, no crosshair, and links and
+   * forms still work.
+   */
+  var hasShell = !!parentOrigin && window.parent !== window;
 
   var initialised = false;
 
@@ -62,7 +88,7 @@
    * @param {unknown} payload
    */
   function post(type, payload) {
-    if (!parentOrigin || window.parent === window) return;
+    if (!hasShell || !parentOrigin) return;
     try {
       window.parent.postMessage({ source: MESSAGE_SOURCE, type: type, payload: payload }, parentOrigin);
     } catch (error) {
@@ -87,7 +113,7 @@
   }
 
   function ensureInit() {
-    if (initialised || !document.body) return;
+    if (initialised || !hasShell || !document.body) return;
     initialised = true;
     buildElementMap();
     createOverlay();
@@ -96,6 +122,9 @@
 
   function announceReady() {
     ensureInit();
+    // Never answer before the element map exists, or `hello` from a shell that mounted early
+    // would report `elementCount: 0`.
+    if (!initialised) return;
     post("ready", {
       elementCount: elements.size,
       bridgeVersion: BRIDGE_VERSION,
@@ -138,43 +167,90 @@
   // ---------------------------------------------------------------------------------------
 
   var runtimeStyle = /** @type {HTMLStyleElement | null} */ (null);
-  var runtimeText = "";
-  var runtimeDirty = false;
-  /** keyframesName -> the CSS body and how many assignments reference it. */
-  var keyframeRefs = /** @type {Map<string, { css: string, count: number }>} */ (new Map());
-  /** vmId -> the base-styles declarations of whatever is currently rendered on it. */
-  var baseRules = /** @type {Map<string, string>} */ (new Map());
+  var runtimeSheet = /** @type {CSSStyleSheet | null} */ (null);
+  /** keyframesName -> its live rule, the CSS it came from, and how many assignments want it. */
+  var keyframeRefs = /** @type {Map<string, { rule: CSSRule, css: string, count: number }>} */ (new Map());
+  /** vmId -> the live base-styles rule and the declarations currently in it. */
+  var baseRules = /** @type {Map<string, { rule: CSSStyleRule, css: string }>} */ (new Map());
 
-  function ensureRuntimeStyle() {
-    if (runtimeStyle && runtimeStyle.parentNode) return runtimeStyle;
-    var existing = document.getElementById(RUNTIME_STYLE_ID);
-    if (existing) {
-      runtimeStyle = /** @type {HTMLStyleElement} */ (existing);
-      return runtimeStyle;
-    }
+  /** The crosshair, as a rule rather than an inline style on <html> (N4). */
+  var CURSOR_RULE =
+    ':root[data-vm-mode="edit"], :root[data-vm-mode="edit"] * { cursor: crosshair !important; }';
+
+  /**
+   * Our own `<style id="vm-runtime">`, never one the page already had: a page previously exported
+   * by Vibe Motion carries that id with live host CSS in it, and adopting it would hand us
+   * someone else's rules to delete.
+   */
+  function ensureRuntimeSheet() {
+    if (runtimeStyle && runtimeStyle.parentNode && runtimeStyle.sheet) return runtimeStyle.sheet;
     var created = document.createElement("style");
     created.id = RUNTIME_STYLE_ID;
     (document.head || document.documentElement).appendChild(created);
     runtimeStyle = created;
-    return created;
+    runtimeSheet = created.sheet;
+    if (runtimeSheet) {
+      try {
+        runtimeSheet.insertRule(CURSOR_RULE, 0);
+      } catch (error) {
+        /* An engine that will not take the rule simply shows the page's own cursors. */
+      }
+    }
+    return runtimeSheet;
   }
 
   /**
+   * @param {CSSRule} rule
+   * @returns {number}
+   */
+  function ruleIndex(rule) {
+    if (!runtimeSheet) return -1;
+    return Array.prototype.indexOf.call(runtimeSheet.cssRules, rule);
+  }
+
+  /** @param {CSSRule} rule */
+  function dropRule(rule) {
+    var index = ruleIndex(rule);
+    if (index >= 0 && runtimeSheet) runtimeSheet.deleteRule(index);
+  }
+
+  /**
+   * Add one `@keyframes` block, or take another reference on one already there.
+   *
+   * The CSS never goes through string concatenation: it is parsed by the engine and then checked
+   * as a *rule*, so a `keyframesCss` that is not exactly one `@keyframes` block with the promised
+   * name cannot land. That is the difference between checking a string prefix and knowing what
+   * the browser actually parsed, and it closes the injection route that Phase 5's generated
+   * animations would otherwise open.
+   *
    * @param {string} name
    * @param {string} css
+   * @returns {boolean} false when the payload should be rejected
    */
   function acquireKeyframes(name, css) {
     var entry = keyframeRefs.get(name);
     if (entry) {
+      // A name is a pinned catalog version, so the same name with different bodies is a bug in
+      // the sender, not something to resolve last-writer-wins.
+      if (entry.css !== css) return false;
       entry.count += 1;
-      if (entry.css !== css) {
-        entry.css = css;
-        runtimeDirty = true;
-      }
-      return;
+      return true;
     }
-    keyframeRefs.set(name, { css: css, count: 1 });
-    runtimeDirty = true;
+    var sheet = ensureRuntimeSheet();
+    if (!sheet) return false;
+    var rule;
+    try {
+      rule = sheet.cssRules[sheet.insertRule(css, sheet.cssRules.length)];
+    } catch (error) {
+      return false;
+    }
+    var keyframesType = window.CSSRule ? window.CSSRule.KEYFRAMES_RULE : 7;
+    if (rule.type !== keyframesType || /** @type {CSSKeyframesRule} */ (rule).name !== name) {
+      dropRule(rule);
+      return false;
+    }
+    keyframeRefs.set(name, { rule: rule, css: css, count: 1 });
+    return true;
   }
 
   /** @param {string | null | undefined} name */
@@ -185,36 +261,44 @@
     entry.count -= 1;
     if (entry.count > 0) return;
     keyframeRefs.delete(name);
-    runtimeDirty = true;
+    dropRule(entry.rule);
   }
 
   /**
+   * One `[data-vm-id="…"] { … }` rule per assignment with base styles.
+   *
+   * The declarations are set with `style.cssText`, which parses a declaration list: a stray `}`
+   * in there ends up discarded rather than closing our rule and opening one of the sender's.
+   *
    * @param {string} vmId
    * @param {string} css
    */
   function setBaseRule(vmId, css) {
-    var current = baseRules.get(vmId) || "";
+    var entry = baseRules.get(vmId);
     var next = css || "";
-    if (current === next) return;
-    if (next) baseRules.set(vmId, next);
-    else baseRules.delete(vmId);
-    runtimeDirty = true;
-  }
-
-  function flushRuntime() {
-    if (!runtimeDirty) return;
-    runtimeDirty = false;
-    var parts = /** @type {string[]} */ ([]);
-    keyframeRefs.forEach(function (entry) {
-      parts.push(entry.css);
-    });
-    baseRules.forEach(function (css, vmId) {
-      parts.push("[" + ID_ATTR + '="' + vmId + '"] { ' + css + " }");
-    });
-    var text = parts.join("\n");
-    if (text === runtimeText) return;
-    runtimeText = text;
-    ensureRuntimeStyle().textContent = text;
+    if (!next) {
+      if (!entry) return;
+      baseRules.delete(vmId);
+      dropRule(entry.rule);
+      return;
+    }
+    if (entry) {
+      if (entry.css === next) return;
+      entry.css = next;
+      entry.rule.style.cssText = next;
+      return;
+    }
+    var sheet = ensureRuntimeSheet();
+    if (!sheet) return;
+    try {
+      var rule = /** @type {CSSStyleRule} */ (
+        sheet.cssRules[sheet.insertRule("[" + ID_ATTR + '="' + vmId + '"] {}', sheet.cssRules.length)]
+      );
+      rule.style.cssText = next;
+      baseRules.set(vmId, { rule: rule, css: next });
+    } catch (error) {
+      /* A selector the engine will not take means no base styles, not a broken frame. */
+    }
   }
 
   // ---------------------------------------------------------------------------------------
@@ -344,6 +428,32 @@
     for (var j = 0; j < stale.length; j += 1) restoreProp(record, stale[j]);
   }
 
+  /**
+   * Every `animation-*` longhand at its initial value, except `animation-name` and
+   * `animation-play-state`, which the bridge sets explicitly on every render.
+   */
+  var ANIMATION_INITIALS = [
+    ["animation-duration", "0s"],
+    ["animation-timing-function", "ease"],
+    ["animation-delay", "0s"],
+    ["animation-iteration-count", "1"],
+    ["animation-direction", "normal"],
+    ["animation-fill-mode", "none"],
+  ];
+
+  var timelineSupported = /** @type {boolean | null} */ (null);
+
+  function supportsTimeline() {
+    if (timelineSupported === null) {
+      timelineSupported = !!(
+        window.CSS &&
+        window.CSS.supports &&
+        window.CSS.supports("animation-timeline", "auto")
+      );
+    }
+    return timelineSupported;
+  }
+
   /** A preview is always armed; `replaying` is the one-shot arm that `replay` forces. */
   /** @param {ElementRecord} record */
   function isArmed(record) {
@@ -379,6 +489,17 @@
     }
     if (armed || holding) {
       desired.push(["animation-name", assignment.keyframesName, true]);
+      // The group is only coherent if it is *whole*: any longhand the style map leaves out is
+      // written at its initial value, so a host `animation: spin 2s linear infinite` cannot
+      // retime our animation or leave it looping forever (spec D3). Pushed before the style map,
+      // which therefore wins for everything it does carry.
+      for (var i = 0; i < ANIMATION_INITIALS.length; i += 1) {
+        var initial = ANIMATION_INITIALS[i];
+        if (!Object.prototype.hasOwnProperty.call(style, initial[0])) desired.push([initial[0], initial[1], true]);
+      }
+      if (supportsTimeline() && !Object.prototype.hasOwnProperty.call(style, "animation-timeline")) {
+        desired.push(["animation-timeline", "auto", true]);
+      }
       for (key in style) {
         if (!Object.prototype.hasOwnProperty.call(style, key)) continue;
         if (key.indexOf("--") !== 0) desired.push([key, style[key], true]);
@@ -527,23 +648,24 @@
   function setApplied(record, assignment) {
     var previous = record.applied;
     // Acquire before releasing, so a param-only change on the same keyframes name never drops
-    // the reference count to zero and rewrites the stylesheet for nothing.
-    acquireKeyframes(assignment.keyframesName, assignment.keyframesCss);
+    // the reference count to zero and touches the stylesheet for nothing.
+    if (!acquireKeyframes(assignment.keyframesName, assignment.keyframesCss)) return false;
     if (previous) releaseKeyframes(previous.keyframesName);
     record.applied = assignment;
     updateArming(record, previous ? previous.trigger : null);
     syncBaseRule(record);
-    render(record);
     // Spec §3: a change of animation, trigger or base styles replays once; a param-only change
-    // must not restart, or every slider tick would stutter.
-    if (
-      previous &&
+    // must not restart, or every slider tick would stutter. Spec D6: an apply that arrives
+    // during a preview updates the layer underneath and leaves the preview playing.
+    var changedAnimation =
+      !!previous &&
+      !record.preview &&
       (previous.keyframesName !== assignment.keyframesName ||
         previous.trigger !== assignment.trigger ||
-        previous.baseStyles !== assignment.baseStyles)
-    ) {
-      restart(record, false);
-    }
+        previous.baseStyles !== assignment.baseStyles);
+    if (changedAnimation && isArmed(record)) restart(record, false);
+    else render(record);
+    return true;
   }
 
   /** @param {ElementRecord} record */
@@ -617,8 +739,12 @@
     root.appendChild(selectBox);
     document.body.appendChild(root);
     overlayRoot = root;
-    // The whole page is a click target, so say so.
-    document.documentElement.style.setProperty("cursor", "crosshair");
+    // The whole page is a click target, so say so. As an attribute plus a rule in our own sheet,
+    // not an inline style: inline would clobber a host `cursor` with no way back, and an
+    // inherited value loses to the UA's `cursor: pointer` on exactly the links and buttons the
+    // designer clicks most. Phase 6's reserved `mode: "view"` is then one attribute flip.
+    ensureRuntimeSheet();
+    document.documentElement.setAttribute("data-vm-mode", "edit");
   }
 
   /**
@@ -642,6 +768,36 @@
   function syncOverlay() {
     positionBox(hoverBox, hoveredVmId ? elements.get(hoveredVmId) : undefined);
     positionBox(selectBox, selectedVmId ? elements.get(selectedVmId) : undefined);
+  }
+
+  var overlayResize = /** @type {ResizeObserver | null} */ (null);
+
+  /**
+   * Scroll and resize are not the only things that move a box. A late image or font load in the
+   * clone shifts everything under it, `baseStyles` can change the box itself, and an `apply`
+   * during an animation leaves the ring where the element used to be. One observer on the root
+   * plus the two elements the overlay is actually drawing catches all of it, without a per-frame
+   * loop chasing the element through its animation: the ring marks the resting box.
+   */
+  function observeOverlayTargets() {
+    if (!overlayResize) {
+      // Read at call time: jsdom has none, and old engines may not either.
+      var Ctor = window.ResizeObserver;
+      if (!Ctor) return;
+      overlayResize = new Ctor(scheduleOverlaySync);
+      overlayResize.observe(document.documentElement);
+    }
+    var keep = /** @type {Element[]} */ ([document.documentElement]);
+    if (hoveredVmId) {
+      var hovered = elements.get(hoveredVmId);
+      if (hovered) keep.push(hovered);
+    }
+    if (selectedVmId) {
+      var selected = elements.get(selectedVmId);
+      if (selected) keep.push(selected);
+    }
+    overlayResize.disconnect();
+    for (var i = 0; i < keep.length; i += 1) overlayResize.observe(keep[i]);
   }
 
   function scheduleOverlaySync() {
@@ -750,6 +906,7 @@
       else overlayRoot.removeAttribute(HOVERED_ATTR);
     }
     positionBox(hoverBox, nearest ? elements.get(nearest) : undefined);
+    observeOverlayTargets();
     // Only on a change: a message per mouse move would flood the channel (spec §6).
     post("element:hover", nearest ? elementInfo(nearest) : { vmId: null });
   }
@@ -835,6 +992,7 @@
     }
     if (selectLabel) selectLabel.textContent = label || "";
     positionBox(selectBox, vmId ? elements.get(vmId) : undefined);
+    observeOverlayTargets();
   }
 
   // ---------------------------------------------------------------------------------------
@@ -846,7 +1004,7 @@
    * `ack` error code. Types that are not in here are ignored on purpose, so the shell can add
    * message types (`mode`, `elements:query`) before every frame in the wild serves a new bridge.
    *
-   * @type {Record<string, (payload: any) => { ok: boolean; error?: string } | void>}
+   * @type {Record<string, (payload: any) => { ok: boolean; error?: string; unknownVmIds?: string[] } | void>}
    */
   var HANDLERS = {
     hello: function () {
@@ -857,7 +1015,7 @@
       if (!validateApplied(payload)) return { ok: false, error: "invalid-payload" };
       var record = recordFor(payload.vmId);
       if (!record) return { ok: false, error: "unknown-element" };
-      setApplied(record, payload);
+      if (!setApplied(record, payload)) return { ok: false, error: "invalid-payload" };
     },
 
     clear: function (payload) {
@@ -876,6 +1034,16 @@
       for (var i = 0; i < list.length; i += 1) {
         if (!validateApplied(list[i])) return { ok: false, error: "invalid-payload" };
       }
+      // Take a reference on every keyframes body up front: a body that does not parse rejects
+      // the batch before a single assignment has been torn down.
+      var held = /** @type {string[]} */ ([]);
+      for (var a = 0; a < list.length; a += 1) {
+        if (!acquireKeyframes(list[a].keyframesName, list[a].keyframesCss)) {
+          for (var b = 0; b < held.length; b += 1) releaseKeyframes(held[b]);
+          return { ok: false, error: "invalid-payload" };
+        }
+        held.push(list[a].keyframesName);
+      }
       // Spec §3: `state:load` clears every assignment *and* the preview, then applies the list.
       dropPreview();
       var open = /** @type {ElementRecord[]} */ ([]);
@@ -883,21 +1051,28 @@
         open.push(record);
       });
       for (var j = 0; j < open.length; j += 1) clearApplied(open[j]);
-      var missing = false;
+      var unknownVmIds = /** @type {string[]} */ ([]);
       for (var k = 0; k < list.length; k += 1) {
         var record = recordFor(list[k].vmId);
         if (!record) {
-          missing = true;
+          if (unknownVmIds.indexOf(list[k].vmId) < 0) unknownVmIds.push(list[k].vmId);
           continue;
         }
         setApplied(record, list[k]);
       }
-      if (missing) return { ok: false, error: "unknown-element" };
+      for (var c = 0; c < held.length; c += 1) releaseKeyframes(held[c]);
+      // A bulk load is not fatal when the page has moved on: it applies what it can and names
+      // what it could not (spec §3 ack).
+      return { ok: true, unknownVmIds: unknownVmIds };
     },
 
     replay: function (payload) {
-      var vmId = payload ? payload.vmId : null;
-      if (vmId === null || vmId === undefined) {
+      if (!payload || typeof payload !== "object") return { ok: false, error: "invalid-payload" };
+      // An explicit `null` means every element; a missing key is a bug in the sender, not a
+      // request to restart the whole page.
+      if (!Object.prototype.hasOwnProperty.call(payload, "vmId")) return { ok: false, error: "invalid-payload" };
+      var vmId = payload.vmId;
+      if (vmId === null) {
         var all = /** @type {ElementRecord[]} */ ([]);
         records.forEach(function (record) {
           all.push(record);
@@ -915,14 +1090,17 @@
       if (!validateApplied(payload)) return { ok: false, error: "invalid-payload" };
       var record = recordFor(payload.vmId);
       if (!record) return { ok: false, error: "unknown-element" };
+      // Acquire before anything is torn down, so a keyframes body that will not parse leaves
+      // whatever was on screen exactly as it was.
+      if (!acquireKeyframes(payload.keyframesName, payload.keyframesCss)) {
+        return { ok: false, error: "invalid-payload" };
+      }
       if (previewVmId && previewVmId !== payload.vmId) dropPreview();
       var previous = record.preview;
-      acquireKeyframes(payload.keyframesName, payload.keyframesCss);
       if (previous) releaseKeyframes(previous.keyframesName);
       record.preview = payload;
       previewVmId = payload.vmId;
       syncBaseRule(record);
-      render(record);
       restart(record, false);
     },
 
@@ -965,72 +1143,81 @@
 
     ensureInit();
     var started = now();
-    var failure = null;
+    var result = null;
     try {
-      failure = handler(data.payload) || null;
+      result = handler(data.payload) || null;
     } catch (error) {
       // A malformed payload must never leave the frame wedged.
-      failure = { ok: false, error: "invalid-payload" };
+      result = { ok: false, error: "invalid-payload" };
     }
-    // One stylesheet write per message at most, and inside the timed window so `ack.ms` is the
-    // whole cost of the message.
-    flushRuntime();
+    // The overlay may be sitting on a box that just changed size; the measurement itself lands
+    // in a frame, outside `ack.ms`.
+    if (hoveredVmId || selectedVmId) scheduleOverlaySync();
     if (typeof data.seq === "number") {
-      var ack = /** @type {{ seq: number; ms: number; ok: boolean; error?: string }} */ ({
+      var ack = /** @type {{ seq: number; ms: number; ok: boolean; error?: string; unknownVmIds?: string[] }} */ ({
         seq: data.seq,
         ms: now() - started,
-        ok: !failure,
+        // A handler returns nothing when it simply succeeded; an object only fails the ack when
+        // it says so, because `state:load` also uses the return value to carry `unknownVmIds`.
+        ok: !result || result.ok !== false,
       });
-      if (failure && failure.error) ack.error = failure.error;
+      if (result && result.error) ack.error = result.error;
+      if (result && result.unknownVmIds) ack.unknownVmIds = result.unknownVmIds;
       post("ack", ack);
     }
   }
 
-  window.addEventListener("message", onMessage, false);
+  // Everything below only exists in a preview. A cloned page opened directly in a tab must stay
+  // an ordinary page: links work, forms submit, no overlay, no crosshair (spec D7 / §2).
+  if (hasShell) installShellBindings();
 
-  // Capture phase, so the page's own handlers never see the event: the clone is a canvas, not a
-  // site. Scripts are stripped at clone time, but inline `href="javascript:"` and plain links are
-  // not, and either one navigating away would lose the designer's unsaved work. Registered at
-  // evaluation time rather than at init, so nothing can navigate in the gap before DOM ready.
-  document.addEventListener(
-    "click",
-    function (event) {
-      event.preventDefault();
-      event.stopPropagation();
-      ensureInit();
-      var vmId = nearestTaggedId(event.target);
-      if (!vmId) {
-        post("element:deselect", { reason: "background" });
-        return;
-      }
-      // A request, not a move: the ring follows only when the shell answers with `select`,
-      // because it may open the unsaved-changes guard first (spec D10).
-      var info = elementInfo(vmId);
-      if (info) post("element:select", info);
-    },
-    true,
-  );
+  function installShellBindings() {
+    window.addEventListener("message", onMessage, false);
 
-  document.addEventListener(
-    "submit",
-    function (event) {
-      event.preventDefault();
-    },
-    true,
-  );
+    // Capture phase, so the page's own handlers never see the event: the clone is a canvas, not
+    // a site. Scripts are stripped at clone time, but inline `href="javascript:"` and plain
+    // links are not, and either one navigating away would lose the designer's unsaved work.
+    // Registered here rather than at init, so nothing can navigate in the gap before DOM ready.
+    document.addEventListener(
+      "click",
+      function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        ensureInit();
+        var vmId = nearestTaggedId(event.target);
+        if (!vmId) {
+          post("element:deselect", { reason: "background" });
+          return;
+        }
+        // A request, not a move: the ring follows only when the shell answers with `select`,
+        // because it may open the unsaved-changes guard first (spec D10).
+        var info = elementInfo(vmId);
+        if (info) post("element:select", info);
+      },
+      true,
+    );
 
-  document.addEventListener(
-    "keydown",
-    function (event) {
-      if (event.key !== "Escape" && event.key !== "Esc") return;
-      post("element:deselect", { reason: "escape" });
-    },
-    true,
-  );
+    document.addEventListener(
+      "submit",
+      function (event) {
+        event.preventDefault();
+      },
+      true,
+    );
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", announceReady, { once: true });
-  } else {
-    announceReady();
+    document.addEventListener(
+      "keydown",
+      function (event) {
+        if (event.key !== "Escape" && event.key !== "Esc") return;
+        post("element:deselect", { reason: "escape" });
+      },
+      true,
+    );
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", announceReady, { once: true });
+    } else {
+      announceReady();
+    }
   }
 })();

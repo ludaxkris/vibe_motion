@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 
-import { BRIDGE_SOURCE, FIXTURE, applied, loadBridge, page } from "./harness";
+import { BRIDGE_SOURCE, FIXTURE, applied, destroyAll, loadBridge, page } from "./harness";
 import { KEYFRAMES_NAME_RE, STYLE_KEY_RE, VM_ID_RE } from "../src/protocol";
+
+afterEach(destroyAll);
 
 const KEYFRAMES = "@keyframes vm-fade-in-up-v1-1-0";
 
@@ -30,11 +32,11 @@ describe("apply", () => {
     const h = loadBridge(FIXTURE);
     h.send({ type: "apply", payload: applied(), seq: 1 });
 
-    const style = h.runtimeStyle();
-    expect(style).not.toBeNull();
-    const before = style?.textContent;
-    const observer = new h.window.MutationObserver(() => {});
-    observer.observe(style as Node, { childList: true, characterData: true, subtree: true });
+    const sheet = h.runtimeSheet();
+    expect(sheet).not.toBeNull();
+    const before = h.runtimeRules();
+    const insert = vi.spyOn(sheet as CSSStyleSheet, "insertRule");
+    const remove = vi.spyOn(sheet as CSSStyleSheet, "deleteRule");
 
     h.send({
       type: "apply",
@@ -42,8 +44,9 @@ describe("apply", () => {
       seq: 2,
     });
 
-    expect(observer.takeRecords()).toEqual([]);
-    expect(style?.textContent).toBe(before);
+    expect(insert).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(h.runtimeRules()).toEqual(before);
     expect(h.el("vm-heading").style.getPropertyValue("animation-duration")).toBe("1200ms");
   });
 
@@ -78,7 +81,7 @@ describe("apply", () => {
 
     expect(h.lastAck()).toMatchObject({ seq: 1, ok: false, error: "invalid-payload" });
     expect(h.el("vm-heading").getAttribute("style")).toBeNull();
-    expect(h.runtimeCss()).toBe("");
+    expect(h.keyframeNames()).toEqual([]);
   });
 
   it("rejects an assignment for an element the page does not have", () => {
@@ -87,7 +90,7 @@ describe("apply", () => {
     h.send({ type: "apply", payload: applied({ vmId: "vm-nope" }), seq: 1 });
 
     expect(h.lastAck()).toMatchObject({ seq: 1, ok: false, error: "unknown-element" });
-    expect(h.runtimeCss()).toBe("");
+    expect(h.keyframeNames()).toEqual([]);
   });
 
   it("emits one base-styles rule per assignment and removes it on clear", () => {
@@ -155,10 +158,6 @@ describe("state:load", () => {
     h.send({ type: "apply", payload: applied({ vmId: "vm-heading" }), seq: 1 });
     h.send({ type: "apply", payload: applied({ vmId: "vm-button" }), seq: 2 });
 
-    const style = h.runtimeStyle();
-    const observer = new h.window.MutationObserver(() => {});
-    observer.observe(style as Node, { childList: true, characterData: true, subtree: true });
-
     h.send({
       type: "state:load",
       payload: {
@@ -171,11 +170,8 @@ describe("state:load", () => {
       seq: 3,
     });
 
-    expect(observer.takeRecords()).toHaveLength(1);
-    const css = h.runtimeCss();
-    expect(countKeyframes(css)).toBe(1);
-    expect(countKeyframes(css, "@keyframes vm-scale-in-v1-1-0")).toBe(1);
-    expect(css).toContain('[data-vm-id="vm-heading"] { transform-origin: top; }');
+    expect(h.keyframeNames().sort()).toEqual(["vm-fade-in-up-v1-1-0", "vm-scale-in-v1-1-0"]);
+    expect(h.runtimeCss()).toContain('[data-vm-id="vm-heading"] { transform-origin: top; }');
     expect(h.el("vm-button").style.getPropertyValue("animation-name")).toBe("vm-scale-in-v1-1-0");
     expect(h.el("vm-para").style.getPropertyValue("animation-name")).toBe("vm-scale-in-v1-1-0");
     expect(h.lastAck()).toMatchObject({ seq: 3, ok: true });
@@ -205,7 +201,155 @@ describe("state:load", () => {
 
     expect(h.lastAck()).toMatchObject({ seq: 1, ok: false, error: "invalid-payload" });
     expect(h.el("vm-heading").getAttribute("style")).toBeNull();
-    expect(h.runtimeCss()).toBe("");
+    expect(h.keyframeNames()).toEqual([]);
+  });
+});
+
+describe("the runtime stylesheet is driven through CSSOM", () => {
+  it("rejects keyframes css that is not exactly one @keyframes rule with the promised name", () => {
+    const h = loadBridge(FIXTURE);
+
+    h.send({ type: "apply", payload: applied({ keyframesCss: "body { display: none }" }), seq: 1 });
+    expect(h.lastAck()).toMatchObject({ seq: 1, ok: false, error: "invalid-payload" });
+
+    h.send({
+      type: "apply",
+      payload: applied({ keyframesCss: "@keyframes vm-other-v1-1-0 { to { opacity: 1 } }" }),
+      seq: 2,
+    });
+    expect(h.lastAck()).toMatchObject({ seq: 2, ok: false, error: "invalid-payload" });
+
+    expect(h.keyframeNames()).toEqual([]);
+    expect(h.el("vm-heading").getAttribute("style")).toBeNull();
+  });
+
+  it("rejects a second body for a keyframes name already in use", () => {
+    const h = loadBridge(FIXTURE);
+    h.send({ type: "apply", payload: applied({ vmId: "vm-heading" }), seq: 1 });
+
+    h.send({
+      type: "apply",
+      payload: applied({
+        vmId: "vm-button",
+        keyframesCss: "@keyframes vm-fade-in-up-v1-1-0 { to { opacity: 0.5 } }",
+      }),
+      seq: 2,
+    });
+
+    expect(h.lastAck()).toMatchObject({ seq: 2, ok: false, error: "invalid-payload" });
+    expect(h.el("vm-button").getAttribute("style")).toBeNull();
+    expect(h.keyframeNames()).toEqual(["vm-fade-in-up-v1-1-0"]);
+  });
+
+  it("keeps base styles inside their own rule", () => {
+    const h = loadBridge(FIXTURE);
+
+    h.send({ type: "apply", payload: applied({ baseStyles: "color:red } body { display:none } x{" }), seq: 1 });
+
+    expect(h.runtimeCss()).not.toContain("body");
+    expect(h.runtimeRules().filter((rule) => rule.indexOf("[data-vm-id=") === 0)).toHaveLength(1);
+  });
+
+  it("never adopts a vm-runtime element the page already had", () => {
+    const h = loadBridge(
+      page('<style id="vm-runtime">.host { color: red }</style><h1 data-vm-id="vm-heading">Hi</h1>'),
+    );
+
+    h.send({ type: "apply", payload: applied(), seq: 1 });
+
+    const all = Array.from(h.document.querySelectorAll<HTMLStyleElement>("style#vm-runtime"));
+    expect(all).toHaveLength(2);
+    // The page's own rules are still there, untouched and still ours to leave alone.
+    expect(all.some((style) => style.textContent === ".host { color: red }")).toBe(true);
+    expect(h.keyframeNames()).toEqual(["vm-fade-in-up-v1-1-0"]);
+  });
+});
+
+describe("the armed group is whole", () => {
+  it("writes every animation longhand the style map leaves out at its initial value", () => {
+    const h = loadBridge(FIXTURE);
+
+    h.send({ type: "apply", payload: applied({ style: { "animation-duration": "600ms" } }), seq: 1 });
+
+    const el = h.el("vm-heading");
+    // Without these, a host `animation: spin 2s linear infinite` would leave our animation
+    // looping forever with the host's easing (spec D3).
+    expect(el.style.getPropertyValue("animation-iteration-count")).toBe("1");
+    expect(el.style.getPropertyValue("animation-timing-function")).toBe("ease");
+    expect(el.style.getPropertyValue("animation-direction")).toBe("normal");
+    expect(el.style.getPropertyValue("animation-fill-mode")).toBe("none");
+    expect(el.style.getPropertyValue("animation-delay")).toBe("0s");
+    expect(el.style.getPropertyPriority("animation-iteration-count")).toBe("important");
+    // The style map still wins for everything it carries.
+    expect(el.style.getPropertyValue("animation-duration")).toBe("600ms");
+  });
+
+  it("restores the host's values for the filled-in longhands on clear", () => {
+    const h = loadBridge(
+      page('<h1 data-vm-id="vm-heading" style="animation-iteration-count: infinite">Hi</h1>'),
+    );
+    h.send({ type: "apply", payload: applied({ style: { "animation-duration": "600ms" } }), seq: 1 });
+    expect(h.el("vm-heading").style.getPropertyValue("animation-iteration-count")).toBe("1");
+
+    h.send({ type: "clear", payload: { vmId: "vm-heading" }, seq: 2 });
+
+    expect(h.el("vm-heading").style.getPropertyValue("animation-iteration-count")).toBe("infinite");
+  });
+
+  it("leaves the group alone entirely while unarmed", () => {
+    const h = loadBridge(
+      page('<h1 data-vm-id="vm-heading" style="animation-iteration-count: infinite">Hi</h1>'),
+    );
+
+    h.send({ type: "apply", payload: applied({ trigger: "hover" }), seq: 1 });
+
+    expect(h.el("vm-heading").style.getPropertyValue("animation-iteration-count")).toBe("infinite");
+  });
+});
+
+describe("acks", () => {
+  it("names the vmIds a state:load could not place, without failing the batch", () => {
+    const h = loadBridge(FIXTURE);
+
+    h.send({
+      type: "state:load",
+      payload: { assignments: [applied({ vmId: "vm-heading" }), applied({ vmId: "vm-gone" })] },
+      seq: 1,
+    });
+
+    expect(h.lastAck()).toMatchObject({ seq: 1, ok: true, unknownVmIds: ["vm-gone"] });
+    expect(h.el("vm-heading").style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
+  });
+
+  it("reports an empty list when every vmId was found", () => {
+    const h = loadBridge(FIXTURE);
+
+    h.send({ type: "state:load", payload: { assignments: [applied({ vmId: "vm-heading" })] }, seq: 1 });
+
+    expect(h.lastAck()).toMatchObject({ seq: 1, ok: true, unknownVmIds: [] });
+  });
+
+  it("still fails a single message for an unknown element", () => {
+    const h = loadBridge(FIXTURE);
+
+    h.send({ type: "clear", payload: { vmId: "vm-gone" }, seq: 1 });
+    expect(h.lastAck()).toMatchObject({ seq: 1, ok: false, error: "unknown-element" });
+
+    h.send({ type: "select", payload: { vmId: "vm-gone" }, seq: 2 });
+    expect(h.lastAck()).toMatchObject({ seq: 2, ok: false, error: "unknown-element" });
+
+    h.send({ type: "replay", payload: { vmId: "vm-gone" }, seq: 3 });
+    expect(h.lastAck()).toMatchObject({ seq: 3, ok: false, error: "unknown-element" });
+  });
+
+  it("rejects a replay whose payload has no vmId key at all", () => {
+    const h = loadBridge(FIXTURE);
+    h.send({ type: "apply", payload: applied(), seq: 1 });
+
+    h.send({ type: "replay", payload: {}, seq: 2 });
+
+    // A shell bug that drops the field must surface, not silently restart the whole page.
+    expect(h.lastAck()).toMatchObject({ seq: 2, ok: false, error: "invalid-payload" });
   });
 });
 

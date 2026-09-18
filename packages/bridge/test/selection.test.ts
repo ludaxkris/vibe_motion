@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 
-import { FIXTURE, loadBridge, page } from "./harness";
+import { FIXTURE, destroyAll, loadBridge, page } from "./harness";
 import type { ElementInfo } from "../src/protocol";
+
+afterEach(destroyAll);
 
 const LONG = "Sign up for the newsletter and get a weekly digest of everything we shipped, plus the odd opinion";
 
@@ -24,7 +26,12 @@ describe("overlay", () => {
     expect(overlay?.parentElement).toBe(h.document.body);
     expect(overlay?.style.pointerEvents).toBe("none");
     expect(overlay?.hasAttribute("data-vm-id")).toBe(false);
-    expect(h.document.documentElement.style.cursor).toBe("crosshair");
+    // The crosshair is a rule keyed on an attribute, never an inline style on <html>: inline
+    // would clobber a host cursor with no way back, and an inherited value loses to the UA's
+    // `cursor: pointer` on exactly the links and buttons the designer clicks most.
+    expect(h.document.documentElement.getAttribute("data-vm-mode")).toBe("edit");
+    expect(h.document.documentElement.style.cursor).toBe("");
+    expect(h.runtimeCss()).toContain("cursor: crosshair !important");
   });
 
   it("is not counted among the page's tagged elements", () => {
