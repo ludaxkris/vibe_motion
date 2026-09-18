@@ -28,6 +28,8 @@
  *   radius     rounded-xs|sm|md|lg|xl|2xl (retargeted), rounded-pill
  *   shadow     shadow-sheet|card|raised|thumb|popover|modal|accent,
  *              shadow-focus-ring                         → --focus-ring
+ *              (the focus ring itself is drawn by the `focus-ring` utility
+ *              further down — see the comment there)
  *   motion     duration-instant|fast|base                → --dur-*
  *              ease-standard|spring (ease-out retargeted)
  *   text       leading-ui|body (leading-tight retargeted),
@@ -318,6 +320,18 @@
   --ease-spring: var(--ease-spring);
 }
 
+/* The handoff's soft violet focus ring, drawn as an outline rather than the
+   `--focus-ring` box-shadow: a control's state shadow (`--shadow-raised` on the
+   checked segment and the active folder tab) and its focus ring are then
+   independent properties, so neither can overwrite the other depending on how
+   Tailwind happens to sort the two variants. Outlines follow border-radius.
+   Only controls whose focus shows on a wrapper — Input, NumberField — apply it
+   by hand; everything else inherits it from the `:focus-visible` rule below. */
+@utility focus-ring {
+  outline: 3px solid var(--vm-accent-soft);
+  outline-offset: 0;
+}
+
 @layer base {
   * {
     @apply border-vm-border;
@@ -329,10 +343,8 @@
     font-size: var(--text-md);
     line-height: var(--leading-ui);
   }
-  /* Focus is the handoff's soft violet ring everywhere, drawn as a shadow so it
-     follows each control's own radius. */
   :focus-visible {
-    outline: none;
-    box-shadow: var(--focus-ring);
+    outline: 3px solid var(--vm-accent-soft);
+    outline-offset: 0;
   }
 }

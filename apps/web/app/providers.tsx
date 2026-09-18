@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { Toaster } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { MockProvider } from "@/mocks/MockProvider";
 
@@ -32,6 +33,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <MockProvider>{children}</MockProvider>
+        {/* One confirmation pill for the whole app ("Saved v6", "Copied CSS"). */}
+        <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
   );
