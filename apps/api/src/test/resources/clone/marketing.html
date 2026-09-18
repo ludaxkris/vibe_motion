@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="iso-8859-1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>  Northwind — Ship faster  </title>
+  <link rel="preconnect" href="https://fonts.example.net">
+  <link rel="dns-prefetch" href="//cdn.example.net">
+  <link rel="preload" as="image" href="/img/hero.avif" imagesrcset="/img/hero.avif 1x, /img/hero@2x.avif 2x">
+  <link rel="manifest" href="/app.webmanifest">
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/assets/marketing.css">
+  <link rel="stylesheet" href="/assets/print.css" media="print">
+  <link rel="stylesheet" href="https://cdn.example.net/gone.css">
+  <link rel="alternate stylesheet" href="/assets/high-contrast.css" title="High contrast">
+  <style>
+    .hero { background-image: url('../img/hero.jpg'); }
+    .logo { background: url(/img/logo.svg) no-repeat; }
+    .icon { mask: url(#clip); }
+    .avatar { background: url("https://cdn.example.net/avatar.png"); }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">Northwind</a>
+    <nav>
+      <a href="/pricing">Pricing</a>
+      <a href="../docs/">Docs</a>
+      <a href="#features">Features</a>
+      <a href="mailto:hello@northwind.example">Contact</a>
+    </nav>
+  </header>
+  <main>
+    <section id="features" class="hero" style="background-image: url('hero-bg.png'); color: #111">
+      <h1>Ship faster</h1>
+      <p>Everything you need, <em>nothing</em> you do not.</p>
+      <img src="img/screenshot.png" srcset="img/screenshot.png 1x, img/screenshot@2x.png 2x" alt="Screenshot">
+      <video poster="img/poster.jpg" src="media/demo.mp4" controls></video>
+      <a class="cta" href="/signup">Start free</a>
+    </section>
+    <section class="logos">
+      <img src="https://cdn.example.net/logo-a.png" alt="A">
+      <img src="/img/logo-b.png" alt="B">
+    </section>
+    <form action="/subscribe" method="post" target="_blank">
+      <label for="email">Email</label>
+      <input id="email" type="email" name="email">
+      <button type="submit" formaction="/subscribe?fast=1">Subscribe</button>
+    </form>
+  </main>
+  <footer>
+    <small>&copy; Northwind</small>
+  </footer>
+</body>
+</html>

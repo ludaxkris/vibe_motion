@@ -1,0 +1,231 @@
+package dev.vibemotion.api.versions
+
+import dev.vibemotion.api.catalog.CatalogParam
+import dev.vibemotion.api.catalog.ClasspathCatalogRepository
+import dev.vibemotion.api.catalog.ParamType
+import io.kotest.assertions.withClue
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.ints.shouldBeLessThan
+import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
+
+/**
+ * Param values end up as CSS on someone else's site, so this is the allow-list that decides what
+ * can be stored at all. A value that gets through here is emitted verbatim by the exporter.
+ */
+class ParamValuesTest :
+    FunSpec({
+
+        fun param(
+            type: ParamType,
+            min: String? = null,
+            max: String? = null,
+            options: List<String>? = null,
+        ) = CatalogParam(key = "p", type = type, default = "", min = min, max = max, options = options)
+
+        fun accepts(
+            param: CatalogParam,
+            value: String,
+        ) = paramValueProblem(param, value) == null
+
+        // --- the catalog itself -----------------------------------------------------------------
+
+        test("every default in every published catalog version passes its own validation") {
+            // A catalog release the API cannot accept would be a launch-day outage: the editor
+            // would offer a default the server refuses. This is the gate that catches it.
+            val catalog = ClasspathCatalogRepository.load()
+            catalog.versions().forEach { version ->
+                val published = catalog.catalog(version).shouldNotBeNull()
+                published.entries.forEach { entry ->
+                    entry.params.forEach { declared ->
+                        withClue("$version ${entry.id}.${declared.key} = '${declared.default}'") {
+                            paramValueProblem(declared, declared.default) shouldBe null
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- injection --------------------------------------------------------------------------
+
+        test("a value that tries to close the declaration or open a block is refused whatever its type") {
+            val payloads =
+                listOf(
+                    "600ms; } body { background: red",
+                    "600ms}",
+                    "600ms<script>",
+                    "600ms\\",
+                    "600ms\"",
+                    "600ms'",
+                    "600ms/*",
+                    "url(https://evil.example.com/beacon)",
+                    "expression(alert(1))",
+                    "javascript:alert(1)",
+                    "@import 'https://evil.example.com/x.css'",
+                    "600ms\u0000",
+                    "600\nms",
+                )
+
+            payloads.forEach { payload ->
+                withClue(payload) {
+                    ParamType.entries.forEach { type ->
+                        accepts(param(type, options = listOf(payload)), payload) shouldBe false
+                    }
+                }
+            }
+        }
+
+        test("a rejected value is never echoed back in full") {
+            // An error body that repeats an attacker's string verbatim is its own small problem.
+            val payload = "6".repeat(150) + "nope"
+
+            val problem = paramValueProblem(param(ParamType.DURATION), payload).shouldNotBeNull()
+
+            problem shouldNotContain payload
+            problem.length shouldBeLessThan payload.length
+        }
+
+        test("a value over the length cap is refused before anything else looks at it") {
+            paramValueProblem(param(ParamType.DURATION), "6".repeat(MAX_PARAM_VALUE_LENGTH + 1) + "ms")
+                .shouldNotBeNull() shouldContain "at most $MAX_PARAM_VALUE_LENGTH"
+        }
+
+        test("an empty value is refused") {
+            paramValueProblem(param(ParamType.LENGTH), "").shouldNotBeNull()
+        }
+
+        // --- per type ---------------------------------------------------------------------------
+
+        test("duration accepts ms and s and nothing else") {
+            accepts(param(ParamType.DURATION), "600ms") shouldBe true
+            accepts(param(ParamType.DURATION), "1.5s") shouldBe true
+            accepts(param(ParamType.DURATION), "0ms") shouldBe true
+            accepts(param(ParamType.DURATION), "600") shouldBe false
+            accepts(param(ParamType.DURATION), "-600ms") shouldBe false
+            accepts(param(ParamType.DURATION), "600 ms") shouldBe false
+        }
+
+        test("length accepts the declared units only") {
+            listOf("24px", "-8px", "1.5rem", "2em", "50%", "10vh", "10vw").forEach {
+                withClue(it) { accepts(param(ParamType.LENGTH), it) shouldBe true }
+            }
+            listOf("24", "24pt", "24 px", "calc(100% - 4px)").forEach {
+                withClue(it) { accepts(param(ParamType.LENGTH), it) shouldBe false }
+            }
+        }
+
+        test("number is bare numeric, angle carries an angular unit, percentage carries a percent") {
+            accepts(param(ParamType.NUMBER), "1.05") shouldBe true
+            accepts(param(ParamType.NUMBER), "-1") shouldBe true
+            accepts(param(ParamType.NUMBER), "1px") shouldBe false
+
+            accepts(param(ParamType.ANGLE), "-90deg") shouldBe true
+            accepts(param(ParamType.ANGLE), "0.5turn") shouldBe true
+            accepts(param(ParamType.ANGLE), "1.5rad") shouldBe true
+            accepts(param(ParamType.ANGLE), "90") shouldBe false
+
+            accepts(param(ParamType.PERCENTAGE), "50%") shouldBe true
+            accepts(param(ParamType.PERCENTAGE), "50") shouldBe false
+        }
+
+        test("iteration is a non-negative count or infinite") {
+            accepts(param(ParamType.ITERATION), "1") shouldBe true
+            accepts(param(ParamType.ITERATION), "2.5") shouldBe true
+            accepts(param(ParamType.ITERATION), "infinite") shouldBe true
+            accepts(param(ParamType.ITERATION), "-1") shouldBe false
+            accepts(param(ParamType.ITERATION), "forever") shouldBe false
+        }
+
+        test("direction is one of the four CSS keywords") {
+            listOf("normal", "reverse", "alternate", "alternate-reverse").forEach {
+                withClue(it) { accepts(param(ParamType.DIRECTION), it) shouldBe true }
+            }
+            accepts(param(ParamType.DIRECTION), "sideways") shouldBe false
+        }
+
+        test("easing accepts the named curves, cubic-bezier and steps, with numeric arguments only") {
+            listOf("linear", "ease", "ease-in", "ease-out", "ease-in-out", "step-start", "step-end").forEach {
+                withClue(it) { accepts(param(ParamType.EASING), it) shouldBe true }
+            }
+            accepts(param(ParamType.EASING), "cubic-bezier(0.16, 1, 0.3, 1)") shouldBe true
+            accepts(param(ParamType.EASING), "cubic-bezier(0.16,1,0.3,1)") shouldBe true
+            accepts(param(ParamType.EASING), "steps(4)") shouldBe true
+            accepts(param(ParamType.EASING), "steps(4, jump-end)") shouldBe true
+            accepts(param(ParamType.EASING), "steps(4, start)") shouldBe true
+
+            accepts(param(ParamType.EASING), "cubic-bezier(0.16, 1, 0.3)") shouldBe false
+            accepts(param(ParamType.EASING), "cubic-bezier(a, b, c, d)") shouldBe false
+            accepts(param(ParamType.EASING), "steps(4, sideways)") shouldBe false
+            accepts(param(ParamType.EASING), "ease-out-ish") shouldBe false
+        }
+
+        test("color accepts hex, the numeric functional forms and bare keywords") {
+            listOf("#fff", "#ffff", "#ff00ff", "#ff00ff80").forEach {
+                withClue(it) { accepts(param(ParamType.COLOR), it) shouldBe true }
+            }
+            accepts(param(ParamType.COLOR), "rgba(99, 102, 241, 0.6)") shouldBe true
+            accepts(param(ParamType.COLOR), "rgb(0,0,0)") shouldBe true
+            accepts(param(ParamType.COLOR), "hsl(210, 50%, 40%)") shouldBe true
+            accepts(param(ParamType.COLOR), "currentColor") shouldBe true
+            accepts(param(ParamType.COLOR), "transparent") shouldBe true
+
+            accepts(param(ParamType.COLOR), "#ff00f") shouldBe false
+            accepts(param(ParamType.COLOR), "rgb(var(--x), 0, 0)") shouldBe false
+            accepts(param(ParamType.COLOR), "rgba(0, 0, 0, 0.5) url(//evil)") shouldBe false
+            accepts(param(ParamType.COLOR), "a".repeat(25)) shouldBe false
+        }
+
+        test("select is exactly the options the catalog declares") {
+            val declared = param(ParamType.SELECT, options = listOf("clockwise", "anticlockwise"))
+
+            accepts(declared, "clockwise") shouldBe true
+            accepts(declared, "widdershins") shouldBe false
+            // A select with no options is a catalog bug; it must not become an open door.
+            accepts(param(ParamType.SELECT), "anything") shouldBe false
+        }
+
+        // --- bounds -----------------------------------------------------------------------------
+
+        test("min and max from the catalog entry are enforced") {
+            val duration = param(ParamType.DURATION, min = "100ms", max = "5000ms")
+
+            accepts(duration, "100ms") shouldBe true
+            accepts(duration, "5000ms") shouldBe true
+            accepts(duration, "99ms") shouldBe false
+            accepts(duration, "5001ms") shouldBe false
+            paramValueProblem(duration, "99ms").shouldNotBeNull() shouldContain "minimum"
+            paramValueProblem(duration, "5001ms").shouldNotBeNull() shouldContain "maximum"
+        }
+
+        test("seconds and milliseconds compare as the same quantity") {
+            val duration = param(ParamType.DURATION, min = "100ms", max = "5000ms")
+
+            accepts(duration, "2s") shouldBe true
+            accepts(duration, "6s") shouldBe false
+            accepts(duration, "0.05s") shouldBe false
+        }
+
+        test("a value in a different unit than the bound is refused rather than silently compared") {
+            // The editor always sends the catalog's unit, so a mismatch did not come from it, and
+            // `40vh` quietly passing a `200px` maximum is exactly what must not happen.
+            val distance = param(ParamType.LENGTH, min = "0px", max = "200px")
+
+            accepts(distance, "40px") shouldBe true
+            accepts(distance, "40vh") shouldBe false
+            paramValueProblem(distance, "40vh").shouldNotBeNull() shouldContain "unit"
+        }
+
+        test("unitless numbers compare against unitless bounds") {
+            val scale = param(ParamType.NUMBER, min = "1", max = "1.6")
+
+            accepts(scale, "1.1") shouldBe true
+            accepts(scale, "0.9") shouldBe false
+            accepts(scale, "2") shouldBe false
+        }
+
+        test("types that carry no magnitude ignore min and max") {
+            accepts(param(ParamType.EASING, min = "1", max = "2"), "linear") shouldBe true
+        }
+    })

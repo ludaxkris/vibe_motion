@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+
+<title>Getting started</title>
+<style data-vm-source="https://docs.example.org/guide/assets/site.css">@media screen {
+@import url("https://docs.example.org/guide/assets/fonts/base.css");
+
+@font-face {
+  font-family: "Northwind";
+  src: url("https://docs.example.org/guide/assets/fonts/northwind.woff2") format("woff2");
+}
+
+h1 {
+  font-family: "Northwind", serif;
+}
+
+}
+@import "https://docs.example.org/guide/assets/print.css";
+
+:root {
+  --brand: #0b5;
+}
+
+body {
+  background: url("https://docs.example.org/guide/img/paper.png") repeat;
+  color: var(--brand);
+}
+
+.card {
+  background-image: url("https://docs.example.org/guide/assets/img/card.svg");
+}
+
+.inline {
+  background: url(data:image/gif;base64,R0lGODlhAQABAAAAACw=);
+}
+
+.absolute {
+  background: url("https://cdn.example.net/texture.png");
+}
+</style>
+<link rel="stylesheet" href="https://docs.example.org/guide/assets/dark.css" media="(prefers-color-scheme: dark)">
+</head>
+<body>
+<nav class="toc" data-vm-id="vm-1">
+  <a href="https://docs.example.org/guide/intro.html" data-vm-id="vm-2">Intro</a>
+  <a href="https://docs.example.org/guide/api.html" data-vm-id="vm-3">API</a>
+  <a href="https://docs.example.org/legal/terms.html" data-vm-id="vm-4">Terms</a>
+</nav>
+<article data-vm-id="vm-5">
+  <h1 data-vm-id="vm-6">Getting started</h1>
+  <p data-vm-id="vm-7">Install it, then read the <a href="https://docs.example.org/guide/api.html#install" data-vm-id="vm-8">API notes</a>.</p>
+  <picture data-vm-id="vm-9">
+    <source srcset="https://docs.example.org/guide/img/diagram.webp 1x, https://docs.example.org/guide/img/diagram@2x.webp 2x" type="image/webp" data-vm-id="vm-10">
+    <img src="https://docs.example.org/guide/img/diagram.png" srcset="https://docs.example.org/guide/img/diagram.png 1x, https://docs.example.org/guide/img/diagram@2x.png 2x" alt="Diagram" width="640" data-vm-id="vm-11">
+  </picture>
+  <pre data-vm-id="vm-12"><code data-vm-id="vm-13">npm install northwind</code></pre>
+  <svg viewBox="0 0 10 10" width="10" height="10" data-vm-id="vm-14">
+    <defs><linearGradient id="g"><stop offset="0"></stop></linearGradient></defs>
+    <circle cx="5" cy="5" r="4" fill="url(#g)"></circle>
+  </svg>
+  <template data-vm-id="vm-15"><div class="row"><span>hidden</span></div></template>
+  <table data-vm-id="vm-16">
+    <tbody data-vm-id="vm-17">
+      <tr data-vm-id="vm-18"><td data-vm-id="vm-19">one</td><td data-vm-id="vm-20">two</td></tr>
+    </tbody>
+  </table>
+</article>
+</body>
+</html>

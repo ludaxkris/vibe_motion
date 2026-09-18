@@ -69,14 +69,16 @@ sequenceDiagram
   S-->>A: HTML
   A->>S: GET linked stylesheets
   S-->>A: CSS
-  A->>A: jsoup: strip scripts, absolutize URLs, inline CSS,<br/>assign data-vm-id, inject bridge script
+  A->>A: jsoup: strip scripts, absolutize URLs, inline CSS,<br/>assign data-vm-id
   A->>P: INSERT project(base_html) + version 0 (state = {})
   A-->>W: 201 { projectId, currentVersionId }
   W-->>D: redirect /p/{projectId}
   D->>W: GET /p/{projectId}
   W-->>D: editor shell (75/25 split)
   D->>A: iframe GET /projects/{id}/page
-  A-->>D: base_html (bridge included)
+  A->>A: PageRenderer: base_html + CSP + bridge script tag (serve time)
+  A-->>D: rendered page
+  D->>A: GET /bridge/vm-bridge.js
 ```
 
 ### 3.2 Select an element, apply and tune an animation
@@ -182,7 +184,7 @@ flowchart LR
   end
 
   subgraph frame["api origin · iframe /projects/{id}/page"]
-    bridgeScript["vm-bridge.js (injected at clone)<br/>capture-phase click handler · hover outline · runtime style block"]
+    bridgeScript["vm-bridge.js (script tag added at serve time)<br/>capture-phase click handler · hover outline · runtime style block"]
     dom["Cloned DOM<br/>every element has data-vm-id"]
     runtime["#vm-runtime style<br/>@keyframes for animations in use"]
     bridgeScript --> dom
