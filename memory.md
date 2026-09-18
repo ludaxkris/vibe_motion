@@ -15,14 +15,13 @@ Rules
 | Worktree | Branch | Agent / session | Phase | Task | Status | Started | Touches shared contract? |
 |---|---|---|---|---|---|---|---|
 | (primary) | main | Claude Fable 5.1 (planning session with Chris) | planning + 0 | Planning docs (done), Phase 0 foundation PR #1 (merged), agent PR comments + cleanup PR #2 (merged) | done 2026-09-18 | 2026-09-17 | no |
-| `.worktrees/feat/2-api-core` | feat/2-api-core | Claude Fable 5.1 (session with Chris) | 2 | Projects + clone service (SSRF guard, jsoup rewrite, data-vm-id), versions (diff, stateAt, 409, 422, restore), page serving | PR #4 READY for review: CI green, test-runner green on 7c595c8, architect findings fixed, code-reviewer APPROVE. Awaiting merge by Chris. | 2026-09-18 | yes, additive: `GET /bridge/vm-bridge.js` |
 | `.worktrees/feat/3-web-shell-help` | feat/3-web-shell-help | Claude Fable 5.1 (session with Chris) | 3 | Web shell: URL entry → POST /projects, resizable split editor, Control Panel state machine + /dev route, live help page via runtime CSS generator, MSW mocks; re-skin from Claude Design mocks | in-progress | 2026-09-18 | no (consumes openapi + catalog read-only) |
 | .worktrees/docs/phase-4-plan | docs/phase-4-plan | Claude Fable 5.1 (session w/ Chris) | 4 (planning only) | Bridge protocol spec + Phase 4 implementation plan under `docs/plans/`. Docs only; no code. Reads the Phase 2/3 worktrees read-only. | PR #8 draft, awaiting Chris's answers to spec §9 | 2026-09-18 | proposes bridge protocol v1 (spec only) |
-| `.worktrees/chore/pr-comment-script` | chore/pr-comment-script | Claude Fable 5.1 (session with Chris) | — | `scripts/pr-comment.sh`: one-command upsert for agent PR comments (PR #7) | PR open | 2026-09-18 | no |
 | `.worktrees/chore/render-previews-off` | chore/render-previews-off | Claude Fable 5.1 (session with Chris) | — | `render.yaml` `previews.generation: "off"` + docs aligned (DT-075) | PR open | 2026-09-18 | no |
 
 ## Notices (newest first)
 
+- 2026-09-18 — **Phase 2 merged (PR #4); PR #7 merged.** `main` now has projects, the clone pipeline, versions (diff/stateAt/restore), the serve-time bridge stub at `apps/api/src/main/resources/bridge/vm-bridge.js` (Phase 4 owns the real protocol) and `scripts/pr-comment.sh`. Web worktrees: rebase or merge `main`, then `pnpm gen:client` is already current (check-generated will tell you). Phase 2 worktrees removed with `scripts/cleanup-merged.sh`. API prerequisites for Phase 4 and the API half of Phase 6 are in place; Phase 7 (export) can start on the API side once Phase 6 state shape is confirmed (it is: see `domain/Models.kt`).
 - 2026-09-18 — **Decision from Chris: Render PR previews are OFF; e2e runs locally against Docker** (DT-075, DT-076). Do not plan on `-pr-<N>.onrender.com` URLs. Phase 8's "e2e on previews" exit criterion is replaced in build_plan by the local Docker stack. In `render.yaml`, `off` must stay quoted (bare `off` is a YAML boolean and fails the schema).
 - 2026-09-18 — **Bridge protocol spec v1 is up for objection: PR #8** (`docs/plans/phase-4-bridge-protocol.md` + `phase-4-bridge-plan.md`, docs only, architect-reviewed). Shared contract. Phase 2: keep `style-src 'unsafe-inline'` and the `data-vm-parent-origin` attribute; Phase 4 Task 8 will move `vm-bridge.js` to a new `packages/bridge` and parse `BRIDGE_VERSION` from the script. Phase 3: the bridge drives the **store** (`setSelectedVmId`, `draftState` funnel), adds `createEditorStore()` / `hoverVmId` / `elements`, changes the iframe `sandbox` and makes the mock page cross-origin (`127.0.0.1`); rebase for `vm-<id>-v1-1-0`. Object on the PR before merging anything incompatible.
 - 2026-09-18 — **Phase 4 PLANNING started** (docs only, `docs/phase-4-plan`). Implementation is NOT claimed and will not start until Phases 2 and 3 are on `main`. Phase 2/3 sessions: the plan will treat your `vm-bridge.js` + page injection (Phase 2) and editor store + `runtime-css` + panel state machine (Phase 3) as seams; a bridge protocol spec will be posted for you to object to before you merge anything incompatible.
@@ -51,7 +50,6 @@ Agents claim a task here before creating a worktree so two agents do not pick th
 
 | Task | Claimed by | Date |
 |---|---|---|
-| Phase 2 — API core (projects, clone service, versions, stateAt, restore) | Claude Fable 5.1 (session with Chris) · worktree `.worktrees/feat/2-api-core` | 2026-09-18 |
 | Phase 3 — Web shell + help page | Claude Fable 5.1 (session with Chris) · worktree `.worktrees/feat/3-web-shell-help` | 2026-09-18 |
 
 ## Facts other agents need
