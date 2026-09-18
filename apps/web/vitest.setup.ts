@@ -27,6 +27,20 @@ if (jsdomWindow && typeof jsdomWindow.localStorage.getItem === "function") {
   });
 }
 
+// Node's `fetch` brand-checks `RequestInit.signal` against the `AbortSignal`
+// class it captured at startup, but the jsdom environment has since replaced
+// that global with jsdom's own — so any request carrying a signal throws
+// "Expected signal to be an instance of AbortSignal" before it is sent.
+// `vitest.node-globals.mjs` stashes Node's originals before jsdom loads; put
+// them back. (Assigning works: Vitest's `populateGlobal` installs a setter that
+// overrides the jsdom value.)
+const nodeGlobals = (globalThis as { __vmNodeGlobals?: Record<string, unknown> })
+  .__vmNodeGlobals;
+if (typeof nodeGlobals?.AbortController === "function") {
+  globalThis.AbortController = nodeGlobals.AbortController as typeof AbortController;
+  globalThis.AbortSignal = nodeGlobals.AbortSignal as typeof AbortSignal;
+}
+
 // Vitest runs without globals, so React Testing Library's auto-cleanup does not
 // register itself. Do it here.
 afterEach(() => {
