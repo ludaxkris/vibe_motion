@@ -33,6 +33,11 @@
   var ID_ATTR = "data-vm-id";
   var ID_SELECTOR = "[data-vm-id]";
   var RUNTIME_STYLE_ID = "vm-runtime";
+  var OVERLAY_ATTR = "data-vm-overlay";
+  var HOVERED_ATTR = "data-vm-hovered";
+  var SELECTED_ATTR = "data-vm-selected";
+  var TEXT_PREVIEW_MAX = 80;
+  var ACCENT = "#7c5cff";
 
   // ---------------------------------------------------------------------------------------
   // Wiring
@@ -85,6 +90,7 @@
     if (initialised || !document.body) return;
     initialised = true;
     buildElementMap();
+    createOverlay();
     attachPageListeners();
   }
 
@@ -548,6 +554,111 @@
   }
 
   // ---------------------------------------------------------------------------------------
+  // Overlay (spec §4)
+  //
+  // One fixed-position container appended to <body>, excluded from hit-testing and from every
+  // [data-vm-id] query, holding the hover outline and the selection ring with its label. The
+  // ring is moved only by a `select` message — never by a click (spec D10) — because the shell
+  // may refuse a selection change while the unsaved-changes guard is open.
+  // ---------------------------------------------------------------------------------------
+
+  var overlayRoot = /** @type {HTMLElement | null} */ (null);
+  var hoverBox = /** @type {HTMLElement | null} */ (null);
+  var selectBox = /** @type {HTMLElement | null} */ (null);
+  var selectLabel = /** @type {HTMLElement | null} */ (null);
+  var selectedVmId = /** @type {string | null} */ (null);
+  var overlayFrame = 0;
+
+  var BOX_BASE = "position:fixed;left:0;top:0;width:0;height:0;box-sizing:border-box;display:none;pointer-events:none;";
+
+  function createOverlay() {
+    var root = document.createElement("div");
+    root.setAttribute(OVERLAY_ATTR, "");
+    root.style.cssText =
+      "position:fixed;left:0;top:0;width:0;height:0;margin:0;padding:0;border:0;pointer-events:none;z-index:2147483647;";
+    hoverBox = document.createElement("div");
+    hoverBox.style.cssText = BOX_BASE + "border:1.5px dashed " + ACCENT + ";border-radius:2px;";
+    selectBox = document.createElement("div");
+    selectBox.style.cssText = BOX_BASE + "outline:2px solid " + ACCENT + ";outline-offset:6px;border-radius:2px;";
+    selectLabel = document.createElement("div");
+    selectLabel.style.cssText =
+      "position:absolute;left:-6px;bottom:100%;margin:0 0 10px;padding:2px 6px;border-radius:3px;background:" +
+      ACCENT +
+      ";color:#fff;white-space:nowrap;font:500 11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;";
+    selectBox.appendChild(selectLabel);
+    root.appendChild(hoverBox);
+    root.appendChild(selectBox);
+    document.body.appendChild(root);
+    overlayRoot = root;
+    // The whole page is a click target, so say so.
+    document.documentElement.style.setProperty("cursor", "crosshair");
+  }
+
+  /**
+   * @param {HTMLElement | null} box
+   * @param {Element | undefined} el
+   */
+  function positionBox(box, el) {
+    if (!box) return;
+    if (!el) {
+      box.style.display = "none";
+      return;
+    }
+    var rect = el.getBoundingClientRect();
+    box.style.display = "block";
+    box.style.left = rect.left + "px";
+    box.style.top = rect.top + "px";
+    box.style.width = rect.width + "px";
+    box.style.height = rect.height + "px";
+  }
+
+  function syncOverlay() {
+    positionBox(hoverBox, hoveredVmId ? elements.get(hoveredVmId) : undefined);
+    positionBox(selectBox, selectedVmId ? elements.get(selectedVmId) : undefined);
+  }
+
+  function scheduleOverlaySync() {
+    if (overlayFrame) return;
+    // Read at call time so a page without rAF still repositions, just synchronously.
+    if (!window.requestAnimationFrame) {
+      syncOverlay();
+      return;
+    }
+    overlayFrame = window.requestAnimationFrame(function () {
+      overlayFrame = 0;
+      syncOverlay();
+    });
+  }
+
+  /**
+   * @param {string} vmId
+   * @returns {import("./protocol").ElementInfo | null}
+   */
+  function elementInfo(vmId) {
+    var el = elements.get(vmId);
+    if (!el) return null;
+    var rect = el.getBoundingClientRect();
+    var computed = window.getComputedStyle ? window.getComputedStyle(el) : null;
+    var text = (el.textContent || "").replace(/\s+/g, " ").trim();
+    var scrollX = window.pageXOffset || 0;
+    var scrollY = window.pageYOffset || 0;
+    var order = orders.get(vmId);
+    return {
+      vmId: vmId,
+      tag: el.tagName.toLowerCase(),
+      role: el.getAttribute("role"),
+      textPreview: text.length > TEXT_PREVIEW_MAX ? text.slice(0, TEXT_PREVIEW_MAX) : text,
+      rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+      pageRect: { x: rect.left + scrollX, y: rect.top + scrollY, width: rect.width, height: rect.height },
+      order: order === undefined ? -1 : order,
+      visible:
+        rect.width > 0 &&
+        rect.height > 0 &&
+        (!computed || (computed.visibility !== "hidden" && computed.display !== "none")),
+    };
+  }
+
+  // ---------------------------------------------------------------------------------------
   // Page listeners
   // ---------------------------------------------------------------------------------------
 
@@ -563,6 +674,7 @@
     while (node && node.nodeType !== 1) node = node.parentNode;
     var el = /** @type {Element | null} */ (node);
     while (el) {
+      if (el === overlayRoot) return null;
       var vmId = el.getAttribute(ID_ATTR);
       if (vmId && elements.has(vmId)) return vmId;
       el = el.parentElement;
@@ -577,6 +689,13 @@
     hoveredVmId = vmId;
     if (previous) armHover(previous, false);
     if (vmId) armHover(vmId, true);
+    if (overlayRoot) {
+      if (vmId) overlayRoot.setAttribute(HOVERED_ATTR, vmId);
+      else overlayRoot.removeAttribute(HOVERED_ATTR);
+    }
+    positionBox(hoverBox, vmId ? elements.get(vmId) : undefined);
+    // Only on a change: a message per mouse move would flood the channel (spec §6).
+    post("element:hover", vmId ? elementInfo(vmId) : { vmId: null });
   }
 
   /**
@@ -592,8 +711,8 @@
   }
 
   function attachPageListeners() {
-    // Capture phase and delegated: one pair of handlers drives both hover arming and, from
-    // Task 5, the hover outline, and the host page's own handlers cannot stop them.
+    // Capture phase and delegated: one pair of handlers drives hover arming, the hover outline
+    // and the `element:hover` message, and the host page's own handlers cannot stop them.
     document.addEventListener(
       "pointerover",
       function (event) {
@@ -624,6 +743,24 @@
       },
       true,
     );
+    // Capture phase and passive: scroll does not bubble out of a nested scroller, and the
+    // overlay must never be the reason a scroll janks.
+    document.addEventListener("scroll", scheduleOverlaySync, { capture: true, passive: true });
+    window.addEventListener("resize", scheduleOverlaySync, false);
+  }
+
+  /**
+   * @param {string | null} vmId
+   * @param {string} label
+   */
+  function setSelected(vmId, label) {
+    selectedVmId = vmId;
+    if (overlayRoot) {
+      if (vmId) overlayRoot.setAttribute(SELECTED_ATTR, vmId);
+      else overlayRoot.removeAttribute(SELECTED_ATTR);
+    }
+    if (selectLabel) selectLabel.textContent = label || "";
+    positionBox(selectBox, vmId ? elements.get(vmId) : undefined);
   }
 
   // ---------------------------------------------------------------------------------------
@@ -665,6 +802,8 @@
       for (var i = 0; i < list.length; i += 1) {
         if (!validateApplied(list[i])) return { ok: false, error: "invalid-payload" };
       }
+      // Spec §3: `state:load` clears every assignment *and* the preview, then applies the list.
+      dropPreview();
       var open = /** @type {ElementRecord[]} */ ([]);
       records.forEach(function (record) {
         open.push(record);
@@ -716,6 +855,26 @@
     "preview:clear": function () {
       dropPreview();
     },
+
+    select: function (payload) {
+      var vmId = payload ? payload.vmId : null;
+      if (vmId === null || vmId === undefined) {
+        setSelected(null, "");
+        return;
+      }
+      if (typeof vmId !== "string" || !VM_ID_RE.test(vmId)) return { ok: false, error: "invalid-payload" };
+      var el = elements.get(vmId);
+      if (!el) return { ok: false, error: "unknown-element" };
+      var label = typeof payload.label === "string" && payload.label ? payload.label : el.tagName.toLowerCase();
+      setSelected(vmId, label);
+      if (payload.scrollIntoView && typeof el.scrollIntoView === "function") {
+        try {
+          el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        } catch (error) {
+          /* Not every engine takes the options object; the ring is drawn either way. */
+        }
+      }
+    },
   };
 
   /** @param {MessageEvent} event */
@@ -757,11 +916,23 @@
 
   // Capture phase, so the page's own handlers never see the event: the clone is a canvas, not a
   // site. Scripts are stripped at clone time, but inline `href="javascript:"` and plain links are
-  // not, and either one navigating away would lose the designer's unsaved work.
+  // not, and either one navigating away would lose the designer's unsaved work. Registered at
+  // evaluation time rather than at init, so nothing can navigate in the gap before DOM ready.
   document.addEventListener(
     "click",
     function (event) {
       event.preventDefault();
+      event.stopPropagation();
+      ensureInit();
+      var vmId = nearestTaggedId(event.target);
+      if (!vmId) {
+        post("element:deselect", { reason: "background" });
+        return;
+      }
+      // A request, not a move: the ring follows only when the shell answers with `select`,
+      // because it may open the unsaved-changes guard first (spec D10).
+      var info = elementInfo(vmId);
+      if (info) post("element:select", info);
     },
     true,
   );
@@ -770,6 +941,15 @@
     "submit",
     function (event) {
       event.preventDefault();
+    },
+    true,
+  );
+
+  document.addEventListener(
+    "keydown",
+    function (event) {
+      if (event.key !== "Escape" && event.key !== "Esc") return;
+      post("element:deselect", { reason: "escape" });
     },
     true,
   );

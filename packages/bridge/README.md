@@ -23,8 +23,19 @@ the two copies of the regexes are byte-identical.
 
 The bridge is a **dumb renderer** (spec D1): the shell computes every byte of CSS and sends it in
 an `AppliedAssignment`. The bridge never reads the catalog and never builds a keyframes name.
-Everything it injects into the page is prefixed: `<style id="vm-runtime">`, `<div data-vm-overlay>`,
-`--vm-*` custom properties, `vm-*` keyframes names.
+
+Everything it injects into the page is prefixed:
+
+| Injected | What |
+|---|---|
+| `<style id="vm-runtime">` | every `@keyframes` body in use (reference-counted) and one `[data-vm-id="…"] { … }` base-styles rule per assignment |
+| `<div data-vm-overlay>` | the fixed, `pointer-events: none` container holding the hover outline and the selection ring |
+| `data-vm-hovered` / `data-vm-selected` on that container | the vmId the outline and the ring are currently drawn around; the bridge's only readable state, which is how the tests and the Phase 4 e2e spec assert that a click did **not** move the ring (spec D10) |
+| `--vm-*` custom properties, `animation-*` longhands | inline on the element, the animation group `!important` and only while the trigger is armed |
+
+The one thing that is **not** `vm-` prefixed is the `postMessage` type names (`apply`, not
+`vm-apply`): the envelope's `source: "vibe-motion"` namespaces them, per spec D9 and the amended
+naming rule in CLAUDE.md.
 
 ## How it is consumed
 
@@ -64,8 +75,10 @@ jsdom has no layout, no real animations and no `IntersectionObserver`, so these 
 construction and by the Phase 4 e2e specs rather than by unit tests:
 
 - `getBoundingClientRect()` returns zeros, so `ElementInfo.rect` / `pageRect` values and
-  `ElementInfo.visible` are exercised but never meaningfully asserted.
-- Overlay geometry (where the hover outline and the selection ring actually land).
+  `ElementInfo.visible` are exercised but never meaningfully asserted (`visible` is always
+  `false` here).
+- Overlay geometry: which element the outline and the ring are drawn around is asserted through
+  `data-vm-hovered` / `data-vm-selected`, but where the boxes actually land is not.
 - That a restart (`animation-name: none` -> forced style flush -> name back) really replays the
   animation, and that `animationend` fires after a `replay` on a `hover` / `in-view` element.
 - jsdom's CSSOM does not expand the `animation` shorthand into longhands, so a host page's

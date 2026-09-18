@@ -321,6 +321,20 @@ describe("preview", () => {
     expect(h.runtimeCss()).not.toContain("@keyframes vm-fade-in-up-v1-1-0");
   });
 
+  it("is dropped by state:load", () => {
+    const h = loadBridge(hostPage);
+    h.send({ type: "preview", payload: previewAssignment, seq: 1 });
+
+    h.send({ type: "state:load", payload: { assignments: [applied({ vmId: "vm-button" })] }, seq: 2 });
+
+    expect(h.el("vm-heading").style.getPropertyValue("animation-name")).toBe("");
+    expect(h.el("vm-heading").style.getPropertyValue("animation-duration")).toBe("9s");
+    expect(h.runtimeCss()).not.toContain("@keyframes vm-pulse-v1-1-0");
+
+    h.send({ type: "preview:clear", payload: {}, seq: 3 });
+    expect(h.el("vm-button").style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
+  });
+
   it("rejects a malformed preview", () => {
     const h = loadBridge(hostPage);
 
