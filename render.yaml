@@ -5,9 +5,10 @@
 # Secrets are `sync: false` and entered in the Render dashboard by the owner.
 # Database fields (name, databaseName, user, region, postgresMajorVersion) are IMMUTABLE after creation.
 
+# PR previews are OFF (Chris, 2026-09-18): every PR, docs-only ones included, spun up a full
+# web + api + Postgres stack. e2e runs locally against Docker instead (DT-076).
 previews:
-  generation: automatic
-  expireAfterDays: 7
+  generation: "off" # quoted: bare off is a YAML boolean
 
 projects:
   - name: vibe-motion

@@ -100,7 +100,7 @@ Deliverable: a repo that a new agent can clone, run gates on, and deploy, with t
 Tasks
 
 1. Monorepo scaffold: `apps/web` (Next.js), `apps/api` (Ktor), `packages/animation-catalog`, `docs/`.
-2. `render.yaml` blueprint with web, api, and Postgres. Preview environments on for PRs.
+2. `render.yaml` blueprint with web, api, and Postgres. PR preview environments are off (decided by Chris, 2026-09-18, after the first sync: one full stack per PR was cost without a consumer); e2e runs locally against Docker instead.
 3. Dockerfile for the API (multi-stage Gradle build, JRE 21 runtime).
 4. GitHub Actions gates: lint, typecheck, unit tests (web + api), build, e2e smoke. A failing gate applies the `Gate Flag` label and comments on the PR.
 5. OpenAPI 3.1 document at `apps/api/openapi.yaml` covering projects, clone, versions, export. Generated TS client in `apps/web`.
@@ -113,7 +113,7 @@ Critical decisions
 - **How the preview iframe reaches the cloned page.** Options: (a) web proxies `/preview/:projectId` to the API via a Next.js rewrite so the iframe is same-origin with the shell, or (b) iframe points at the API origin directly and all communication is `postMessage`. Recommended: (b) postMessage with a strict origin check. It works identically in local dev, Render previews, and production, and it keeps the cloned page's scripts out of the shell's origin. Same-origin access to the iframe DOM is a security and stability liability when the cloned page is arbitrary third-party HTML.
 - **Where the database schema lives.** Recommended: Flyway in the API. The web app has no DB access.
 
-Exit criteria: `pnpm gates` and `./gradlew check` pass in CI on an empty-feature repo; blueprint deploys three services to a Render preview.
+Exit criteria: `pnpm gates` and `./gradlew check` pass in CI on an empty-feature repo; blueprint deploys three services to Render (verified 2026-09-18 on the production environment).
 
 ### Phase 1 — Animation catalog
 
@@ -310,7 +310,7 @@ Exit criteria: golden-file tests for three fixture states; Playwright opens the 
 
 ### Phase 8 — Hardening and launch
 
-- Full e2e suite green on Render preview environments.
+- Full e2e suite green locally against the Docker stack (DT-076), plus a post-deploy smoke check of the production URLs.
 - Lighthouse on `/help` and the editor shell.
 - Rate limit on `POST /projects` (clone is the only expensive endpoint).
 - Production deploy via blueprint; secrets provided by Chris in the Render dashboard (`sync: false` vars).
@@ -346,7 +346,7 @@ Screenshots for UI PRs are produced by the Screenshot-Runner and committed to th
 | Cloned pages render badly without their JS | Designer sees a broken canvas | Fixture set of real pages in Phase 2; deferred "headless render" option |
 | Third-party CSS collides with `vm-` runtime | Animation does not visibly run | Prefix everything; `!important` on `animation-name` in the runtime style only, never in export |
 | Render starter plan cold starts on API | Slow first clone | Health check keeps it warm; clone timeout messaging in UI |
-| Iframe `postMessage` origin mismatch across environments | Bridge silently fails | Allowed origins come from env vars set in `render.yaml`; e2e runs against preview envs |
+| Iframe `postMessage` origin mismatch across environments | Bridge silently fails | Allowed origins come from env vars set in `render.yaml`; e2e runs against the local Docker stack with real cross-origin web/api origins; production origins were verified by CORS probe on first deploy (DT-015) |
 | Two agents change the OpenAPI contract at once | Integration break in Phase 4 | Additive-only rule after Phase 0; memory.md announces contract edits |
 | User loses unsaved draft (tab close, crash) | Frustration, rework | Unsaved indicator + `beforeunload` warning in v0; localStorage draft (DT-016) |
 | Diff replay gets slow on a long history | Slow version switching | Checkpoint snapshots (DT-017); trigger is >200 versions on one project |

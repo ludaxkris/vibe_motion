@@ -288,12 +288,10 @@ flowchart TB
     web -->|"NEXT_PUBLIC_API_ORIGIN = fromService api host"| api
     api -->|"DATABASE_URL = fromDatabase connectionString"| db
   end
-  preview["Preview environments<br/>one stack per PR, expire 7 days"]
   gh -->|"autoDeployTrigger: checksPass"| prod
-  gh -->|"previews.generation: automatic"| preview
 ```
 
-Secrets (`sync: false`) are entered by Chris in the Render dashboard. Everything else is derived by the blueprint.
+PR preview environments are off (`previews.generation: off`); e2e runs locally against Docker. Secrets (`sync: false`) are entered by Chris in the Render dashboard. Everything else is derived by the blueprint.
 
 ## 7. Extension points already reserved
 
