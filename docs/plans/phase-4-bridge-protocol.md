@@ -1,0 +1,162 @@
+# Phase 4 — Bridge protocol spec (v1)
+
+Status: DRAFT for review, revised after `code-architect` review · Owner: Chris Tung · Written 2026-09-18 against `main` @ bb5cc23, Phase 2 worktree @ 014529e (PR #4, draft), Phase 3 worktree @ 645c25e (no PR yet).
+
+This is the contract between the editor shell (`apps/web`) and the bridge script running inside the cloned page's iframe. It refines the message table in [build_plan.md §4 Phase 4](../build_plan.md). It is a **shared contract** (CLAUDE.md rule 5): changes after it lands are additive only. The implementation plan is [phase-4-bridge-plan.md](phase-4-bridge-plan.md).
+
+Everything the build plan already decided stands: `postMessage` only, strict origin checks, overlay drawn inside the iframe, capture-phase click interception, one `<style id="vm-runtime">` block plus per-element inline styles, and live preview never calls the API. One build-plan detail changes: replay uses a synchronous style flush, not a next-frame toggle (see `replay` in §3).
+
+## 1. Decisions this spec adds
+
+| # | Decision | Why |
+|---|---|---|
+| D1 | **The bridge is a dumb renderer. The shell computes all CSS.** `apply` carries the finished keyframes name, keyframes CSS, inline style map and base styles. The bridge never sees the catalog and never builds a keyframes name. The bridge validates what it interpolates: `vmId` matches `/^vm-[a-z0-9-]+$/`, `keyframesName` matches `/^vm-[a-z0-9-]+$/`, every `style` key matches `/^(animation-(?!name$)[a-z-]+|--vm-[a-z0-9-]+)$/`; a message failing validation is acked `ok: false, error: "invalid-payload"` and ignored. | The frame's CSP is `connect-src 'none'`, so it cannot fetch a catalog. One generator (`apps/web/lib/runtime-css`) means the preview cannot drift from the help page, and DT-047's rule ("never build the name yourself") holds by construction. The full payload is under 1 KB (largest keyframes body in catalog 1.1.0 is 413 bytes), so resending it on every slider tick is cheap and a slimmer param-only message is not worth a second code path. |
+| D2 | **The bridge source moves to a workspace package, `packages/bridge`.** `src/vm-bridge.js` (plain script, no imports, no build step, `// @ts-check` with JSDoc types from `protocol.ts`) and `src/protocol.ts` (types and constants). A Gradle `bridgeResources` Sync task copies the script into the API jar the way `catalogResources` copies the catalog (plus one Dockerfile `COPY packages/bridge`). The web mock route serves the same file. `BRIDGE_VERSION` lives only in the script; Kotlin parses it out instead of hand-syncing a constant. | Phase 2 has no JS test tooling under `apps/api`; the script is only string-asserted from Kotlin. A package gives it vitest + jsdom tests, a `tsc --checkJs` gate, and gives the mock-mode e2e path the *same* script the API serves. |
+| D3 | **Triggers are armed by the bridge, not expressed as CSS selectors.** `--vm-*` custom properties are written inline as soon as an assignment is applied (they are inert on their own). The whole `animation-*` group (`animation-name`, every longhand in `style`, and `animation-play-state: running`) is written inline, all `!important`, **only while the trigger is armed**; disarming restores the snapshot (D6). `load` arms at once. `hover` arms on pointer enter and disarms on pointer leave, reusing the delegated pointer handlers that drive the hover outline. `in-view` arms and disarms from one shared `IntersectionObserver`. | Writing only `animation-name` late would leave our duration and delay retiming whatever animation the host page already runs on that element. `!important` on the whole group keeps our longhands coherent against host `!important` rules, including the common `prefers-reduced-motion` reset that would otherwise make the preview look dead. Avoids `:hover` rules fighting host specificity. |
+| D4 | **`preview` / `preview:clear` are separate from `apply` / `clear`.** A preview is transient, never touches the draft, and clearing it restores whatever was applied before. | The handoff previews an animation on hover of a catalog card. Modelling that as apply-then-undo in the shell would dirty the draft and race with real edits. |
+| D5 | **Every shell→iframe message carries `seq`; the bridge answers `ack { seq, ms }`.** `ms` is the time the bridge spent in the handler. | Gives tests a deterministic thing to await, and gives the performance criterion a number taken inside the frame. |
+| D6 | **The bridge restores what it overwrites.** Per element the bridge keeps three layers: `original` (the host's inline value and priority for each property we touch, snapshotted **once**, never while the bridge owns the property), `applied`, and `preview`. One `render(element)` function writes `preview ?? applied` according to arm state. A key present in the old `style` map and absent from the new one is restored from `original`. An `apply` that arrives during a preview updates `applied` only. Keyframes used by a preview take part in the reference count. | Cloned pages keep their own inline styles. Removing our properties must not remove theirs, and a preview must never snapshot our own applied values as "original". |
+| D7 | **Handshake with a protocol version.** `ready` carries `protocolVersion: 1`. The shell sends `hello` when the client mounts and on the iframe's `load` event; the bridge answers `hello` by re-sending `ready`. The shell treats `ready` as idempotent: each one rejects pending acks and triggers a fresh `state:load`. On a `protocolVersion` it does not know, the shell sends nothing and shows a reload banner. | The editor shell is server-rendered, so the iframe starts loading before hydration and the first `ready` can fire before the shell listens. Without `hello` the shell would queue forever. |
+| D8 | **Single allowed origin per side in v0.** Multi-origin support (Render preview URLs) is deferred. | Phase 2's `WEB_ORIGIN` is singular end to end. |
+| D9 | **Message types stay unprefixed** (`apply`, not `vm-apply`). | The envelope's `source: "vibe-motion"` already namespaces them and the build plan uses unprefixed names. CLAUDE.md's naming rule lists "message type" among `vm-` prefixed things; that line is amended in the same PR (owner decision, see §9). |
+
+## 2. Envelope
+
+```ts
+type Envelope<T extends string, P> = {
+  source: "vibe-motion";
+  type: T;
+  payload: P;
+  seq?: number; // shell→iframe only: monotonically increasing per shell session
+};
+```
+
+A receiver drops a message silently unless **all** of these hold:
+
+| Check | Bridge (inside iframe) | Shell |
+|---|---|---|
+| Origin | `event.origin === parentOrigin` (from `data-vm-parent-origin`, i.e. `WEB_ORIGIN`) | `event.origin === new URL(previewPageUrl(projectId), location.href).origin` |
+| Window | `event.source === window.parent` | `event.source === iframe.contentWindow` |
+| Shape | `data && data.source === "vibe-motion" && typeof data.type === "string"` | same |
+| Known type | unknown `type` is ignored (forward compatibility) | same |
+
+Senders always pass an explicit `targetOrigin`; `"*"` is forbidden on both sides. The clone pipeline strips iframes and meta refresh and the page CSP sets `frame-src 'none'`, so no nested frame can spoof `ready`.
+
+**Mock mode stays cross-origin.** With `NEXT_PUBLIC_API_MOCKING=enabled` the shell runs on `http://localhost:3000` and the iframe `src` is `http://127.0.0.1:3000/mock-api/projects/<id>/page`: the same Next server, a different origin. The mock route injects `data-vm-parent-origin="http://localhost:3000"` and sends the same CSP as Phase 2's `BridgePageRenderer`. A same-origin mock would let a bridge that skips its origin check pass e2e.
+
+## 3. Messages
+
+### iframe → shell
+
+| Type | Payload | When |
+|---|---|---|
+| `ready` | `{ elementCount: number; bridgeVersion: string; protocolVersion: 1 }` | At `DOMContentLoaded`, and again in answer to every `hello`. |
+| `element:hover` | `ElementInfo \| { vmId: null }` | When the hovered tagged element **changes** (not on every mouse move). `vmId: null` when the pointer leaves all tagged elements. |
+| `element:select` | `ElementInfo` | Capture-phase `click` on or inside a tagged element (nearest ancestor-or-self with `data-vm-id`). The click is always `preventDefault`-ed and never navigates. |
+| `element:deselect` | `{ reason: "escape" \| "background" }` | `Escape` keydown inside the frame, or a click that resolves to no tagged element. The shell decides whether to honour it. |
+| `ack` | `{ seq: number; ms: number; ok: boolean; error?: "unknown-element" \| "invalid-payload" }` | After handling any message that carried `seq`. |
+| `elements:list` *(reserved, Phase 5)* | `{ seq: number; elements: ElementInfo[]; truncated: boolean }` | Answer to `elements:query`. |
+
+```ts
+type Rect = { x: number; y: number; width: number; height: number };
+type ElementInfo = {
+  vmId: string;
+  tag: string;            // lower-case
+  role: string | null;    // explicit role attribute, else null
+  textPreview: string;    // textContent, whitespace-collapsed, max 80 chars
+  rect: Rect;             // iframe viewport, CSS px
+  pageRect: Rect;         // document coordinates, CSS px
+  order: number;          // document order among tagged elements, from 0
+  visible: boolean;       // non-zero box and not visibility:hidden / display:none
+};
+```
+
+### shell → iframe
+
+| Type | Payload | Effect |
+|---|---|---|
+| `hello` | `{}` | The bridge re-sends `ready`. |
+| `select` | `{ vmId: string \| null; label?: string; scrollIntoView?: boolean }` | Draws or removes the selection ring. `label` is the tag text shown on the ring (`h1 · Fade In Up`); default is the element's tag. |
+| `apply` | `AppliedAssignment` | Creates or updates the assignment on `vmId`. Replays once when `keyframesName`, `trigger` or `baseStyles` changed; a param-only change does not restart the animation. |
+| `clear` | `{ vmId: string }` | Removes the assignment and restores overwritten inline values (D6). |
+| `replay` | `{ vmId: string \| null }` | Restarts the animation on one element, or on all when `null`: arm if needed, set `animation-name: none`, force a style flush (`getComputedStyle(el).animationName`), restore the name, all in the same task. For `hover` and `in-view` this plays the animation once and then returns to the trigger's normal arm state. |
+| `preview` | `AppliedAssignment` | Shows an assignment transiently on `vmId` and plays it once regardless of trigger. At most one preview exists; a new one replaces it. |
+| `preview:clear` | `{}` | Removes the preview and re-renders the element from its applied assignment, if any. |
+| `state:load` | `{ assignments: AppliedAssignment[] }` | Clears every assignment and preview, then applies the list in one batch (one stylesheet rebuild). Used after `ready`, on Cancel, for bulk changes, and by version viewing in Phase 6. |
+| `mode` *(reserved, Phase 6)* | `{ mode: "edit" \| "view" }` | `view`: no hover outline, no crosshair, no select events. |
+| `elements:query` *(reserved, Phase 5)* | `{ filter?: { tags?: string[]; minWidth?: number; minHeight?: number }; limit?: number }` | One read-only layout pass; answered by `elements:list`. |
+
+```ts
+type AppliedAssignment = {
+  vmId: string;
+  trigger: "load" | "hover" | "in-view";
+  keyframesName: string;              // from keyframesName(); e.g. "vm-fade-in-up-v1-1-0"
+  keyframesCss: string;               // full "@keyframes <name> { ... }" block
+  style: Record<string, string>;      // animation-* longhands and --vm-* custom properties; never animation-name
+  baseStyles: string;                 // catalog baseStyles declarations, "" when none
+  animationId: string;                // informational
+  catalogVersion: string;             // informational
+  params: Record<string, string>;     // informational
+};
+```
+
+The shell builds an `AppliedAssignment` from a draft `Assignment` with `getEntry(assignment.catalogVersion, assignment.animationId)` from the `animation-catalog` package and `apps/web/lib/runtime-css`. An assignment whose pinned version or id cannot be resolved is **not sent**; the shell reports it in the panel. Each assignment resolves against its own pin, so a draft that mixes catalog versions renders correctly.
+
+## 4. What the bridge writes into the page
+
+| What | Where | Changes when |
+|---|---|---|
+| `@keyframes` blocks, one per distinct `keyframesName` in use (reference-counted by vmId, previews included) | `<style id="vm-runtime">` | an assignment is added, removed, or changes animation. **Never on a param change.** |
+| `[data-vm-id="<vmId>"] { <baseStyles> }`, one rule per assignment with non-empty `baseStyles` | `<style id="vm-runtime">` | same as above |
+| `--vm-*` entries of `style` | the element's inline `style` (`style.setProperty`) | every `apply` |
+| `animation-*` group: `animation-name`, the longhands in `style`, `animation-play-state: running` | inline, `!important`, **only while armed** | trigger events, `apply` while armed, `replay`, `preview` |
+| Hover outline, selection ring and its label | one fixed-position container `<div data-vm-overlay>` appended to `<body>`, `pointer-events: none` | hover / `select`; repositioned in `requestAnimationFrame` from a capture-phase passive `scroll` listener (nested scrollers do not bubble) and from `resize` |
+
+The overlay container and everything in it is excluded from hit-testing and from `[data-vm-id]` queries. Visuals follow the design handoff: hover is a 1.5px dashed `#7c5cff` outline; selected is a 2px solid ring offset about 6px with a mono tag label; the cursor over the page is `crosshair`.
+
+## 5. Shell-side behaviour
+
+- The bridge client lives in `apps/web/lib/bridge/` and is framework-free: it takes a target `Window`, the expected origin, and an editor store instance. The store module exports `createEditorStore()` so tests get a fresh store; the context provider half of DT-026 stays deferred. A thin React hook mounts the client on the iframe.
+- **Inbound:** `element:select` → `setSelectedVmId(vmId)` plus the `ElementInfo` kept in a side map; `element:hover` → `hoverVmId`; `element:deselect` → deselect when allowed.
+- **Outbound:** a store subscription diffs `draftState` by reference per vmId. Changes are coalesced per vmId per `requestAnimationFrame`: `apply` for changed entries, `clear` for removed ones. More than 8 changed entries in one update sends a single `state:load` instead (this is what Phase 5 auto-generate produces). When a slider is released (pointer up) the shell sends `replay` so the designer sees the result. Selection changes send `select`. Nothing here calls the API.
+- The iframe gets `sandbox="allow-scripts allow-same-origin"`. `allow-same-origin` keeps the framed document on its own origin so the origin check and `script-src 'self'` work; dropping it would make the frame's origin `"null"` and force a `"*"` target. Because both real and mock mode are cross-origin with the shell, the pair never lets the frame reach the shell's DOM.
+
+## 6. Performance budget
+
+| Path | Budget | How it is met / measured |
+|---|---|---|
+| Param change (slider tick) | shell-side round trip (store set → `ack` received) p95 < 16 ms; max `ack.ms` < 4 ms | inline `setProperty` calls only, no stylesheet write, no layout read. Measured in Playwright with 120 rAF-paced `updateDraftParam` ticks under CDP 4× CPU throttling. p95, not max, because CI is noisy. |
+| `state:load`, 200 assignments | `ack.ms` < 50 ms | one stylesheet text write; style writes batched; no per-assignment layout read |
+| Element lookup | O(1) | the bridge builds a `Map<vmId, Element>` once at `ready`; no attribute-selector scans per message |
+| Hover | no message unless the target vmId changes; overlay moves in rAF | avoids flooding `postMessage` on mouse move |
+| `in-view` | one shared `IntersectionObserver` for all in-view assignments | threshold is the exported constant `IN_VIEW_THRESHOLD = 0.2` in `protocol.ts`, reused by the Phase 7 exporter |
+
+## 6a. Preview / export parity
+
+Phase 7's exporter must render what the designer saw. Where the editor deliberately differs, it is listed here.
+
+| Aspect | Editor preview (Phase 4) | Export (Phase 7) |
+|---|---|---|
+| Keyframes name and body | from `keyframesName()` and the pinned catalog entry | same |
+| `baseStyles` selector specificity | `[data-vm-id="…"]` = (0,1,0) | `.vm-aN` = (0,1,0); both lose equally to a more specific host rule |
+| `in-view` threshold | `IN_VIEW_THRESHOLD` | same constant |
+| `in-view` repeats | re-arms on every entry, so the designer can see it again by scrolling (deliberate divergence) | plays once |
+| `in-view` state before the trigger fires | see §9 question 3 | must match the decision |
+| `prefers-reduced-motion` | preview always plays | see §9 question 4 |
+| `!important` | on the inline `animation-*` group | never (build plan §6) |
+
+## 7. Out of scope for Phase 4
+
+Generate and Auto-generate (Phase 5; `elements:query` is only reserved here), Save and the unsaved-changes guard dialogs (Phase 6; `mode` is only reserved here), multi-origin allow-lists, serving clones from a dedicated sandbox origin (needed once the API has auth cookies), keyboard navigation of the catalog list, and any message that writes to the API.
+
+## 8. Sequencing constraint
+
+`packages/bridge` and the framework-free client in `apps/web/lib/bridge` do not touch any file the in-flight Phase 2 or Phase 3 branches own, but the client imports the Phase 3 store. Moving the script out of `apps/api` resources, the Gradle and Dockerfile changes, the iframe `sandbox` change and the mock route change all edit Phase 2 or Phase 3 files and wait for those merges (CLAUDE.md rule 11).
+
+## 9. Open questions for Chris
+
+1. **Guard on element switch.** The handoff guards "click another element while dirty" with a Save dialog. The build plan's draft is page-wide, so switching elements loses nothing. This spec assumes **no guard on element switch**; the guard belongs to leaving the editor, viewing a version, or exporting (Phase 6). Architect agrees.
+2. **`in-view` repeats in the editor.** This spec assumes **re-arm on every entry** in the editor, recorded above as a deliberate divergence from the export, which plays once. Architect agrees.
+3. **`in-view` state before it fires.** Eleven catalog entrances start at `opacity: 0`. Without a rule, the element is visible, snaps to hidden when the trigger fires, then fades in. Recommendation: **hold the first keyframe** until the trigger fires (name set, `animation-play-state: paused`), in both preview and export.
+4. **Reduced motion.** Recommendation: the editor preview always plays; the export wraps its rules in `@media (prefers-reduced-motion: no-preference)`. The export half is Phase 7 work and gets a deferred-task entry.
+5. **CLAUDE.md naming rule.** Amend "message type" out of the `vm-` prefix list (D9), or rename every message type to `vm-*`. Recommendation: amend the rule.
