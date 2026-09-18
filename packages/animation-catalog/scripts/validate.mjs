@@ -6,7 +6,15 @@
 
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { listVersionFiles, readCatalog, readCurrent, readSchema, SEMVER, STANDARD_PARAM_KEYS } from "./lib.mjs";
+import {
+  compareSemver,
+  listVersionFiles,
+  readCatalog,
+  readCurrent,
+  readSchema,
+  SEMVER,
+  STANDARD_PARAM_KEYS,
+} from "./lib.mjs";
 
 const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false });
 addFormats(ajv);
@@ -40,6 +48,11 @@ for (const { version, file } of files) {
     }
     if (entry.defaultTrigger && !entry.triggers.includes(entry.defaultTrigger)) {
       problems.push(`${version}/${entry.id}: defaultTrigger ${entry.defaultTrigger} not in triggers`);
+    }
+    // fillMode became a standard key in 1.1.0 (CLAUDE.md: every animation exposes the
+    // standard animation-* properties including fill-mode). 1.0.0 predates it and is exempt.
+    if (compareSemver(version, "1.1.0") >= 0 && !keys.has("fillMode")) {
+      problems.push(`${version}/${entry.id}: missing fillMode param (standard key from 1.1.0 onward)`);
     }
   }
 }

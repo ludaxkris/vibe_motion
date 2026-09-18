@@ -7,7 +7,7 @@
  * Phase 3+ swaps this for `GET /catalog` where a live catalog is needed;
  * assignments always resolve against the version they pinned.
  */
-import catalogJson from "../../../packages/animation-catalog/versions/1.0.0.json";
+import catalogJson from "../../../packages/animation-catalog/versions/1.1.0.json";
 
 import type { Catalog, CatalogEntry } from "@/lib/api-client";
 
@@ -15,7 +15,7 @@ import type { Catalog, CatalogEntry } from "@/lib/api-client";
  * Mirrors `packages/animation-catalog/current`. The editor authors against this
  * version; every saved assignment pins the version it was authored with.
  */
-export const CURRENT_CATALOG_VERSION = "1.0.0";
+export const CURRENT_CATALOG_VERSION = "1.1.0";
 
 const catalog = catalogJson as unknown as Catalog;
 

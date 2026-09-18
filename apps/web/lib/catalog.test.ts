@@ -21,7 +21,7 @@ describe("catalog", () => {
     expect(getCatalog().version).toBe(CURRENT_CATALOG_VERSION);
   });
 
-  it("loads all 26 entries of catalog 1.0.0", () => {
+  it("loads all 26 entries of catalog 1.1.0", () => {
     expect(getCatalogEntries()).toHaveLength(26);
   });
 

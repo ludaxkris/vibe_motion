@@ -56,10 +56,12 @@ describe("check-immutable gate", () => {
   });
 
   it("passes when a new version is added and current bumped", () => {
+    // 9.9.9 rather than the next real semver, so this stays a genuinely new file no matter
+    // how many versions/*.json this package has actually published.
     const dir = path.join(repo, "packages/animation-catalog");
     const v1 = JSON.parse(readFileSync(path.join(dir, "versions/1.0.0.json"), "utf8"));
-    writeFileSync(path.join(dir, "versions/1.1.0.json"), JSON.stringify({ ...v1, version: "1.1.0" }));
-    writeFileSync(path.join(dir, "current"), "1.1.0\n");
+    writeFileSync(path.join(dir, "versions/9.9.9.json"), JSON.stringify({ ...v1, version: "9.9.9" }));
+    writeFileSync(path.join(dir, "current"), "9.9.9\n");
     expect(runGate(repo).code).toBe(0);
   });
 

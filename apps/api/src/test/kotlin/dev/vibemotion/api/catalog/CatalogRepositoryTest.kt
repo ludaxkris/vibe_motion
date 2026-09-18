@@ -56,6 +56,19 @@ class CatalogRepositoryTest :
             }
         }
 
+        test("fillMode is a standard key and every entry from 1.1.0 onward declares it") {
+            CatalogParam(key = "fillMode", type = ParamType.SELECT, default = "none").isStandard shouldBe true
+
+            repository.versions().forEach { version ->
+                if (version == "1.0.0") return@forEach // fillMode predates 1.0.0, per CLAUDE.md/CHANGELOG.md
+                repository.catalog(version).shouldNotBeNull().entries.forEach { entry ->
+                    withClue("$version/${entry.id} must declare fillMode") {
+                        entry.params.map { it.key } shouldContain "fillMode"
+                    }
+                }
+            }
+        }
+
         test("every non-standard param declares a cssVar, as schema.json requires") {
             repository.versions().forEach { version ->
                 repository.catalog(version).shouldNotBeNull().entries.forEach { entry ->

@@ -35,4 +35,4 @@ export function readSchema() {
   return JSON.parse(readFileSync(path.join(pkgRoot, "schema.json"), "utf8"));
 }
 
-export const STANDARD_PARAM_KEYS = new Set(["duration", "delay", "easing", "iteration", "direction"]);
+export const STANDARD_PARAM_KEYS = new Set(["duration", "delay", "easing", "iteration", "direction", "fillMode"]);
