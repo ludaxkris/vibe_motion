@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { apiClient } from "@/lib/api-client";
 import type { StaleParentError } from "@/lib/api-client";
 
-import { UNREACHABLE_HOST } from "./db";
+import { CLONE_FAILURE_HOSTS, UNREACHABLE_HOST } from "./db";
 
 describe("mock API: projects", () => {
   it("rejects a non-http(s)/invalid URL with the contract's validation error", async () => {
@@ -29,6 +29,40 @@ describe("mock API: projects", () => {
 
     expect(response.status).toBe(422);
     expect(error?.code).toBeTruthy();
+  });
+
+  // One trigger host per reason the Entry screen has to explain
+  // (docs/design/README.md "1. Entry", error state 3b), so the screen's error
+  // mapping can be exercised end to end against the real client.
+  it.each([
+    ["unreachable.test", 422, "unreachable"],
+    ["login.test", 422, "login_required"],
+    ["blocked.test", 422, "blocked_host"],
+    ["not-html.test", 422, "not_html"],
+    ["too-large.test", 413, "too_large"],
+    ["rate-limited.test", 429, "rate_limited"],
+  ])("fails %s with %i %s", async (host, status, code) => {
+    const { response, data, error } = await apiClient.POST("/projects", {
+      body: { url: `https://${host}/page` },
+    });
+
+    expect(response.status).toBe(status);
+    expect(data).toBeUndefined();
+    expect(error?.code).toBe(code);
+    expect(error?.message).toBeTruthy();
+  });
+
+  it("exposes every trigger host so tests never hard-code them", () => {
+    expect(Object.values(CLONE_FAILURE_HOSTS)).toEqual(
+      expect.arrayContaining([
+        "unreachable.test",
+        "login.test",
+        "blocked.test",
+        "not-html.test",
+        "too-large.test",
+        "rate-limited.test",
+      ]),
+    );
   });
 
   it("404s when fetching an unknown project's page", async () => {

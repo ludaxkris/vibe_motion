@@ -33,8 +33,57 @@ type ProjectRecord = {
 
 const projects = new Map<string, ProjectRecord>();
 
+/**
+ * Hosts that always fail cloning, one per reason the Entry screen explains
+ * (`docs/design/README.md` "1. Entry", error state 3b). `apps/api/openapi.yaml`
+ * gives `POST /projects` the statuses but not the `Error.code` values — it types
+ * `code` as a bare string — so these codes are the mock's proposal for the real
+ * service (see the task report's deferred items).
+ */
+export const CLONE_FAILURE_HOSTS = {
+  unreachable: "unreachable.test",
+  loginRequired: "login.test",
+  blockedHost: "blocked.test",
+  notHtml: "not-html.test",
+  tooLarge: "too-large.test",
+  rateLimited: "rate-limited.test",
+} as const;
+
 /** Host that always fails cloning in the mock, for testing the clone-failure path. */
-export const UNREACHABLE_HOST = "unreachable.test";
+export const UNREACHABLE_HOST = CLONE_FAILURE_HOSTS.unreachable;
+
+const CLONE_FAILURES: Record<string, { status: 413 | 422 | 429; code: string; message: string }> = {
+  [CLONE_FAILURE_HOSTS.unreachable]: {
+    status: 422,
+    code: "unreachable",
+    message: "The site did not respond within 15 seconds",
+  },
+  [CLONE_FAILURE_HOSTS.loginRequired]: {
+    status: 422,
+    code: "login_required",
+    message: "The page redirected to a sign-in screen",
+  },
+  [CLONE_FAILURE_HOSTS.blockedHost]: {
+    status: 422,
+    code: "blocked_host",
+    message: "Host is not a public address",
+  },
+  [CLONE_FAILURE_HOSTS.notHtml]: {
+    status: 422,
+    code: "not_html",
+    message: "Response was application/pdf, not HTML",
+  },
+  [CLONE_FAILURE_HOSTS.tooLarge]: {
+    status: 413,
+    code: "too_large",
+    message: "Page and its CSS exceed the 10 MB cap",
+  },
+  [CLONE_FAILURE_HOSTS.rateLimited]: {
+    status: 429,
+    code: "rate_limited",
+    message: "Too many clone requests from this client",
+  },
+};
 
 export function resetDb(): void {
   projects.clear();
@@ -60,7 +109,9 @@ function err(code: string, message: string, details?: Record<string, unknown>): 
 export type CreateProjectResult =
   | { status: 201; body: Project }
   | { status: 400; body: ApiError }
-  | { status: 422; body: ApiError };
+  | { status: 413; body: ApiError }
+  | { status: 422; body: ApiError }
+  | { status: 429; body: ApiError };
 
 export function createProject(url: string): CreateProjectResult {
   const parsed = isHttpUrl(url);
@@ -70,10 +121,11 @@ export function createProject(url: string): CreateProjectResult {
       body: err("invalid_url", "url must be an absolute http(s) URL", { url }),
     };
   }
-  if (parsed.hostname === UNREACHABLE_HOST) {
+  const failure = CLONE_FAILURES[parsed.hostname];
+  if (failure) {
     return {
-      status: 422,
-      body: err("clone_failed", `Could not reach ${url}`, { url }),
+      status: failure.status,
+      body: err(failure.code, failure.message, { url }),
     };
   }
 
