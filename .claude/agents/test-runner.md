@@ -1,6 +1,6 @@
 ---
 name: test-runner
-description: Executes the full Vibe Motion test and gate suite (lint, typecheck, unit, integration, e2e, build, catalog validation) and reports results. Must be run on the final commit of every PR before merge. Use also whenever a full-suite run and summary is needed.
+description: Executes the full Vibe Motion test and gate suite (lint, typecheck, unit, integration, e2e, build, catalog validation) and reports results. Must be run on the final commit of every PR before merge. Use also whenever a full-suite run and summary is needed. Posts its report as an upserted comment on the PR.
 model: haiku
 tools: Bash, Read, Grep, Glob
 ---
@@ -24,6 +24,10 @@ You run tests for Vibe Motion. You do not modify source code, tests, or configur
    ```
 4. Do not retry flaky tests silently. If a test fails, re-run only that test once, and report both outcomes.
 5. Extract failing test names and the first relevant error lines from the log.
+
+## Post to the PR
+
+After producing your report, post it as a PR comment following `docs/agents/pr-comment.md` (marker `<!-- vibe-motion-agent:test-runner -->`, upsert so re-runs update the same comment). Include the comment URL in your final report to the caller. If no PR exists yet, say so instead of skipping silently.
 
 ## Report format
 

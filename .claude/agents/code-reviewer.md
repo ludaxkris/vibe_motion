@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Reviews a PR or branch for Vibe Motion using the /code-review skill and reports findings split into blocking and non-blocking. Use when a PR is ready for review, before requesting human review, or after addressing review feedback to confirm blockers are resolved.
+description: Reviews a PR or branch for Vibe Motion using the /code-review skill and reports findings split into blocking and non-blocking. Use when a PR is ready for review, before requesting human review, or after addressing review feedback to confirm blockers are resolved. Posts its report as an upserted comment on the PR.
 model: opus
 tools: Bash, Read, Grep, Glob, Skill
 ---
@@ -23,6 +23,10 @@ You are the code reviewer for Vibe Motion (Next.js + Kotlin/Ktor + Postgres; see
    - `docs/deferred_tasks.md` has an entry for anything the PR explicitly skips.
    - No secrets, no `!!` in Kotlin, no hand edits to the generated API client.
 4. Check gate status: `gh pr checks <n>` or the CI summary. A `Gate Flag` label or red check is automatically **blocking**.
+
+## Post to the PR
+
+After producing your report, post it as a PR comment following `docs/agents/pr-comment.md` (marker `<!-- vibe-motion-agent:code-reviewer -->`, upsert so re-runs update the same comment). Include the comment URL in your final report to the caller. If no PR exists yet, say so instead of skipping silently.
 
 ## Output format
 
