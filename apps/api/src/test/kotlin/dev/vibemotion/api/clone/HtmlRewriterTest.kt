@@ -1,8 +1,11 @@
 package dev.vibemotion.api.clone
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.comparables.shouldBeLessThan
+import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -12,10 +15,16 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.system.measureTimeMillis
 
 private const val MARKETING_URL = "https://www.northwind.example/marketing/index.html"
 private const val DOCS_URL = "https://docs.example.org/guide/getting-started.html"
 private const val HOSTILE_URL = "https://hostile.example/index.html"
+private const val EXAMPLE_URL = "https://example.com/"
+private const val EXAMPLE_SHEET = "https://example.com/hostile.css"
+private const val HOSTILE_SHEET_BYTES = 512 * 1024
+
+private fun linkTo(href: String): String = """<html><head><link rel="stylesheet" href="$href"></head><body><p>x</p></body></html>"""
 
 /** Nothing in a cloned page may still be a script, or still look like one. */
 private val SCRIPT_TAG = Regex("<script", RegexOption.IGNORE_CASE)
@@ -208,6 +217,25 @@ class HtmlRewriterTest :
             document.selectFirst("div[style]")?.attr("style") shouldContain """url("#")"""
         }
 
+        test("hostile page: nothing survives that would come back to life in an export") {
+            // Phase 7 hands `base_html` to a designer's own site, where there is no CSP behind it.
+            val document = rewrittenDocument(rewriter, "hostile.html", HOSTILE_URL, emptyMap())
+
+            // `ping` is a POST to a third party on every click.
+            document.select("[ping]").size shouldBe 0
+            document.selectFirst("a[href\$='/ok2']").shouldNotBeNull()
+            document.selectFirst("area").shouldNotBeNull().attr("href") shouldBe "https://hostile.example/ok3"
+
+            // SMIL retargets links after everything here has run, which makes it scripting.
+            document.select("animate, set, animatemotion").size shouldBe 0
+            // …but an animation that only moves pixels is the kind of thing this tool is for.
+            document.selectFirst("animatetransform").shouldNotBeNull().attr("type") shouldBe "rotate"
+
+            // Scheme neutralisation reaches inside SVG, not just HTML elements.
+            document.selectFirst("svg#smil a")?.attr("href") shouldBe "#"
+            document.selectFirst("image")?.attr("xlink:href") shouldBe "#"
+        }
+
         test("keeps forms but disarms them") {
             val form = rewrittenDocument(rewriter, "hostile.html", HOSTILE_URL, emptyMap()).selectFirst("form")
 
@@ -267,7 +295,7 @@ class HtmlRewriterTest :
             val requested = mutableListOf<String>()
             val counting: StylesheetLoader = { url ->
                 requested += url
-                sheets[url]?.let { LoadedStylesheet(url, it) }
+                fetchOf(sheets, url)
             }
 
             val html = "<html><head>$links</head><body><p>x</p></body></html>"
@@ -293,6 +321,91 @@ class HtmlRewriterTest :
             Jsoup.parse(cloned.html).select("link[rel=stylesheet]").size shouldBe 1
         }
 
+        test("a stylesheet of unterminated @import rules is rewritten in well under a second") {
+            // `@import "a" ` with no semicolon: every match attempt used to scan to end of input,
+            // so 512 KB of it cost half a minute of uninterruptible CPU per sheet.
+            val hostile = """@import "a" """.repeat(HOSTILE_SHEET_BYTES / 12)
+            hostile.length shouldBeGreaterThan 500_000
+
+            val elapsed =
+                measureTimeMillis {
+                    rewriter.rewrite(linkTo("/hostile.css"), EXAMPLE_URL, loaderFor(mapOf(EXAMPLE_SHEET to hostile)))
+                }
+
+            withClue("took ${elapsed}ms") { elapsed shouldBeLessThan 1_000L }
+        }
+
+        test("a stylesheet of unterminated url( tokens is rewritten in well under a second") {
+            val hostile = "url(".repeat(HOSTILE_SHEET_BYTES / 4)
+
+            val elapsed =
+                measureTimeMillis {
+                    rewriter.rewrite(linkTo("/hostile.css"), EXAMPLE_URL, loaderFor(mapOf(EXAMPLE_SHEET to hostile)))
+                }
+
+            withClue("took ${elapsed}ms") { elapsed shouldBeLessThan 1_000L }
+        }
+
+        test("strips comment nodes, so nothing downstream can be swallowed by one") {
+            val html =
+                """
+                <!-- <head> --><html><head><!--[if lt IE 9]><script src="/ie.js"></script><![endif]-->
+                <title>Commented</title></head><body><p>keep me</p><!-- </body --></body></html><!-- trailing -->
+                """.trimIndent()
+
+            val cloned = rewriter.rewrite(html, EXAMPLE_URL, loaderFor(emptyMap()))
+
+            cloned.html shouldNotContain "<!--"
+            cloned.html shouldNotContain "-->"
+            // A conditional comment's contents go with it rather than being promoted.
+            cloned.html shouldNotContain "ie.js"
+            cloned.html shouldContain "keep me"
+            cloned.title shouldBe "Commented"
+        }
+
+        test("stops between stages once the clone's deadline has passed") {
+            var remaining = 2
+            val expiring = DeadlineCheck { if (remaining-- <= 0) throw CloneException.Unreachable("clone timed out") }
+
+            val error =
+                shouldThrow<CloneException.Unreachable> {
+                    rewriter.rewrite(fixture("docs.html"), DOCS_URL, loaderFor(docsStylesheets), expiring)
+                }
+
+            error.message.orEmpty() shouldContain "clone timed out"
+        }
+
+        test("drops a stylesheet link whose URL was refused, and keeps one that merely failed") {
+            val html =
+                """
+                <html><head>
+                  <link rel="stylesheet" href="https://internal.example/theme.css">
+                  <link rel="stylesheet" href="https://cdn.example/gone.css">
+                </head><body><p>x</p></body></html>
+                """.trimIndent()
+            val loader: StylesheetLoader = { url ->
+                if (url.contains("internal")) StylesheetFetch.Blocked else StylesheetFetch.Unavailable
+            }
+
+            val document = Jsoup.parse(rewriter.rewrite(html, EXAMPLE_URL, loader).html)
+
+            document.select("link[href*=internal]").size shouldBe 0
+            document.selectFirst("link[rel=stylesheet]")?.attr("href") shouldBe "https://cdn.example/gone.css"
+        }
+
+        test("counts every stylesheet attempt against the budget, not only the ones that load") {
+            val links = (1..100).joinToString("") { """<link rel="stylesheet" href="/gone$it.css">""" }
+            val requested = mutableListOf<String>()
+            val allMissing: StylesheetLoader = { url ->
+                requested += url
+                StylesheetFetch.Unavailable
+            }
+
+            HtmlRewriter().rewrite("<html><head>$links</head><body><p>x</p></body></html>", EXAMPLE_URL, allMissing)
+
+            requested.size shouldBe HtmlRewriter.DEFAULT_MAX_STYLESHEETS
+        }
+
         test("falls back to the host when the page has no usable title") {
             val html = "<html><head><title>   </title></head><body><p>x</p></body></html>"
 
@@ -314,7 +427,12 @@ private fun rewrittenDocument(
     sheets: Map<String, String>,
 ): Document = Jsoup.parse(rewriter.rewrite(fixture(fixtureName), url, loaderFor(sheets)).html, url)
 
-private fun loaderFor(sheets: Map<String, String>): StylesheetLoader = { url -> sheets[url]?.let { LoadedStylesheet(url, it) } }
+private fun loaderFor(sheets: Map<String, String>): StylesheetLoader = { url -> fetchOf(sheets, url) }
+
+private fun fetchOf(
+    sheets: Map<String, String>,
+    url: String,
+): StylesheetFetch = sheets[url]?.let { StylesheetFetch.Loaded(LoadedStylesheet(url, it)) } ?: StylesheetFetch.Unavailable
 
 private fun fixture(name: String): String = Files.readString(Path.of("src/test/resources/clone", name))
 

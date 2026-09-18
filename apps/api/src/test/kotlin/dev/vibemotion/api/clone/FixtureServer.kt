@@ -99,6 +99,28 @@ internal class FixtureServer : AutoCloseable {
         on(path) { exchange -> exchange.sendResponseHeaders(status, -1) }
     }
 
+    /**
+     * Sends the headers and a few body bytes, then goes silent for [holdMillis].
+     *
+     * This is the shape the request timeout does *not* cover: `BodyHandlers.ofInputStream()` only
+     * waits for headers, so without a watchdog the reader blocks in `read()` forever.
+     */
+    fun stallAfterHeaders(
+        path: String,
+        prefix: String = "<html>",
+        holdMillis: Long = 10_000,
+        contentType: String = "text/html",
+    ) {
+        on(path) { exchange ->
+            exchange.responseHeaders.set("Content-Type", contentType)
+            // Zero means "chunked, length unknown", so the client waits for bytes that never come.
+            exchange.sendResponseHeaders(200, 0)
+            exchange.responseBody.write(prefix.toByteArray())
+            exchange.responseBody.flush()
+            Thread.sleep(holdMillis)
+        }
+    }
+
     fun slow(
         path: String,
         delayMillis: Long,

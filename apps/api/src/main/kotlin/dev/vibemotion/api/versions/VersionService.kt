@@ -113,14 +113,21 @@ class VersionService(
             val project = lockProject(projectId)
             val target = requireVersion(projectId, versionId)
             val current = requireVersion(projectId, requireCurrentVersionId(project))
+            // One read and one fold for both states rather than two of each, because every
+            // millisecond here is a millisecond of the project row lock. `max` rather than
+            // `current.seq`: restore has no parent check, so a restore that raced a save can
+            // legitimately see a target ahead of the current pointer it read.
+            val states = statesAt(versions.diffsUpTo(projectId, maxOf(target.seq, current.seq)), setOf(current.seq, target.seq))
             append(
                 project = project,
                 parent = current,
                 label = requested ?: "Restored v${target.seq}",
-                // Informational: the catalog the state being restored was authored against. The
-                // pin that decides the CSS is the one inside each assignment.
+                // Informational: the catalog the state being restored was authored against — the
+                // TARGET's, not the current version's, so a restored version reads as a copy of
+                // what it reproduces. The pin that decides the CSS is the one inside each
+                // assignment, which the diff carries verbatim.
                 catalogVersion = target.catalogVersion,
-                diff = diffBetween(materialise(projectId, current.seq), materialise(projectId, target.seq)),
+                diff = diffBetween(states.getValue(current.seq), states.getValue(target.seq)),
             )
         }
     }
@@ -151,7 +158,7 @@ class VersionService(
     private fun materialise(
         projectId: UUID,
         throughSeq: Int,
-    ): State = stateAt(versions.diffsUpTo(projectId, throughSeq))
+    ): State = stateAt(versions.diffsUpTo(projectId, throughSeq).map { it.diff })
 
     private fun animationName(assignment: Assignment): String? =
         catalog

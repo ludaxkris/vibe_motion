@@ -12,6 +12,22 @@ import dev.vibemotion.api.domain.Trigger
 private val VM_ID = Regex("^vm-[0-9]+$")
 
 /**
+ * The most elements one Save may touch.
+ *
+ * A diff is not just stored: it is replayed by every later `stateAt`, so an oversized one is a
+ * permanent tax on the project rather than a one-off. Two thousand is an order of magnitude above
+ * a whole-page auto-generate on a real page, and the 256 KB body cap
+ * ([dev.vibemotion.api.routes.MAX_JSON_BODY_BYTES]) is the byte-level half of the same rule.
+ */
+internal const val MAX_DIFF_ENTRIES = 2_000
+
+/** One element cannot need more params than any catalog entry declares, with room to spare. */
+internal const val MAX_PARAMS_PER_ASSIGNMENT = 32
+
+/** `vm-` plus a counter; 64 characters is a counter with 61 digits. */
+internal const val MAX_VM_ID_LENGTH = 64
+
+/**
  * Checks a Save against the published catalog before it reaches Postgres.
  *
  * CSS is derived from `(animationId, catalogVersion) + params`, never stored, so a diff that does
@@ -31,6 +47,18 @@ class DiffValidator(
         catalogVersion: String,
         diff: Diff,
     ) {
+        // Before anything per-entry: an oversized diff costs one comparison to refuse, and
+        // reporting two thousand problems about it would be its own denial of service.
+        val entries = diff.set.size + diff.remove.size
+        if (entries > MAX_DIFF_ENTRIES) {
+            throw InvalidDiffException(
+                listOf(
+                    "diff has $entries entries (${diff.set.size} set + ${diff.remove.size} remove); " +
+                        "at most $MAX_DIFF_ENTRIES are allowed in one save",
+                ),
+            )
+        }
+
         val problems = mutableListOf<String>()
 
         if (catalog.catalog(catalogVersion) == null) {
@@ -38,22 +66,37 @@ class DiffValidator(
         }
 
         diff.set.forEach { (vmId, assignment) ->
-            if (!VM_ID.matches(vmId)) {
-                problems += "set: '$vmId' is not a valid element id (expected vm-<number>)"
-            }
+            vmIdProblem("set", vmId)?.let { problems += it }
             problems += assignmentProblems(vmId, assignment)
         }
 
         diff.remove.forEach { vmId ->
-            if (!VM_ID.matches(vmId)) {
-                problems += "remove: '$vmId' is not a valid element id (expected vm-<number>)"
-            }
+            vmIdProblem("remove", vmId)?.let { problems += it }
         }
 
         if (problems.isNotEmpty()) {
             throw InvalidDiffException(problems)
         }
     }
+
+    /** Length first: the regex is linear, but there is no reason to run it over an essay. */
+    private fun vmIdProblem(
+        where: String,
+        vmId: String,
+    ): String? =
+        when {
+            vmId.length > MAX_VM_ID_LENGTH -> {
+                "$where: element id is ${vmId.length} characters; at most $MAX_VM_ID_LENGTH are allowed"
+            }
+
+            !VM_ID.matches(vmId) -> {
+                "$where: '$vmId' is not a valid element id (expected vm-<number>)"
+            }
+
+            else -> {
+                null
+            }
+        }
 
     private fun assignmentProblems(
         vmId: String,
@@ -72,15 +115,25 @@ class DiffValidator(
         return paramProblems(vmId, assignment, entry) + triggerProblems(vmId, assignment, entry)
     }
 
+    /**
+     * Keys must be declared by the pinned catalog entry, and values must match the type that entry
+     * declares for them — see [paramValueProblem] for why the value half is a security boundary.
+     */
     private fun paramProblems(
         vmId: String,
         assignment: Assignment,
         entry: CatalogEntry,
     ): List<String> {
-        val declared = entry.params.mapTo(mutableSetOf()) { it.key }
-        return assignment.params.keys
-            .filterNot { it in declared }
-            .map { "set['$vmId']: param '$it' is not declared on animation '${entry.id}'" }
+        if (assignment.params.size > MAX_PARAMS_PER_ASSIGNMENT) {
+            return listOf(
+                "set['$vmId']: ${assignment.params.size} params; at most $MAX_PARAMS_PER_ASSIGNMENT are allowed on one element",
+            )
+        }
+        val declared = entry.params.associateBy { it.key }
+        return assignment.params.mapNotNull { (key, value) ->
+            val param = declared[key] ?: return@mapNotNull "set['$vmId']: param '$key' is not declared on animation '${entry.id}'"
+            paramValueProblem(param, value)?.let { "set['$vmId']: param '$key' $it" }
+        }
     }
 
     private fun triggerProblems(

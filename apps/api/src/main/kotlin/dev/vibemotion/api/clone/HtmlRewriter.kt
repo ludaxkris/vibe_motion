@@ -1,6 +1,7 @@
 package dev.vibemotion.api.clone
 
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Comment
 import org.jsoup.nodes.DataNode
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -10,10 +11,29 @@ import java.nio.charset.StandardCharsets
 import java.util.Locale
 
 /**
- * Fetches one stylesheet, or returns null when it could not be had. A stylesheet is never worth
- * failing a clone over, so every failure mode collapses to null here.
+ * What one stylesheet fetch produced.
+ *
+ * The distinction that matters is [Blocked] versus [Unavailable]. A stylesheet is never worth
+ * failing a clone over, so an ordinary failure just leaves the `<link>` in place and absolute. But
+ * a URL the [SsrfGuard] *refused* must not survive as a link either: the exporter (Phase 7) hands
+ * the stored document to a designer's own site, where there is no CSP and the browser would
+ * cheerfully fetch the internal host we declined to fetch ourselves.
  */
-typealias StylesheetLoader = (url: String) -> LoadedStylesheet?
+sealed interface StylesheetFetch {
+    /** The sheet came back and can be inlined. */
+    data class Loaded(
+        val stylesheet: LoadedStylesheet,
+    ) : StylesheetFetch
+
+    /** The guard refused this URL, on the first hop or after a redirect. The `<link>` is dropped. */
+    data object Blocked : StylesheetFetch
+
+    /** 404, timeout, wrong content type, over the cap: keep the absolute `<link>` and move on. */
+    data object Unavailable : StylesheetFetch
+}
+
+/** Fetches one stylesheet. Every failure mode is reported rather than thrown. */
+typealias StylesheetLoader = (url: String) -> StylesheetFetch
 
 /**
  * Turns a fetched page into the self-contained, script-free document stored as `projects.base_html`.
@@ -34,6 +54,7 @@ class HtmlRewriter(
         html: String,
         finalUrl: String,
         loadStylesheet: StylesheetLoader,
+        deadline: DeadlineCheck = DeadlineCheck.NONE,
     ): ClonedPage {
         val document = Jsoup.parse(html, finalUrl)
         document.outputSettings().prettyPrint(false).charset(StandardCharsets.UTF_8)
@@ -47,11 +68,20 @@ class HtmlRewriter(
         val base = effectiveBase(document, finalUrl)
         document.setBaseUri(base)
 
+        // Between stages, not inside them: each is a bounded pass over a document that is already
+        // capped, so this is enough to keep the CPU half of a clone inside the clone's budget.
         unwrapNoscript(document)
+        deadline.check()
+        stripComments(document)
+        deadline.check()
         removeUnsafeElements(document)
+        deadline.check()
         cleanAttributes(document, base)
+        deadline.check()
         rewriteStyleBlocks(document, base)
-        inlineStylesheets(document, loadStylesheet)
+        deadline.check()
+        inlineStylesheets(document, loadStylesheet, deadline)
+        deadline.check()
         normaliseForms(document)
         ensureCharsetMeta(document)
         val elementCount = assignVmIds(document)
@@ -97,6 +127,32 @@ class HtmlRewriter(
         }
     }
 
+    /**
+     * Comments are dropped, contents and all.
+     *
+     * Two reasons, and the first is not cosmetic: [BridgePageRenderer] finds its insertion points by
+     * scanning the stored string, so a page ending in `<!-- </body -->` would put the bridge tag
+     * inside a comment and that project would never come alive. The second is that a conditional
+     * comment is markup a browser may still run — `<!--[if lt IE 9]><script …><![endif]-->` — so its
+     * contents are dropped with it rather than promoted the way `<noscript>` is.
+     *
+     * Iterative: the depth of a cloned page is attacker-controlled.
+     */
+    private fun stripComments(document: Document) {
+        val comments = mutableListOf<Node>()
+        val stack = ArrayDeque<Node>()
+        stack.addLast(document)
+        while (stack.isNotEmpty()) {
+            val node = stack.removeLast()
+            if (node is Comment) {
+                comments += node
+                continue
+            }
+            node.childNodes().forEach(stack::addLast)
+        }
+        comments.forEach(Node::remove)
+    }
+
     private fun removeUnsafeElements(document: Document) {
         document.select(REMOVED_TAGS.joinToString(",")).remove()
         document.select("meta[http-equiv]").forEach { meta ->
@@ -105,6 +161,24 @@ class HtmlRewriter(
         }
         document.select("link[rel]").forEach { link ->
             if (link.relTokens().any { it in REMOVED_LINK_RELS }) link.remove()
+        }
+        removeSmilAnimations(document)
+    }
+
+    /**
+     * SMIL is scripting by another name: `<animate attributeName="xlink:href" to="javascript:…">`
+     * rewrites a link's target *after* everything here has run, and `<set>` does it instantly.
+     * Nothing in a cloned page needs SVG animation that retargets a link, so any such element goes,
+     * as does any whose value list mentions a scheme we neutralise elsewhere.
+     */
+    private fun removeSmilAnimations(document: Document) {
+        document.select(SMIL_TAGS.joinToString(",")).forEach { element ->
+            val retargetsUrl = element.attr("attributeName").trim().lowercase(Locale.ROOT) in SMIL_URL_TARGETS
+            val carriesScheme =
+                SMIL_VALUE_ATTRIBUTES.any { attribute ->
+                    element.hasAttr(attribute) && containsDangerousUrl(element.attr(attribute))
+                }
+            if (retargetsUrl || carriesScheme) element.remove()
         }
     }
 
@@ -121,6 +195,9 @@ class HtmlRewriter(
                 val lower = key.lowercase(Locale.ROOT)
                 if (isEventHandler(lower) || lower.startsWith(VM_ATTRIBUTE_PREFIX)) element.removeAttr(key)
             }
+            // `ping` fires a POST to a third party on every click. Harmless under our CSP
+            // (`connect-src 'none'`), live again the moment the export is on the designer's site.
+            if (element.normalName() in PING_TAGS) element.removeAttr("ping")
             NAVIGATION_ATTRIBUTES.forEach { attribute ->
                 if (element.hasAttr(attribute) && isDangerousUrl(element.attr(attribute))) {
                     element.attr(attribute, "#")
@@ -163,6 +240,7 @@ class HtmlRewriter(
     private fun inlineStylesheets(
         document: Document,
         loadStylesheet: StylesheetLoader,
+        deadline: DeadlineCheck,
     ) {
         val budget = CssBudget(maxStylesheets, maxCssBytes)
         document.select("link[rel]").forEach { link ->
@@ -170,8 +248,24 @@ class HtmlRewriter(
             if ("stylesheet" !in tokens || "alternate" in tokens || link.hasAttr("disabled")) return@forEach
             val href = link.attr("href").trim()
             if (!href.startsWith("http", ignoreCase = true)) return@forEach
-            if (!budget.canFetch()) return@forEach
-            val sheet = loadStylesheet(href) ?: return@forEach
+            if (!budget.claimFetch()) return@forEach
+            deadline.check()
+            val sheet =
+                when (val fetched = loadStylesheet(href)) {
+                    is StylesheetFetch.Loaded -> {
+                        fetched.stylesheet
+                    }
+
+                    StylesheetFetch.Blocked -> {
+                        // The guard refused this host; an export must not ask a browser to try it.
+                        link.remove()
+                        return@forEach
+                    }
+
+                    StylesheetFetch.Unavailable -> {
+                        return@forEach
+                    }
+                }
             if (!budget.consume(sheet.css)) return@forEach
 
             val inlined = absolutiseCss(inlineImports(sheet.css, sheet.url, loadStylesheet, budget), sheet.url)
@@ -197,8 +291,16 @@ class HtmlRewriter(
         IMPORT_RULE.replace(css) { match ->
             val reference = match.firstGroup(IMPORT_URL_GROUPS) ?: return@replace match.value
             val target = resolveUrl(sheetUrl, reference) ?: return@replace match.value
-            if (!target.startsWith("http", ignoreCase = true) || !budget.canFetch()) return@replace match.value
-            val imported = loadStylesheet(target) ?: return@replace match.value
+            if (!target.startsWith("http", ignoreCase = true) || !budget.claimFetch()) return@replace match.value
+            val imported =
+                when (val fetched = loadStylesheet(target)) {
+                    is StylesheetFetch.Loaded -> fetched.stylesheet
+
+                    // Dropping the rule, not keeping it: same reasoning as a blocked `<link>`.
+                    StylesheetFetch.Blocked -> return@replace ""
+
+                    StylesheetFetch.Unavailable -> return@replace match.value
+                }
             if (!budget.consume(imported.css)) return@replace match.value
 
             val body = absolutiseCss(imported.css, imported.url)
@@ -245,15 +347,24 @@ class HtmlRewriter(
         return next - 1
     }
 
-    /** Fetch and byte budget shared by a page's `<link>` sheets and their first-level imports. */
+    /**
+     * Fetch and byte budget shared by a page's `<link>` sheets and their first-level imports.
+     *
+     * An *attempt* spends a fetch, not a success: counting only the sheets that came back would let
+     * a page of a thousand dead stylesheet links cost a thousand round trips, which is exactly the
+     * fetch storm [maxStylesheets] exists to prevent.
+     */
     private class CssBudget(
         private var sheets: Int,
         private var bytes: Int,
     ) {
-        fun canFetch(): Boolean = sheets > 0
+        fun claimFetch(): Boolean {
+            if (sheets <= 0) return false
+            sheets--
+            return true
+        }
 
         fun consume(css: String): Boolean {
-            sheets--
             if (css.length > bytes) return false
             bytes -= css.length
             return true
@@ -279,18 +390,58 @@ class HtmlRewriter(
         private val NAVIGATION_ATTRIBUTES = listOf("href", "src", "action", "formaction", "xlink:href")
         private val SRCSET_ATTRIBUTES = listOf("srcset", "imagesrcset")
         private val DANGEROUS_URL_PREFIXES = listOf("javascript:", "vbscript:", "data:text/html")
+        private val PING_TAGS = setOf("a", "area")
+
+        private val SMIL_TAGS = listOf("animate", "set", "animatetransform", "animatemotion")
+        private val SMIL_URL_TARGETS = setOf("href", "xlink:href")
+        private val SMIL_VALUE_ATTRIBUTES = listOf("from", "to", "by", "values")
 
         private val ID_SKIPPED_TAGS = setOf("style", "link", "meta", "br", "wbr", "script", "noscript")
         private val ID_OPAQUE_TAGS = setOf("svg", "template")
 
         private val WHITESPACE = Regex("""\s+""")
-        private val CSS_URL =
-            Regex("""url\(\s*(?:"([^"]*)"|'([^']*)'|([^)"'\s]*))\s*\)""", RegexOption.IGNORE_CASE)
+
+        /**
+         * Every quantifier below is bounded, and the unquoted `url(` token excludes `(` as well as
+         * `)`. Both matter against a hostile stylesheet, which can be up to a megabyte of anything:
+         * an unbounded `[^x]*` tail makes each failed match attempt scan to end of input, which is
+         * quadratic. Measured on 512 KB of `url(` repeated: 380 s before, 12 ms after; on 512 KB of
+         * `@import "a" ` with no semicolons: 32 s before, 0.26 s after. Excluding `(` is also what
+         * CSS says: an unquoted url token cannot contain one.
+         *
+         * The cost of bounding is that a pathological token longer than [CSS_TOKEN_MAX] is left
+         * exactly as written rather than absolutised, which is what happens to anything unparseable
+         * here anyway.
+         */
+        private const val CSS_TOKEN_MAX = "4096"
+        private const val IMPORT_TAIL_MAX = "1024"
+        private const val URL_TOKEN =
+            """(?:"([^"]{0,$CSS_TOKEN_MAX})"|'([^']{0,$CSS_TOKEN_MAX})'|([^()"'\s]{0,$CSS_TOKEN_MAX}))"""
+
+        private val CSS_URL = Regex("""url\(\s*$URL_TOKEN\s*\)""", RegexOption.IGNORE_CASE)
+
+        /**
+         * A scripting scheme inside `url(…)`, swept before anything else in [absolutiseCss].
+         *
+         * It needs its own pattern because [CSS_URL] deliberately refuses a token containing `(`,
+         * and `url(javascript:alert(1))` is exactly that shape. Everything up to the end of the
+         * declaration goes, which is what a browser does with a bad-url token anyway. Bounded, and
+         * the alternation fails within a few characters of every ordinary `url(`, so it is linear.
+         */
+        private val CSS_DANGEROUS_URL =
+            Regex(
+                """url\(\s*["']?\s*(?:javascript|vbscript|data:text/html)[^;{}]{0,$CSS_TOKEN_MAX}""",
+                RegexOption.IGNORE_CASE,
+            )
         private val CSS_IMPORT_STRING =
-            Regex("""@import\s+(?:"([^"]*)"|'([^']*)')""", RegexOption.IGNORE_CASE)
+            Regex(
+                """@import\s+(?:"([^"]{0,$CSS_TOKEN_MAX})"|'([^']{0,$CSS_TOKEN_MAX})')""",
+                RegexOption.IGNORE_CASE,
+            )
         private val IMPORT_RULE =
             Regex(
-                """@import\s+(?:url\(\s*(?:"([^"]*)"|'([^']*)'|([^)"'\s]*))\s*\)|"([^"]*)"|'([^']*)')([^;]*);""",
+                """@import\s+(?:url\(\s*$URL_TOKEN\s*\)|"([^"]{0,$CSS_TOKEN_MAX})"|""" +
+                    """'([^']{0,$CSS_TOKEN_MAX})')([^;{}]{0,$IMPORT_TAIL_MAX});""",
                 RegexOption.IGNORE_CASE,
             )
         private val STYLE_TERMINATOR = Regex("</style", RegexOption.IGNORE_CASE)
@@ -303,10 +454,21 @@ class HtmlRewriter(
          * is a URL browsers happily navigate and a naive `startsWith` happily misses.
          */
         private fun isDangerousUrl(value: String): Boolean {
-            val normalised =
-                value.filterNot { it.isWhitespace() || it.code < 0x20 }.lowercase(Locale.ROOT)
+            val normalised = normaliseUrlValue(value)
             return DANGEROUS_URL_PREFIXES.any { normalised.startsWith(it) }
         }
+
+        /**
+         * For values that are *lists* of URLs rather than one URL — a SMIL `values="a;b;c"`, where
+         * the dangerous entry can sit anywhere — so `startsWith` is not enough.
+         */
+        private fun containsDangerousUrl(value: String): Boolean {
+            val normalised = normaliseUrlValue(value)
+            return DANGEROUS_URL_PREFIXES.any { normalised.contains(it) }
+        }
+
+        private fun normaliseUrlValue(value: String): String =
+            value.filterNot { it.isWhitespace() || it.code < 0x20 }.lowercase(Locale.ROOT)
 
         private fun Element.relTokens(): Set<String> {
             val tokens = attr("rel").lowercase(Locale.ROOT).split(WHITESPACE)
@@ -327,8 +489,9 @@ class HtmlRewriter(
             base: String,
         ): String {
             if (css.isEmpty()) return css
+            val defused = CSS_DANGEROUS_URL.replace(css, """url("#")""")
             val withUrls =
-                CSS_URL.replace(css) { match ->
+                CSS_URL.replace(defused) { match ->
                     val reference = match.firstGroup(1..3) ?: return@replace match.value
                     if (isDangerousUrl(reference)) return@replace """url("#")"""
                     val absolute = resolveUrl(base, reference) ?: return@replace match.value

@@ -88,6 +88,54 @@ class DiffValidatorTest :
             problems shouldHaveSize 5
         }
 
+        test("a diff over the entry cap is refused on the entry count alone") {
+            // Short-circuits before per-entry validation: the whole point is that an oversized
+            // diff costs one comparison, not two thousand catalog lookups and problem strings.
+            val problems = problemsOf(Diff(remove = (1..MAX_DIFF_ENTRIES + 1).map { "not-a-vm-id-$it" }))
+
+            problems shouldHaveSize 1
+            problems.single() shouldContain "at most $MAX_DIFF_ENTRIES are allowed"
+        }
+
+        test("a diff exactly at the entry cap still validates normally") {
+            val set = (1..MAX_DIFF_ENTRIES / 2).associate { "vm-$it" to assignment() }
+            val remove = (1..MAX_DIFF_ENTRIES / 2).map { "vm-${it + MAX_DIFF_ENTRIES}" }
+
+            validator.validate(current, Diff(set = set, remove = remove))
+        }
+
+        test("an assignment with more params than any animation declares is refused on the count") {
+            val params = (1..MAX_PARAMS_PER_ASSIGNMENT + 1).associate { "p$it" to "600ms" }
+
+            problemsOf(Diff(set = mapOf("vm-1" to assignment(params = params))))
+                .single() shouldContain "at most $MAX_PARAMS_PER_ASSIGNMENT are allowed"
+        }
+
+        test("an element id longer than the cap is refused even though it matches the pattern") {
+            val long = "vm-" + "9".repeat(MAX_VM_ID_LENGTH)
+
+            problemsOf(Diff(remove = listOf(long))).single() shouldContain "at most $MAX_VM_ID_LENGTH are allowed"
+        }
+
+        test("a param value that does not match its declared type is rejected") {
+            problemsOf(Diff(set = mapOf("vm-1" to assignment(params = mapOf("duration" to "600")))))
+                .single() shouldContain "param 'duration' value '600' is not a valid duration"
+        }
+
+        test("a param value carrying a CSS injection payload is rejected") {
+            // The reason this validator exists: the exporter emits param values as CSS on the
+            // designer's own site, so a payload stored today is live CSS somewhere else later.
+            val payload = "600ms; } body { background: url(https://evil.example.com/beacon)"
+
+            problemsOf(Diff(set = mapOf("vm-1" to assignment(params = mapOf("duration" to payload)))))
+                .single() shouldContain "param 'duration'"
+        }
+
+        test("a param value outside the catalog's declared range is rejected") {
+            problemsOf(Diff(set = mapOf("vm-1" to assignment(params = mapOf("duration" to "9999ms")))))
+                .single() shouldContain "maximum"
+        }
+
         test("the exception message carries every problem, for the 422 body") {
             val failure = shouldThrow<InvalidDiffException> { validator.validate("9.9.9", Diff(remove = listOf("bad"))) }
 

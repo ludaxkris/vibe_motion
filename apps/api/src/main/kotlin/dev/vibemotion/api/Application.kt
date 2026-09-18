@@ -4,14 +4,17 @@ import dev.vibemotion.api.catalog.CatalogRepository
 import dev.vibemotion.api.catalog.ClasspathCatalogRepository
 import dev.vibemotion.api.clone.CloneException
 import dev.vibemotion.api.config.AppConfig
+import dev.vibemotion.api.domain.BodyTooLargeException
 import dev.vibemotion.api.domain.EmptyDiffException
 import dev.vibemotion.api.domain.InvalidDiffException
+import dev.vibemotion.api.domain.ProjectBusyException
 import dev.vibemotion.api.domain.ResourceNotFoundException
 import dev.vibemotion.api.domain.StaleParentErrorBody
 import dev.vibemotion.api.domain.StaleParentException
 import dev.vibemotion.api.model.ApiError
 import dev.vibemotion.api.persistence.AppDatabase
 import dev.vibemotion.api.persistence.DatabaseHealth
+import dev.vibemotion.api.routes.NO_SNIFF_HEADER
 import dev.vibemotion.api.routes.bridgeRoutes
 import dev.vibemotion.api.routes.catalogRoutes
 import dev.vibemotion.api.routes.healthRoutes
@@ -37,6 +40,7 @@ import io.ktor.server.plugins.defaultheaders.DefaultHeaders
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
+import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.routing.routing
 import kotlinx.serialization.SerializationException
@@ -71,7 +75,13 @@ fun Application.apiModule(
     databaseHealth: DatabaseHealth,
     services: AppServices,
 ) {
-    install(DefaultHeaders)
+    install(DefaultHeaders) {
+        // Global rather than per route. The served project page runs under `script-src 'self'`,
+        // so any response on this origin that a browser could be talked into sniffing as
+        // JavaScript would become a script gadget inside the cloned page; one endpoint added
+        // later without the header is all it would take.
+        header(NO_SNIFF_HEADER, "nosniff")
+    }
 
     install(CallLogging) {
         level = Level.INFO
@@ -105,11 +115,18 @@ fun Application.apiModule(
 
                     is CloneException.TooLarge -> HttpStatusCode.PayloadTooLarge
 
+                    is CloneException.Busy -> HttpStatusCode.ServiceUnavailable
+
                     is CloneException.Blocked,
                     is CloneException.Unreachable,
                     is CloneException.NotHtml,
                     -> HttpStatusCode.UnprocessableEntity
                 }
+            // A clone is refused because this instance is already at its concurrency limit, which
+            // is a transient, per-instance condition: tell the client when to come back.
+            if (cause is CloneException.Busy) {
+                call.response.header(HttpHeaders.RetryAfter, cause.retryAfterSeconds.toString())
+            }
             call.respond(status, ApiError(cause.code, cause.message ?: "Could not clone that page"))
         }
         exception<ResourceNotFoundException> { call, cause ->
@@ -130,6 +147,16 @@ fun Application.apiModule(
         }
         exception<InvalidDiffException> { call, cause ->
             call.respond(HttpStatusCode.UnprocessableEntity, ApiError("invalid_diff", cause.problems.joinToString("; ")))
+        }
+        exception<BodyTooLargeException> { call, cause ->
+            call.respond(HttpStatusCode.PayloadTooLarge, ApiError("payload_too_large", cause.message ?: "Request body too large"))
+        }
+        exception<ProjectBusyException> { call, cause ->
+            call.response.header(HttpHeaders.RetryAfter, cause.retryAfterSeconds.toString())
+            call.respond(
+                HttpStatusCode.ServiceUnavailable,
+                ApiError("project_busy", cause.message ?: "The project is busy; retry in a moment"),
+            )
         }
         exception<NotFoundException> { call, cause ->
             call.respond(HttpStatusCode.NotFound, ApiError("not_found", cause.message ?: "Not found"))

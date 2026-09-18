@@ -16,11 +16,19 @@ import dev.vibemotion.api.domain.VersionListResponse
 import dev.vibemotion.api.domain.VersionStateResponse
 import dev.vibemotion.api.model.ApiError
 import dev.vibemotion.api.persistence.AppDatabase
+import dev.vibemotion.api.persistence.ExposedTransactionRunner
+import dev.vibemotion.api.persistence.Projects
 import dev.vibemotion.api.persistence.Versions
+import dev.vibemotion.api.projects.ExposedProjectRepository
 import dev.vibemotion.api.projects.ProjectService
+import dev.vibemotion.api.versions.DiffValidator
+import dev.vibemotion.api.versions.ExposedVersionRepository
+import dev.vibemotion.api.versions.VersionService
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
@@ -28,11 +36,13 @@ import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.ApplicationTestBuilder
@@ -42,12 +52,17 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.vendors.ForUpdateOption
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import kotlin.concurrent.thread
 
 /**
  * The projects and versions half of the API, end to end against a real Postgres. The clone
@@ -263,6 +278,48 @@ class ProjectVersionApiTest :
             }
         }
 
+        test("the page is revalidatable and never referrer-leaks the project URL") {
+            withApi {
+                val project = newProject()
+
+                val first = client.get("/projects/${project.id}/page")
+
+                first.headers[HttpHeaders.CacheControl] shouldBe "private, no-cache"
+                // The project URL is a capability in v0, so no request the cloned page makes may
+                // carry it — not even as an origin.
+                first.headers["Referrer-Policy"] shouldBe "no-referrer"
+                val etag = first.headers[HttpHeaders.ETag].shouldNotBeNull()
+
+                val revalidated = client.get("/projects/${project.id}/page") { header(HttpHeaders.IfNoneMatch, etag) }
+                revalidated.status shouldBe HttpStatusCode.NotModified
+                revalidated.bodyAsText() shouldBe ""
+                revalidated.headers[HttpHeaders.ETag] shouldBe etag
+
+                // base_html is immutable, so the validator is stable across requests...
+                client.get("/projects/${project.id}/page").headers[HttpHeaders.ETag] shouldBe etag
+                // ...and scoped to the project, so one project's cache can never answer another's.
+                val other = newProject()
+                other.id shouldNotBe project.id
+                val otherPage = client.get("/projects/${other.id}/page") { header(HttpHeaders.IfNoneMatch, etag) }
+                otherPage.status shouldBe HttpStatusCode.OK
+            }
+        }
+
+        test("a validated page request for a deleted project is a 404, not a 304") {
+            // The 304 path deliberately does not read base_html, so it has to check existence
+            // some other way; if it did not, a deleted project would keep serving from cache.
+            withApi {
+                val project = newProject()
+                val etag = client.get("/projects/${project.id}/page").headers[HttpHeaders.ETag].shouldNotBeNull()
+                client.delete("/projects/${project.id}").status shouldBe HttpStatusCode.NoContent
+
+                val response = client.get("/projects/${project.id}/page") { header(HttpHeaders.IfNoneMatch, etag) }
+
+                response.status shouldBe HttpStatusCode.NotFound
+                errorOf(response.bodyAsText()).code shouldBe "not_found"
+            }
+        }
+
         test("a project with a huge base_html is not carried on metadata reads") {
             // Guards the split between ProjectRow and baseHtml(): the document only travels when
             // the page endpoint asks for it.
@@ -401,6 +458,46 @@ class ProjectVersionApiTest :
             }
         }
 
+        test("a save whose diff exceeds the entry cap is a 422 and writes nothing") {
+            withApi {
+                val project = newProject()
+                val diff = Diff(remove = (1..2_001).map { "vm-$it" })
+
+                val response = postVersion(project.id, project.currentVersionId, diff)
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                val error = errorOf(response.bodyAsText())
+                error.code shouldBe "invalid_diff"
+                error.message shouldContain "at most 2000 are allowed"
+                versions(project.id).versions.map { it.seq } shouldContainExactly listOf(0)
+            }
+        }
+
+        test("a JSON body over the cap is a 413 on save and on restore, and writes nothing") {
+            withApi {
+                val project = newProject()
+                val huge = "x".repeat(300_000)
+
+                val save =
+                    client.post("/projects/${project.id}/versions") {
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"parentVersionId":"${project.currentVersionId}","catalogVersion":"1.0.0","label":"$huge","diff":{}}""")
+                    }
+                save.status shouldBe HttpStatusCode.PayloadTooLarge
+                errorOf(save.bodyAsText()).code shouldBe "payload_too_large"
+
+                val restore =
+                    client.post("/projects/${project.id}/versions/${project.currentVersionId}/restore") {
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"label":"$huge"}""")
+                    }
+                restore.status shouldBe HttpStatusCode.PayloadTooLarge
+                errorOf(restore.bodyAsText()).code shouldBe "payload_too_large"
+
+                versions(project.id).versions.map { it.seq } shouldContainExactly listOf(0)
+            }
+        }
+
         test("a save against an unknown project or with a malformed parent id fails without writing") {
             withApi {
                 val project = newProject()
@@ -500,6 +597,26 @@ class ProjectVersionApiTest :
             }
         }
 
+        test("restore answers in exactly the shape a save does, pinning the TARGET's catalogVersion") {
+            // The editor treats both 201s with one code path, so the field set must not diverge.
+            // catalogVersion is informational and is the target's on purpose: a restored version
+            // reads as a copy of what it reproduces, while the pins that decide the CSS travel
+            // inside each assignment in the diff.
+            withApi {
+                val project = newProject()
+                val saved = postVersion(project.id, project.currentVersionId, Diff(set = mapOf("vm-1" to assignment())))
+                val v1 = json.decodeFromString(VersionDto.serializer(), saved.bodyAsText())
+                save(project.id, v1.id, Diff(set = mapOf("vm-2" to assignment())))
+
+                val restored = client.post("/projects/${project.id}/versions/${v1.id}/restore")
+
+                restored.status shouldBe saved.status
+                val restoredFields = json.parseToJsonElement(restored.bodyAsText()).jsonObject.keys
+                restoredFields shouldContainExactly json.parseToJsonElement(saved.bodyAsText()).jsonObject.keys
+                json.decodeFromString(VersionDto.serializer(), restored.bodyAsText()).catalogVersion shouldBe v1.catalogVersion
+            }
+        }
+
         test("restoring version 0 clears every assignment") {
             withApi {
                 val project = newProject()
@@ -515,7 +632,10 @@ class ProjectVersionApiTest :
 
         // --- concurrency ---------------------------------------------------------------------
 
-        test("two saves racing on the same parent produce exactly one new version") {
+        test("eight saves racing on the same parent produce exactly one new version") {
+            // Eight racers, not two: the pool holds eight connections, so this also exercises
+            // every waiter pinning one while blocked on the project row lock. Seven of them must
+            // come back as an ordinary 409, none as a timeout and none as a duplicate seq.
             withApi {
                 val project = newProject()
                 val projectId = UUID.fromString(project.id)
@@ -526,18 +646,91 @@ class ProjectVersionApiTest :
 
                 val outcomes =
                     coroutineScope {
-                        listOf("vm-1", "vm-2")
-                            .map { vmId ->
-                                async(Dispatchers.IO) { runCatching { services.versions.create(projectId, request(vmId)) } }
+                        (1..8)
+                            .map { racer ->
+                                async(Dispatchers.IO) { runCatching { services.versions.create(projectId, request("vm-$racer")) } }
                             }.awaitAll()
                     }
 
                 outcomes.count { it.isSuccess } shouldBe 1
-                outcomes.first { it.isFailure }.exceptionOrNull().shouldBeInstanceOf<StaleParentException>()
+                outcomes.filter { it.isFailure }.let { losers ->
+                    losers shouldHaveSize 7
+                    losers.forEach { it.exceptionOrNull().shouldBeInstanceOf<StaleParentException>() }
+                }
 
                 val history = versions(project.id)
                 history.versions.map { it.seq } shouldContainExactly listOf(0, 1)
                 history.currentVersionId shouldNotBe parent
+                // The unique index is the backstop, not the mechanism; assert the mechanism held.
+                val stored =
+                    transaction {
+                        Versions
+                            .select(Versions.seq)
+                            .where { Versions.projectId eq projectId }
+                            .map { it[Versions.seq] }
+                    }
+                stored shouldContainExactly stored.distinct()
+            }
+        }
+
+        test("a save that cannot take the project lock in time is a retryable 503, not a stuck connection") {
+            // With lock_timeout unset, a stalled holder parks every waiter's pooled connection
+            // until Hikari's connection timeout, turning one slow save into a pool-wide outage.
+            val impatient =
+                VersionService(
+                    ExposedProjectRepository(lockTimeout = "100ms"),
+                    ExposedVersionRepository(),
+                    DiffValidator(catalog),
+                    catalog,
+                    ExposedTransactionRunner(),
+                )
+
+            testApplication {
+                application { apiModule(config(), catalog, database, services.copy(versions = impatient)) }
+
+                val project = json.decodeFromString(ProjectDto.serializer(), postProject().bodyAsText())
+                val projectId = UUID.fromString(project.id)
+                val locked = CountDownLatch(1)
+                val release = CountDownLatch(1)
+
+                val holder =
+                    thread {
+                        transaction {
+                            Projects
+                                .selectAll()
+                                .where { Projects.id eq projectId }
+                                .forUpdate(ForUpdateOption.ForUpdate)
+                                .single()
+                            locked.countDown()
+                            release.await()
+                        }
+                    }
+
+                try {
+                    locked.await()
+                    val response =
+                        client.post("/projects/${project.id}/versions") {
+                            contentType(ContentType.Application.Json)
+                            setBody(
+                                json.encodeToString(
+                                    CreateVersionRequest.serializer(),
+                                    CreateVersionRequest(
+                                        project.currentVersionId,
+                                        catalog.currentVersion,
+                                        null,
+                                        Diff(set = mapOf("vm-1" to assignment())),
+                                    ),
+                                ),
+                            )
+                        }
+
+                    response.status shouldBe HttpStatusCode.ServiceUnavailable
+                    response.headers[HttpHeaders.RetryAfter] shouldBe "1"
+                    errorOf(response.bodyAsText()).code shouldBe "project_busy"
+                } finally {
+                    release.countDown()
+                    holder.join()
+                }
             }
         }
     })

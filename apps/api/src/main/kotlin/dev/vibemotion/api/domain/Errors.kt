@@ -32,3 +32,32 @@ class EmptyDiffException(
 class InvalidDiffException(
     val problems: List<String>,
 ) : RuntimeException(problems.joinToString("; "))
+
+/**
+ * 413: the JSON request body is larger than the cap in
+ * [dev.vibemotion.api.routes.MAX_JSON_BODY_BYTES].
+ *
+ * Deliberately not Ktor's `PayloadTooLargeException`: the cap is ours, it is enforced while the
+ * body is read rather than after it is buffered, and it carries the limit so the message can say
+ * what the limit is.
+ */
+class BodyTooLargeException(
+    val limitBytes: Long,
+) : RuntimeException("Request body is larger than the $limitBytes byte limit")
+
+/**
+ * 503: the project row lock could not be taken within the transaction's `lock_timeout`, so another
+ * save or restore on the same project is still in flight (or its holder is stalled).
+ *
+ * A fast, explicit "try again in a second" beats a pooled connection parked until Hikari's
+ * connection timeout, which is what a stalled lock holder would otherwise cause across the pool.
+ */
+class ProjectBusyException(
+    message: String,
+    val retryAfterSeconds: Int = DEFAULT_RETRY_AFTER_SECONDS,
+    cause: Throwable? = null,
+) : RuntimeException(message, cause) {
+    companion object {
+        const val DEFAULT_RETRY_AFTER_SECONDS = 1
+    }
+}

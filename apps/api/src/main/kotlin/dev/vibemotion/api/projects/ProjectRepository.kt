@@ -9,6 +9,7 @@ import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
+import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
 import org.jetbrains.exposed.v1.jdbc.update
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -53,12 +54,18 @@ interface ProjectRepository {
 
     fun find(id: UUID): ProjectRow?
 
+    /** Existence only. The point is the columns it does not read: `base_html` is megabytes. */
+    fun exists(id: UUID): Boolean
+
     /**
-     * Reads the row with `select ... for update`.
+     * Reads the row with `select ... for update`, refusing to wait longer than the implementation's
+     * lock timeout.
      *
      * This is the lock that makes Save safe: two tabs saving against the same parent both queue
      * here, and the second one sees the `current_version_id` the first committed, so it gets a 409
      * instead of silently forking the history.
+     *
+     * @throws dev.vibemotion.api.domain.ProjectBusyException when the wait times out.
      */
     fun findForUpdate(id: UUID): ProjectRow?
 
@@ -73,7 +80,17 @@ interface ProjectRepository {
     fun delete(id: UUID): Boolean
 }
 
-class ExposedProjectRepository : ProjectRepository {
+/**
+ * @param lockTimeout how long [findForUpdate] may wait for the project row lock, as a Postgres
+ *   interval literal. Tests shorten it; production keeps the default.
+ */
+class ExposedProjectRepository(
+    private val lockTimeout: String = DEFAULT_LOCK_TIMEOUT,
+) : ProjectRepository {
+    init {
+        require(LOCK_TIMEOUT_LITERAL.matches(lockTimeout)) { "lockTimeout must look like '3s' or '250ms', got '$lockTimeout'" }
+    }
+
     override fun insert(
         project: ProjectRow,
         baseHtml: String,
@@ -95,13 +112,26 @@ class ExposedProjectRepository : ProjectRepository {
             .singleOrNull()
             ?.toProjectRow()
 
-    override fun findForUpdate(id: UUID): ProjectRow? =
+    override fun exists(id: UUID): Boolean =
         Projects
+            .select(Projects.id)
+            .where { Projects.id eq id }
+            .limit(1)
+            .firstOrNull() != null
+
+    override fun findForUpdate(id: UUID): ProjectRow? {
+        // SET LOCAL is scoped to the surrounding transaction, so this bounds exactly the lock wait
+        // below and nothing else. Without it a stalled holder — a long GC pause during a large
+        // clone, say — parks every waiter's pooled connection until Hikari's connection timeout,
+        // turning one slow save into a pool-wide outage. 55P03 instead becomes a fast 503.
+        TransactionManager.current().exec("SET LOCAL lock_timeout = '$lockTimeout'")
+        return Projects
             .selectAll()
             .where { Projects.id eq id }
             .forUpdate(ForUpdateOption.ForUpdate)
             .singleOrNull()
             ?.toProjectRow()
+    }
 
     override fun baseHtml(id: UUID): String? =
         Projects
@@ -127,4 +157,16 @@ class ExposedProjectRepository : ProjectRepository {
             currentVersionId = this[Projects.currentVersionId],
             createdAt = this[Projects.createdAt],
         )
+
+    companion object {
+        /**
+         * A save holds the lock for four statements, roughly 5-10 ms on Render's private network.
+         * Three seconds is therefore two orders of magnitude of headroom: anything that waits
+         * longer is stalled, not busy, and the client is better served by a 503 it can retry.
+         */
+        const val DEFAULT_LOCK_TIMEOUT = "3s"
+
+        /** The value is interpolated into SQL, so it is constrained to a literal we can vouch for. */
+        private val LOCK_TIMEOUT_LITERAL = Regex("^[0-9]{1,6}(ms|s)$")
+    }
 }

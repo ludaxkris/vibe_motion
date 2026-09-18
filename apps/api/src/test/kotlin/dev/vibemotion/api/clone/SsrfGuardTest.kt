@@ -109,6 +109,40 @@ class SsrfGuardTest :
             }
         }
 
+        test("unwraps 6to4 and Teredo embedded IPv4 addresses before checking them") {
+            val blocked =
+                mapOf(
+                    // 2002::/16 carries the IPv4 address verbatim in bytes 2..5.
+                    "2002:7f00:1::1" to "loopback",
+                    "2002:a9fe:a9fe::1" to "link-local",
+                    "2002:a00:1::1" to "private",
+                    "2002:c0a8:101::1" to "private",
+                    // 2001:0::/32 carries the client IPv4 in the last four bytes, ones-complemented.
+                    "2001:0:0:0:0:0:80ff:fffe" to "loopback",
+                    "2001:0:0:0:0:0:5601:5601" to "link-local",
+                    "2001:0:0:0:0:0:f5ff:fffe" to "private",
+                    "2001:0:0:0:0:0:9bbf:fffe" to "carrier-grade NAT",
+                )
+
+            blocked.forEach { (address, rule) ->
+                withClue("$address must be blocked as $rule") {
+                    val guard = SsrfGuard(resolving(address))
+                    val error = shouldThrow<CloneException.Blocked> { guard.vet("https://tunnelled.example.com/") }
+                    error.message.orEmpty() shouldContain rule
+                }
+            }
+        }
+
+        test("leaves a 6to4 or Teredo wrapper around a public address alone") {
+            // 93.184.216.34, tunnelled both ways.
+            listOf("2002:5db8:d822::1", "2001:0:0:0:0:0:a247:27dd").forEach { address ->
+                withClue(address) {
+                    SsrfGuard(resolving(address)).vet("https://tunnelled.example.com/").host shouldBe
+                        "tunnelled.example.com"
+                }
+            }
+        }
+
         test("allows ordinary public addresses and returns what they resolved to") {
             listOf(
                 "93.184.216.34",

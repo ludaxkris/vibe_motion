@@ -42,10 +42,15 @@ data class VettedUrl(
  * Messages name the rule that fired and never the address behind it, so the guard cannot be turned
  * into an internal host scanner.
  *
- * Known gap — DNS rebinding: the JDK HTTP client re-resolves the host when it opens the socket, so
- * there is a TOCTOU window between this check and the connect. Closing it needs a connect path that
- * pins the vetted [InetAddress] (or an egress proxy that applies the same rules); tracked as a
- * deferred task rather than papered over here.
+ * Known gap — DNS rebinding (DT-039): the JDK HTTP client re-resolves the host when it opens the
+ * socket, so there is a TOCTOU window between this check and the connect. In practice both lookups
+ * are served from the same process-wide `InetAddress` cache, whose TTL [DnsCachePolicy] pins for
+ * exactly this reason — but that narrows the window to the instant an entry expires between the
+ * two, it does not close it. Closing it needs a connect path that pins the vetted [InetAddress]
+ * (or an egress proxy that applies the same rules), which is what DT-039 tracks.
+ *
+ * Known gap — ports (DT-040): any port on a public host is fetchable. The rules here are about
+ * *where* a request may go, not which service answers there.
  */
 class SsrfGuard internal constructor(
     private val resolver: HostResolver,
@@ -219,8 +224,17 @@ class SsrfGuard internal constructor(
             bytes.octet(0) == 0x20 && bytes.octet(1) == 0x01 && bytes.octet(2) == 0x0D && bytes.octet(3) == 0xB8
 
         /**
-         * The four IPv4 bytes wrapped by an IPv4-mapped (`::ffff:a.b.c.d`), IPv4-compatible
-         * (`::a.b.c.d`) or NAT64 (`64:ff9b::a.b.c.d`) address, or null when there are none.
+         * The four IPv4 bytes an IPv6 address carries inside it, or null when it carries none.
+         *
+         * Five wrappers, all of which end up delivering a packet to an IPv4 endpoint, so the IPv4
+         * rules have to apply to what they wrap:
+         *  - IPv4-mapped `::ffff:a.b.c.d` and IPv4-compatible `::a.b.c.d`, in the last four bytes;
+         *  - NAT64 `64:ff9b::a.b.c.d`, likewise;
+         *  - 6to4 `2002::/16`, which carries the address verbatim in bytes 2-5;
+         *  - Teredo `2001:0::/32`, whose *client* address is the last four bytes, ones-complemented.
+         *
+         * Teredo's other embedded IPv4 (the server, bytes 4-7) is deliberately not checked: it says
+         * which relay carries the traffic, not where the traffic ends up.
          */
         private fun embeddedIpv4(bytes: ByteArray): ByteArray? {
             val leadingZeros = bytes.take(10).all { it.toInt() == 0 }
@@ -230,8 +244,16 @@ class SsrfGuard internal constructor(
                 bytes.octet(0) == 0x00 && bytes.octet(1) == 0x64 &&
                     bytes.octet(2) == 0xFF && bytes.octet(3) == 0x9B &&
                     (4..11).all { bytes.octet(it) == 0 }
-            if (!mapped && !compatible && !nat64) return null
-            return bytes.copyOfRange(12, ADDRESS_BYTES_V6)
+            val sixToFour = bytes.octet(0) == 0x20 && bytes.octet(1) == 0x02
+            val teredo =
+                bytes.octet(0) == 0x20 && bytes.octet(1) == 0x01 &&
+                    bytes.octet(2) == 0x00 && bytes.octet(3) == 0x00
+            return when {
+                mapped || compatible || nat64 -> bytes.copyOfRange(12, ADDRESS_BYTES_V6)
+                sixToFour -> bytes.copyOfRange(2, 6)
+                teredo -> ByteArray(ADDRESS_BYTES_V4) { index -> (bytes.octet(12 + index) xor 0xFF).toByte() }
+                else -> null
+            }
         }
 
         /**

@@ -5,8 +5,6 @@ import dev.vibemotion.api.domain.RestoreVersionRequest
 import dev.vibemotion.api.versions.VersionService
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.request.receive
-import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -27,7 +25,7 @@ fun Route.versionRoutes(versions: VersionService) {
         }
 
         post {
-            val request = call.receive<CreateVersionRequest>()
+            val request = call.receiveLimited(CreateVersionRequest.serializer())
             call.respond(HttpStatusCode.Created, versions.create(call.uuidParameter("projectId"), request))
         }
 
@@ -49,10 +47,11 @@ fun Route.versionRoutes(versions: VersionService) {
 
 /**
  * The restore body is optional in the contract, so it is read as text rather than negotiated: a
- * `POST` with no body at all, and one with `{}`, both mean "use the generated label".
+ * `POST` with no body at all, and one with `{}`, both mean "use the generated label". The same
+ * 256 KB cap applies — an optional body is not an unbounded one.
  */
 private suspend fun ApplicationCall.restoreLabel(): String? {
-    val body = receiveText()
+    val body = receiveLimitedText()
     if (body.isBlank()) return null
     return restoreJson.decodeFromString(RestoreVersionRequest.serializer(), body).label
 }

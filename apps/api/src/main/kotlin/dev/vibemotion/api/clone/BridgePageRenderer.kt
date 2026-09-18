@@ -8,7 +8,8 @@ package dev.vibemotion.api.clone
  * project ever cloned, and a saved version keeps rendering the same markup it was saved against.
  *
  * Runs on every iframe load, so it is string insertion rather than a re-parse: the input is our own
- * normalised output, where `<head>` and `</body>` are exactly where jsoup put them.
+ * normalised output, where `<head>` and `</body>` are exactly where jsoup put them. The one thing
+ * the scan has to understand is comments — see [insertionPoints].
  */
 class BridgePageRenderer(
     webOrigin: String,
@@ -31,8 +32,8 @@ class BridgePageRenderer(
         """<script src="${escapeAttribute(bridgePath)}" data-vm-parent-origin="${escapeAttribute(safeOrigin)}" defer></script>"""
 
     override fun render(baseHtml: String): RenderedPage {
-        val headEnd = headOpenTagEnd(baseHtml)
-        val bodyEnd = bodyCloseTagStart(baseHtml).coerceAtLeast(maxOf(headEnd, 0))
+        val (headEnd, bodyStart) = insertionPoints(baseHtml)
+        val bodyEnd = bodyStart.coerceAtLeast(maxOf(headEnd, 0))
         val html =
             StringBuilder(baseHtml.length + cspMeta.length + bridgeTag.length + 2).apply {
                 when {
@@ -45,32 +46,81 @@ class BridgePageRenderer(
         return RenderedPage(html = html.toString(), contentSecurityPolicy = headerPolicy)
     }
 
-    /** The index just past `<head …>`, or -1 when the document has no head. */
-    private fun headOpenTagEnd(html: String): Int {
-        var from = 0
-        while (true) {
-            val start = html.indexOf("<head", from, ignoreCase = true)
-            if (start < 0) return -1
-            val after = start + HEAD_TAG.length
-            // `<header>` also starts with `<head`.
-            if (after >= html.length || html[after] == '>' || html[after].isWhitespace()) {
-                val close = html.indexOf('>', start)
-                return if (close < 0) -1 else close + 1
+    /**
+     * Both insertion points, in one forward pass that steps over `<!-- … -->` spans.
+     *
+     * Comments matter because they are markup that looks like markup. A page ending in
+     * `<!-- </body -->` would otherwise capture the bridge tag inside a comment and that project
+     * would never send `ready`; a leading `<!-- <head> -->` would swallow the CSP meta the same way.
+     * [HtmlRewriter] strips comments at clone time, so this only has to cover rows stored before
+     * that — but `base_html` is immutable, so those rows are forever.
+     *
+     * The head is the first `<head …>` outside a comment; the body point is the *last* `</body`,
+     * else the last `</html`, else the end of the document.
+     */
+    private fun insertionPoints(html: String): InsertionPoints {
+        var headEnd = -1
+        var lastBody = -1
+        var lastHtml = -1
+        var at = 0
+        while (at < html.length) {
+            val tag = html.indexOf('<', at)
+            if (tag < 0) break
+            if (html.startsWith(COMMENT_OPEN, tag)) {
+                val close = html.indexOf(COMMENT_CLOSE, tag + COMMENT_OPEN.length)
+                at = if (close < 0) html.length else close + COMMENT_CLOSE.length
+                continue
             }
-            from = start + 1
+            when {
+                headEnd < 0 && html.isTagAt(tag, HEAD_TAG) -> {
+                    val close = html.indexOf('>', tag)
+                    if (close >= 0) headEnd = close + 1
+                }
+
+                html.isTagAt(tag, BODY_CLOSE_TAG) -> {
+                    lastBody = tag
+                }
+
+                html.isTagAt(tag, HTML_CLOSE_TAG) -> {
+                    lastHtml = tag
+                }
+            }
+            at = tag + 1
         }
+        val bodyStart =
+            when {
+                lastBody >= 0 -> lastBody
+                lastHtml >= 0 -> lastHtml
+                else -> html.length
+            }
+        return InsertionPoints(headEnd, bodyStart)
     }
 
-    /** Where the bridge tag goes: just before `</body>`, else `</html>`, else at the very end. */
-    private fun bodyCloseTagStart(html: String): Int {
-        val body = html.lastIndexOf("</body", ignoreCase = true)
-        if (body >= 0) return body
-        val htmlClose = html.lastIndexOf("</html", ignoreCase = true)
-        return if (htmlClose >= 0) htmlClose else html.length
-    }
+    private data class InsertionPoints(
+        /** The index just past `<head …>`, or -1 when the document has no head. */
+        val headEnd: Int,
+        /** Where the bridge tag goes. */
+        val bodyStart: Int,
+    )
 
     private companion object {
         private const val HEAD_TAG = "<head"
+        private const val BODY_CLOSE_TAG = "</body"
+        private const val HTML_CLOSE_TAG = "</html"
+        private const val COMMENT_OPEN = "<!--"
+        private const val COMMENT_CLOSE = "-->"
+
+        /**
+         * [tag] must be followed by a tag-name boundary, or `<header>` would pass for `<head`.
+         */
+        private fun String.isTagAt(
+            at: Int,
+            tag: String,
+        ): Boolean {
+            if (!regionMatches(at, tag, 0, tag.length, ignoreCase = true)) return false
+            val after = at + tag.length
+            return after >= length || this[after] == '>' || this[after].isWhitespace()
+        }
 
         /**
          * `default-src 'none'` and then only what a static rendering of someone else's page needs.

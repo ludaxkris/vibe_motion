@@ -54,6 +54,15 @@ sealed class CloneException(
         message: String,
     ) : CloneException("not_html", message)
 
+    /**
+     * 503: this instance is already running its maximum number of concurrent clones. A clone can
+     * peak above 100 MB of heap, so the limit protects the instance; the client should retry.
+     */
+    class Busy(
+        message: String,
+        val retryAfterSeconds: Int,
+    ) : CloneException("clone_busy", message)
+
     /** 413: the document exceeded `CLONE_MAX_BYTES`. */
     class TooLarge(
         message: String,

@@ -114,7 +114,9 @@ paths:
               schema: { $ref: "#/components/schemas/Project" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "413":
-          description: Source page exceeds the size cap
+          description: |
+            Either the request body exceeds the 256 KB JSON limit (`payload_too_large`) or the
+            source page exceeds the clone size cap (`page_too_large`). The `code` tells them apart.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -125,6 +127,15 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "429":
           description: Rate limited
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: |
+            `clone_busy`: this instance is already running its maximum number of concurrent clones.
+            A clone can peak above 100 MB of heap, so the limit protects the instance. Retry.
+          headers:
+            Retry-After: { $ref: "#/components/headers/RetryAfter" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -158,12 +169,37 @@ paths:
       tags: [projects]
       operationId: getProjectPage
       summary: The cloned page with the bridge script injected. Used as the editor iframe `src`.
+      description: |
+        `base_html` is immutable, so the response is a pure function of the project id and the
+        renderer and carries a strong `ETag`. It is sent `private, no-cache`: always revalidate,
+        never serve stale — a deleted project must 404 and a CSP fix must not wait out a max-age.
+        A revalidation hit answers 304 without reading the stored document.
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          description: The `ETag` from a previous response. A match answers 304.
+          schema: { type: string }
       responses:
         "200":
           description: HTML document
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Content-Security-Policy:
+              description: Policy the browser enforces for the cloned document; also present as a meta tag.
+              schema: { type: string }
+            Referrer-Policy:
+              description: Always `no-referrer` — the project URL is a capability in v0.
+              schema: { type: string }
           content:
             text/html:
               schema: { type: string }
+        "304":
+          description: Not modified; the cached document is still current
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /bridge/vm-bridge.js:
@@ -175,12 +211,29 @@ paths:
         `GET /projects/{projectId}/page` adds `<script src="/bridge/vm-bridge.js">` and a CSP of
         `script-src 'self'` at serve time, so this is the only script a cloned page can run.
         The stored `base_html` never contains it.
+
+        Sent `no-cache` with a content-hash `ETag`: the bridge evolves with the editor, and a
+        stale bridge talking to a newer shell is worse than a conditional request per page view.
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          description: The `ETag` from a previous response. A match answers 304.
+          schema: { type: string }
       responses:
         "200":
           description: JavaScript
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
           content:
             application/javascript:
               schema: { type: string }
+        "304":
+          description: Not modified; the cached script is still current
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
 
   /projects/{projectId}/versions:
     parameters:
@@ -225,11 +278,15 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/StaleParentError" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "422":
-          description: Diff references an unknown catalog version or animation id, or invalid params
+          description: |
+            Diff references an unknown catalog version or animation id, has an undeclared or
+            malformed param value, or exceeds the 2,000 entry cap (`invalid_diff`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/ProjectBusy" }
 
   /projects/{projectId}/versions/{versionId}/state:
     parameters:
@@ -270,11 +327,17 @@ paths:
                 label: { type: string, maxLength: 200 }
       responses:
         "201":
-          description: New version created and made current
+          description: |
+            New version created and made current. Same shape as `createVersion`'s 201; its
+            `catalogVersion` is the TARGET version's, so a restored version reads as a copy of
+            what it reproduces.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Version" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "503": { $ref: "#/components/responses/ProjectBusy" }
 
   /projects/{projectId}/export:
     parameters:
@@ -323,6 +386,17 @@ components:
       required: true
       schema: { type: string, format: uuid }
 
+  headers:
+    RetryAfter:
+      description: Seconds to wait before retrying the same request.
+      schema: { type: integer, minimum: 0 }
+    ETag:
+      description: Strong validator. Send it back as `If-None-Match` to revalidate.
+      schema: { type: string }
+    CacheControl:
+      description: Always revalidate; never serve a stale copy.
+      schema: { type: string }
+
   responses:
     NotFound:
       description: Not found
@@ -331,6 +405,22 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     BadRequest:
       description: Malformed request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PayloadTooLarge:
+      description: |
+        `payload_too_large`: the JSON request body exceeds 256 KB. Enforced from `Content-Length`
+        and again while reading, so a chunked body is cut off at the same limit.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ProjectBusy:
+      description: |
+        `project_busy`: the project row lock could not be taken within the transaction's
+        `lock_timeout`, so another save or restore on the same project is still in flight. Retry.
+      headers:
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

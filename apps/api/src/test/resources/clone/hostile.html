@@ -32,6 +32,17 @@
 </form>
 <div style="background: url(javascript:alert(6)); color: red">styled</div>
 <svg width="8" height="8"><use xlink:href="javascript:alert(7)"></use></svg>
+<a href="/ok2" ping="https://tracker.example/click">pinged</a>
+<map name="m"><area shape="rect" coords="0,0,8,8" href="/ok3" ping="https://tracker.example/area"></map>
+<svg id="smil" width="8" height="8">
+<a href="javascript:alert(8)"><rect width="4" height="4"></rect></a>
+<image xlink:href="vbscript:msgbox(2)" width="4" height="4"></image>
+<animate attributeName="xlink:href" to="https://evil.example/x" dur="1s"></animate>
+<set attributeName="href" to="/looks-harmless"></set>
+<animateMotion values="#a;javascript:alert(9)" dur="1s"></animateMotion>
+<animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="2s"></animateTransform>
+</svg>
+<!-- a comment that mentions </body> and </head> -->
 <br><wbr>
 <p>done</p>
 </body>

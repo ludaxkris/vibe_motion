@@ -10,6 +10,7 @@ import org.jsoup.Jsoup
 import kotlin.system.measureTimeMillis
 
 private const val WEB_ORIGIN = "https://app.vibemotion.dev"
+private val NO_STYLESHEETS: StylesheetLoader = { StylesheetFetch.Unavailable }
 
 class BridgePageRendererTest :
     FunSpec({
@@ -102,6 +103,48 @@ class BridgePageRendererTest :
 
             rendered.html shouldContain "<header>nav</header>"
             Jsoup.parse(rendered.html).select("script[src]").size shouldBe 1
+        }
+
+        test("the bridge is live when the source page ended in a comment that looks like </body>") {
+            // The whole point of stripping comments at clone time: `lastIndexOf("</body")` used to
+            // land inside the comment, leaving the bridge tag inert and the project mute forever.
+            val source =
+                "<!-- <head> --><html><head><title>t</title></head>" +
+                    "<body><p>hi</p><!-- </body --></body></html><!-- </body> -->"
+            val baseHtml = HtmlRewriter().rewrite(source, "https://example.com/", NO_STYLESHEETS).html
+
+            val document = Jsoup.parse(renderer.render(baseHtml).html)
+
+            document
+                .body()
+                .children()
+                .last()
+                ?.normalName() shouldBe "script"
+            document.select("script[src]").size shouldBe 1
+            document
+                .head()
+                .children()
+                .first()
+                ?.attr("http-equiv") shouldBe "Content-Security-Policy"
+        }
+
+        test("a comment cannot capture either insertion point, even in a row cloned before stripping") {
+            val legacy =
+                "<!-- <head> --><html><head><title>t</title></head>" +
+                    "<body><p>hi</p><!-- </body --></body></html>"
+
+            val document = Jsoup.parse(renderer.render(legacy).html)
+
+            document
+                .head()
+                .children()
+                .first()
+                ?.attr("http-equiv") shouldBe "Content-Security-Policy"
+            document
+                .body()
+                .children()
+                .last()
+                ?.normalName() shouldBe "script"
         }
 
         test("renders a megabyte in well under a frame") {

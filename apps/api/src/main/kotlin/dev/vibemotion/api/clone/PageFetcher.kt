@@ -12,6 +12,11 @@ import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.GZIPInputStream
 
 /** An HTML document fetched from the network, decoded to text. */
@@ -34,13 +39,84 @@ value class Deadline internal constructor(
 )
 
 /**
+ * A clone's budget, asked about between units of CPU work rather than between network reads.
+ *
+ * The fetcher's [Deadline] only ever gated I/O, so a page whose stylesheets take 14 seconds to
+ * arrive could still spend minutes being rewritten. [HtmlRewriter] calls this between stages and
+ * between stylesheets so that the 15 second budget covers the whole clone.
+ */
+fun interface DeadlineCheck {
+    /** @throws CloneException.Unreachable when the clone's budget is spent. */
+    fun check()
+
+    companion object {
+        /** For callers with no clone around them: unit tests and the golden rewriter tests. */
+        val NONE: DeadlineCheck = DeadlineCheck { }
+    }
+}
+
+/**
+ * Closes a response body once the clone's budget is spent.
+ *
+ * `HttpRequest.timeout()` only covers the wait for *headers* when the body handler is
+ * `ofInputStream()`. After that, `read()` blocks with no timeout of its own, so a server that
+ * sends headers and a few bytes and then goes silent used to pin a `Dispatchers.IO` thread for
+ * good — and that pool is shared with every database transaction.
+ *
+ * Closing the JDK's response stream from another thread is what breaks the block: the reader
+ * comes back out with an `IOException`, which [PageFetcher.readBounded] maps to
+ * [CloneException.Unreachable]. [fired] is how it tells that apart from an ordinary read error.
+ */
+private class Watchdog private constructor(
+    private val task: ScheduledFuture<*>,
+    private val timedOut: AtomicBoolean,
+) {
+    /** True when this watchdog, rather than the peer or the network, ended the read. */
+    val fired: Boolean
+        get() = timedOut.get()
+
+    fun disarm() {
+        task.cancel(false)
+    }
+
+    companion object {
+        /**
+         * One daemon thread for the whole process: a timer per fetch would cost a thread per
+         * concurrent clone, which is the very resource this exists to protect.
+         */
+        private val SCHEDULER: ScheduledExecutorService =
+            Executors.newSingleThreadScheduledExecutor { runnable ->
+                Thread(runnable, "vm-clone-watchdog").apply { isDaemon = true }
+            }
+
+        fun arm(
+            body: InputStream,
+            withinMillis: Long,
+        ): Watchdog {
+            val timedOut = AtomicBoolean(false)
+            val task =
+                SCHEDULER.schedule(
+                    Runnable {
+                        timedOut.set(true)
+                        runCatching { body.close() }
+                    },
+                    withinMillis,
+                    TimeUnit.MILLISECONDS,
+                )
+            return Watchdog(task, timedOut)
+        }
+    }
+}
+
+/**
  * Fetches the source document and its stylesheets.
  *
  * Everything hostile a URL can do to a fetcher is handled here rather than in the rewriter:
  *
  *  - redirects are followed manually ([MAX_REDIRECTS] at most) so [SsrfGuard] runs on every hop;
  *  - one [Deadline] covers the whole clone, so a chain of individually fast hops still cannot
- *    outlast `CLONE_TIMEOUT_MS`;
+ *    outlast `CLONE_TIMEOUT_MS`, and a [Watchdog] enforces it on the body itself rather than only
+ *    between reads;
  *  - the body is streamed and abandoned the moment it passes the byte cap, and the cap is counted
  *    in *decompressed* bytes, so a gzip bomb costs a buffer rather than the heap.
  *
@@ -62,6 +138,12 @@ class PageFetcher internal constructor(
 
     /** A budget for one clone: the document and every stylesheet it pulls in share it. */
     fun newDeadline(): Deadline = Deadline(nanoTime() + timeoutMs * NANOS_PER_MILLI)
+
+    /** The same budget, for the CPU-bound half of a clone. See [DeadlineCheck]. */
+    fun deadlineCheck(deadline: Deadline): DeadlineCheck =
+        DeadlineCheck {
+            if (nanoTime() > deadline.atNanos) throw CloneException.Unreachable("clone timed out after ${timeoutMs}ms")
+        }
 
     fun fetchDocument(
         url: String,
@@ -176,7 +258,14 @@ class PageFetcher internal constructor(
         }
         val encoding = response.headers().firstValue("content-encoding").orElse("")
         val gzipped = encoding.trim().equals("gzip", ignoreCase = true)
-        val bytes = response.body().use { body -> readBounded(body, gzipped, maxBytes, deadline) }
+        val body = response.body()
+        val watchdog = Watchdog.arm(body, millisLeft(deadline))
+        val bytes =
+            try {
+                body.use { readBounded(it, gzipped, maxBytes, deadline, watchdog) }
+            } finally {
+                watchdog.disarm()
+            }
         val text = decode(bytes, charsetFor(contentType, bytes))
         if (mime == null && kind == ResourceKind.DOCUMENT && !looksLikeHtml(text)) {
             throw CloneException.NotHtml("announced no content type and does not look like HTML")
@@ -187,12 +276,18 @@ class PageFetcher internal constructor(
     /**
      * Reads at most [maxBytes] *decompressed* bytes, then gives up. Counting after decompression
      * and before buffering is what makes this safe against a body that inflates to gigabytes.
+     *
+     * The deadline check between reads is not enough on its own: `read()` itself blocks with no
+     * timeout, so a server that sends headers and then goes silent would pin this thread forever.
+     * [watchdog] closes the body underneath us when the budget runs out, which turns that block
+     * into an `IOException` — hence the two-armed catch below.
      */
     private fun readBounded(
         source: InputStream,
         gzipped: Boolean,
         maxBytes: Long,
         deadline: Deadline,
+        watchdog: Watchdog,
     ): ByteArray {
         val collected = ByteArrayOutputStream(INITIAL_BUFFER_BYTES)
         val chunk = ByteArray(READ_CHUNK_BYTES)
@@ -212,6 +307,7 @@ class PageFetcher internal constructor(
                 collected.write(chunk, 0, read)
             }
         } catch (e: IOException) {
+            if (watchdog.fired) throw CloneException.Unreachable("stopped sending within ${timeoutMs}ms", e)
             throw CloneException.Unreachable("could not be read to the end", e)
         }
         return collected.toByteArray()
@@ -222,6 +318,13 @@ class PageFetcher internal constructor(
         if (remaining <= 0) throw CloneException.Unreachable("did not finish within ${timeoutMs}ms")
         return remaining
     }
+
+    /**
+     * Like [remainingMillis] but never throws: a watchdog armed with 1 ms simply fires at once, and
+     * the deadline check at the head of [readBounded] is what turns that into the right exception.
+     * Arming must not be the thing that leaves an unread body holding a connection open.
+     */
+    private fun millisLeft(deadline: Deadline): Long = ((deadline.atNanos - nanoTime()) / NANOS_PER_MILLI).coerceAtLeast(1)
 
     private enum class ResourceKind(
         val accept: String,

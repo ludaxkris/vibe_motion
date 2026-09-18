@@ -1,13 +1,17 @@
 package dev.vibemotion.api.clone
 
 import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.comparables.shouldBeLessThan
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.types.shouldBeInstanceOf
+import kotlinx.coroutines.delay
 import java.net.http.HttpClient
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicReference
 
 class PageFetcherTest :
     FunSpec({
@@ -161,6 +165,43 @@ class PageFetcherTest :
             shouldThrow<CloneException.Unreachable> { fetcher(timeoutMs = 300).fetchDocument(server.url("/slow")) }
         }
 
+        test("gives up on a body that stalls after the headers, and frees the reader thread") {
+            server.stallAfterHeaders("/stalled-document")
+
+            val failure = AtomicReference<Throwable>()
+            val reader =
+                Thread({
+                    runCatching { fetcher(timeoutMs = 300).fetchDocument(server.url("/stalled-document")) }
+                        .onFailure(failure::set)
+                }, "stalled-document-reader").apply { isDaemon = true }
+
+            reader.start()
+            reader.join(2_000)
+
+            withClue("the reader thread must not still be parked inside read()") {
+                reader.isAlive shouldBe false
+            }
+            val error = failure.get().shouldBeInstanceOf<CloneException.Unreachable>()
+            error.message.orEmpty() shouldContain "300ms"
+        }
+
+        test("a stalled stylesheet body is bounded by the same deadline") {
+            server.stallAfterHeaders("/stalled.css", prefix = "body{", contentType = "text/css")
+
+            val failure = AtomicReference<Throwable>()
+            val reader =
+                Thread({
+                    runCatching { fetcher(timeoutMs = 300).fetchStylesheet(server.url("/stalled.css")) }
+                        .onFailure(failure::set)
+                }, "stalled-stylesheet-reader").apply { isDaemon = true }
+
+            reader.start()
+            reader.join(2_000)
+
+            reader.isAlive shouldBe false
+            failure.get().shouldBeInstanceOf<CloneException.Unreachable>()
+        }
+
         test("spends one deadline across every hop, not one per hop") {
             server.on("/creep-0") { exchange ->
                 Thread.sleep(250)
@@ -175,6 +216,20 @@ class PageFetcherTest :
 
             // Each hop alone is comfortably inside the budget; the three together are not.
             shouldThrow<CloneException.Unreachable> { fetcher(timeoutMs = 400).fetchDocument(server.url("/creep-0")) }
+        }
+
+        test("hands out a deadline check that fires once the clone's budget is spent") {
+            val spent = fetcher(timeoutMs = 1)
+            val deadline = spent.newDeadline()
+            delay(50)
+
+            shouldThrow<CloneException.Unreachable> { spent.deadlineCheck(deadline).check() }
+                .message
+                .orEmpty() shouldContain "clone timed out"
+
+            // And says nothing while there is budget left.
+            val fresh = fetcher(timeoutMs = 10_000)
+            fresh.deadlineCheck(fresh.newDeadline()).check()
         }
 
         test("fetches a stylesheet and reports where it ended up") {

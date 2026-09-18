@@ -114,6 +114,36 @@ class StateMathTest :
             state["vm-17"]?.params shouldBe mapOf("duration" to "900ms")
         }
 
+        test("statesAt agrees with folding each requested point independently") {
+            // The law restore depends on: one pass that captures on the way through must give
+            // exactly what two separate folds would, or a restore diff is computed against the
+            // wrong "before".
+            checkAll(Arb.list(diffs, 0..8), Arb.int(0..9), Arb.int(0..9)) { history, a, b ->
+                val seqDiffs = history.mapIndexed { index, diff -> SeqDiff(index, diff) }
+
+                val captured = statesAt(seqDiffs, setOf(a, b))
+
+                captured[a] shouldBe stateAt(seqDiffs.filter { it.seq <= a }.map { it.diff })
+                captured[b] shouldBe stateAt(seqDiffs.filter { it.seq <= b }.map { it.diff })
+            }
+        }
+
+        test("statesAt returns one entry per requested seq, including past the end of history") {
+            val history = listOf(SeqDiff(0, Diff.EMPTY), SeqDiff(1, Diff(set = mapOf("vm-1" to assignment()))))
+
+            val captured = statesAt(history, setOf(0, 1, 99))
+
+            captured.keys shouldContainExactly setOf(0, 1, 99)
+            captured[0] shouldBe emptyMap()
+            captured[1] shouldBe mapOf("vm-1" to assignment())
+            // A seq past the end is the whole history folded, not a missing entry.
+            captured[99] shouldBe captured[1]
+        }
+
+        test("statesAt of no requested points is empty, whatever the history") {
+            statesAt(listOf(SeqDiff(0, Diff(set = mapOf("vm-1" to assignment())))), emptySet()) shouldBe emptyMap()
+        }
+
         test("describeDiff names the animations it sets and the elements it removes") {
             val diff =
                 Diff(

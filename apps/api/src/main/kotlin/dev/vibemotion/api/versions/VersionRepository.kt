@@ -60,11 +60,17 @@ interface VersionRepository {
     /** Ascending by `seq`, v0 first. */
     fun listByProject(projectId: UUID): List<VersionRow>
 
-    /** The diffs of every version up to and including [throughSeq], in `seq` order. History is linear. */
+    /**
+     * The diffs of every version up to and including [throughSeq], in `seq` order. History is
+     * linear, so this is the whole path from v0 to that version.
+     *
+     * Each diff carries its `seq` so one read can serve several materialisation points
+     * ([dev.vibemotion.api.versions.statesAt]) instead of one read per point.
+     */
     fun diffsUpTo(
         projectId: UUID,
         throughSeq: Int,
-    ): List<Diff>
+    ): List<SeqDiff>
 }
 
 class ExposedVersionRepository : VersionRepository {
@@ -101,12 +107,12 @@ class ExposedVersionRepository : VersionRepository {
     override fun diffsUpTo(
         projectId: UUID,
         throughSeq: Int,
-    ): List<Diff> =
+    ): List<SeqDiff> =
         Versions
             .select(Versions.diff, Versions.seq)
             .where { (Versions.projectId eq projectId) and (Versions.seq lessEq throughSeq) }
             .orderBy(Versions.seq to SortOrder.ASC)
-            .map { it[Versions.diff].toDiff() }
+            .map { SeqDiff(it[Versions.seq], it[Versions.diff].toDiff()) }
 
     private fun ResultRow.toVersionRow() =
         VersionRow(

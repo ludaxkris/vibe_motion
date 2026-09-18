@@ -13,6 +13,12 @@ import dev.vibemotion.api.domain.State
  * leaves it removed.
  */
 
+/** A version's diff together with its position in history. Persistence-free, like the rest of this file. */
+data class SeqDiff(
+    val seq: Int,
+    val diff: Diff,
+)
+
 /** [state] with [diff] applied. Removing an element that is not in [state] is a no-op. */
 fun applyDiff(
     state: State,
@@ -27,6 +33,47 @@ fun applyDiff(
 
 /** Folds [diffs] (v0 first, in `seq` order) over the empty state. */
 fun stateAt(diffs: List<Diff>): State = diffs.fold(emptyMap()) { state, diff -> applyDiff(state, diff) }
+
+/**
+ * The state at each of [seqs], from a single pass over [diffs].
+ *
+ * Restore needs two states — the one it is leaving and the one it is reproducing — and used to
+ * fold history twice to get them, while holding the project row lock. History is linear and both
+ * states lie on the same path, so one pass that captures on the way through is exactly equivalent:
+ * `statesAt(diffs, setOf(a, b))[a] == stateAt(diffs.filter { it.seq <= a }.map { it.diff })`.
+ *
+ * @param diffs v0 first, ascending by `seq`.
+ * @param seqs the positions to capture. A position with no diff of its own captures the state
+ *   after every earlier diff, so a caller cannot get a surprise by asking about a gap or a seq
+ *   past the end.
+ * @return one entry per requested seq, always.
+ */
+fun statesAt(
+    diffs: List<SeqDiff>,
+    seqs: Set<Int>,
+): Map<Int, State> {
+    val wanted = seqs.sorted()
+    val captured = LinkedHashMap<Int, State>(wanted.size)
+    var state: State = emptyMap()
+    var next = 0
+
+    diffs.forEach { (seq, diff) ->
+        while (next < wanted.size && wanted[next] < seq) {
+            captured[wanted[next]] = state
+            next++
+        }
+        state = applyDiff(state, diff)
+        while (next < wanted.size && wanted[next] == seq) {
+            captured[wanted[next]] = state
+            next++
+        }
+    }
+    while (next < wanted.size) {
+        captured[wanted[next]] = state
+        next++
+    }
+    return captured
+}
 
 /**
  * The minimal diff that turns [from] into [to].
