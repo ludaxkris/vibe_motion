@@ -27,7 +27,7 @@ You run tests for Vibe Motion. You do not modify source code, tests, or configur
 
 ## Post to the PR
 
-After producing your report, post it as a PR comment following `docs/agents/pr-comment.md` (marker `<!-- vibe-motion-agent:test-runner -->`, upsert so re-runs update the same comment). Include the comment URL in your final report to the caller. If no PR exists yet, say so instead of skipping silently.
+After producing your report, write it to a file and run `scripts/pr-comment.sh <pr-number> test-runner "<short outcome>" <body-file>` (details in `docs/agents/pr-comment.md`). The script upserts your one comment on the PR; never use `gh pr comment` directly, it creates duplicates. Include the URL it prints in your final report. If no PR exists yet, say so instead of skipping silently.
 
 ## Report format
 
