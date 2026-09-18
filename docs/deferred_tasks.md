@@ -105,6 +105,10 @@ Status: `open` · `in-progress` · `done` · `wont-do`.
 | DT-096 | tech-debt | `ElementInfo.visible` and overlay geometry are only provable in a real browser | P3 | this-phase | 4 | — | open | jsdom has no layout. PR #12 adds a Chromium Playwright suite for the bridge; `visible` still needs an assertion there or in Task 10's e2e. From PR #12 / Phase 4 plan. |
 | DT-097 | tech-debt | Host inline `animation: var(--x)` cannot be restored by the bridge | P3 | later | 4 | — | open | The shorthand with a `var()` snapshots as empty longhands, so `clear` loses it. Rare in cloned pages. From PR #12 / Phase 4 plan. |
 | DT-098 | chore | `apps/web` needs `transpilePackages: ["bridge"]` when it starts importing the bridge package | P2 | this-phase | 4 | — | open | `packages/bridge` exports TS source with no `dist/`. Harmless under Turbopack, required under webpack. Do it in Phase 4 PR B (plan Task 6). From PR #12 / Phase 4 plan. |
+| DT-099 | feature | Unsaved guard on element click and on Export/Restore; hoist the guard's pending-action state from `ControlPanel` to `EditorShell` | P1 | this-phase | 4 | — | open | Phase 3 guards tab switches only (Discard reverts, Keep editing stays, Save disabled). `docs/user_flow.md` §1 also guards selecting another element (needs the bridge) and Export/Restore (Phases 6–7). One dialog should serve every trigger. |
+| DT-100 | feature | Wire the Save dialog and the guard's Save to `POST /projects/{id}/versions` | P1 | this-phase | 6 | — | open | `components/dialogs/save-dialog.tsx` and `lib/diff-summary.ts` are presentational/pure and shown in `/dev`; both Save buttons are disabled with a caption until Phase 6. |
+| DT-101 | test | e2e for the unsaved guard | P2 | later | 4 | — | open | Not writable until the bridge can select an element in the iframe; covered by RTL tests today. |
+| DT-102 | polish | `summariseDiff` names changed params by raw key (`duration 600ms → 800ms`) instead of the tuning panel's labels | P3 | later | 6 | — | open | `paramLabel` lives under `components/control-panel/`; move it to `lib/` (or into the catalog, DT-080) and reuse. |
 
 ## Bugs
 
