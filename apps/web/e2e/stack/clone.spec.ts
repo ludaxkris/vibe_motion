@@ -45,6 +45,7 @@ test("the web origin may call the api; a foreign origin may not", async ({ page,
   const foreign = await request.get(`${stack.apiOrigin}/catalog/versions`, {
     headers: { Origin: "https://evil.example" },
   });
+  expect(foreign.status()).toBe(403);
   expect(foreign.headers()["access-control-allow-origin"]).toBeUndefined();
 });
 
@@ -64,6 +65,7 @@ test("cloning a fixture page creates a project and serves an instrumented, scrip
         const timer = setTimeout(() => reject(new Error("bridge never posted ready")), 15_000);
         window.addEventListener("message", (event) => {
           if (event.origin !== apiOrigin || event.data?.source !== "vibe-motion") return;
+          if (event.data.type !== "ready") return; // Phase 4 adds more message types
           clearTimeout(timer);
           resolve({ type: event.data.type, elementCount: event.data.payload.elementCount });
         });
@@ -96,5 +98,7 @@ test("the SSRF guard still refuses private, loopback and metadata targets", asyn
   for (const url of ["http://10.0.0.5/", "http://127.0.0.1:8080/health", "http://localhost:8080/health", "http://169.254.169.254/latest/meta-data/"]) {
     const res = await createProject(page, url);
     expect(res.status, `${url} → ${JSON.stringify(res.body)}`).toBe(422);
+    // 422 alone proves nothing: without the guard these would still 422 as unreachable / not html.
+    expect(res.body.code, url).toBe("url_blocked");
   }
 });

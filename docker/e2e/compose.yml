@@ -39,6 +39,9 @@ services:
       PORT: "8080"
       WEB_ORIGIN: http://web:3000
       APP_VERSION: e2e-${VM_E2E_TAG}
+      # Same values as render.yaml; keep in step.
+      CLONE_MAX_BYTES: "10485760"
+      CLONE_TIMEOUT_MS: "15000"
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75 -XX:+UseSerialGC"
     mem_limit: 512m # Render starter
     depends_on:
@@ -55,6 +58,7 @@ services:
     environment:
       PORT: "3000"
       NEXT_TELEMETRY_DISABLED: "1"
+    mem_limit: 512m # Render starter
 
   fixtures:
     image: nginx:1.29-alpine
@@ -63,6 +67,7 @@ services:
     networks:
       default:
         aliases:
+          # Must not end in a suffix SsrfGuard treats as local (.localhost, .internal, .local).
           - fixtures.vm-e2e.test
 
   runner:
@@ -77,13 +82,20 @@ services:
       E2E_WEB_ORIGIN: http://web:3000
       E2E_API_ORIGIN: http://api:8080
       E2E_FIXTURE_ORIGIN: http://fixtures.vm-e2e.test
-    ipc: host # Chromium; per Playwright's Docker guidance
+    shm_size: 1gb # Chromium needs more than Docker's 64 MB /dev/shm; keeps IPC private to the stack
+    # Host uid, so the report files in the bind mount are the caller's, not root's (Linux).
+    user: "${VM_E2E_UID:?}:${VM_E2E_GID:?}"
     volumes:
       - ${VM_E2E_OUT:?}:/out
     depends_on: [api, web, fixtures]
 
 networks:
   default:
+    # Hermetic: no route out. A fixture that references the public internet fails here, loudly,
+    # instead of making the suite depend on someone else's uptime.
+    internal: true
+    # A daemon-wide IPv6 default would give fixtures a unique-local AAAA, which the guard refuses.
+    enable_ipv6: false
     ipam:
       config:
         - subnet: ${VM_E2E_SUBNET:?}

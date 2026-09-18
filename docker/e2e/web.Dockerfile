@@ -11,14 +11,14 @@ ENV NEXT_TELEMETRY_DISABLED=1 CI=1
 WORKDIR /repo
 RUN corepack enable
 
-# Manifests first so `pnpm install` stays in the layer cache until a dependency changes.
+# `pnpm fetch` needs only the lockfile, so this layer survives everything except a dependency
+# change, and no workspace member is listed by hand: a new packages/<x> just works.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .nvmrc ./
-COPY apps/web/package.json apps/web/package.json
-COPY packages/animation-catalog/package.json packages/animation-catalog/package.json
-RUN pnpm install --frozen-lockfile
+RUN pnpm fetch
 
-COPY packages/animation-catalog packages/animation-catalog
+COPY packages packages
 COPY apps/web apps/web
+RUN pnpm install --offline --frozen-lockfile
 
 # Inlined into the bundle by `next build`, exactly as on Render.
 ARG NEXT_PUBLIC_API_ORIGIN

@@ -51,7 +51,7 @@ for br in "${candidates[@]:-}"; do
   wt="$root/.worktrees/$br"
   # Docker e2e stacks and images are tagged per worktree path; drop them before the path goes away.
   if [ -x "$wt/scripts/e2e-docker.sh" ] && command -v docker >/dev/null && docker info >/dev/null 2>&1; then
-    run "$wt/scripts/e2e-docker.sh" prune
+    run "$wt/scripts/e2e-docker.sh" prune || echo "  e2e-docker prune failed; continuing (run 'scripts/e2e-docker.sh prune-all --yes' later if images linger)"
   fi
   if git worktree list --porcelain | grep -qx "worktree $wt"; then
     run git worktree remove --force "$wt"

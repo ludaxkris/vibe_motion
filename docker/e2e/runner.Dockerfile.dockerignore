@@ -1,5 +1,9 @@
 # Per-Dockerfile ignore (BuildKit): the root .dockerignore drops apps/web for the api image.
 **/node_modules/
+# `next build` loads .env files: a developer's local secrets must never reach an image.
+**/.env
+**/.env.*
+!**/.env.example
 **/.next/
 **/dist/
 **/playwright-report*/

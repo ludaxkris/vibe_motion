@@ -21,6 +21,9 @@ export default defineConfig({
   testDir: "./e2e",
   outputDir: "/out/test-results",
   fullyParallel: true,
+  // Explicit, not CPU-derived: the api admits 2 concurrent clones and queues the rest for 5 s
+  // before answering 503, so worker count is part of the contract with the stack.
+  workers: 4,
   forbidOnly: true,
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"], ["html", { outputFolder: "/out/html", open: "never" }]],

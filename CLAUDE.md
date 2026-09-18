@@ -41,10 +41,10 @@ Once Phase 0 lands these are the canonical entry points. Until then, see the pha
 ```bash
 pnpm install                     # JS workspace
 pnpm dev                         # web on :3000, expects API on :8080
-pnpm gates                       # ALL gates (web + api + catalog); what CI runs
+pnpm gates                       # ALL gates (catalog + web + api + e2e + full-stack Docker e2e); what CI runs
 pnpm --filter web test           # vitest
 pnpm --filter web e2e            # playwright, web-only specs against `next dev`
-pnpm e2e:docker                  # full-stack e2e: a NEW throwaway Docker stack per run (db + api image + prod web build + fixtures + runner); safe to run concurrently from any worktree. See docker/e2e/README.md
+pnpm e2e:docker                  # full-stack e2e: a NEW throwaway Docker stack per run (db + api image + prod web build + fixtures + runner); safe to run concurrently from any worktree; agents run it (and `pnpm gates`) in the background. See docker/e2e/README.md
 pnpm --filter animation-catalog validate
 scripts/cleanup-merged.sh <branch> # after the PR merges: remove worktree, branch, temp files
 

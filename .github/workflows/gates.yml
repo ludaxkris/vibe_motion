@@ -83,9 +83,12 @@ jobs:
           path: apps/web/playwright-report
           retention-days: 7
 
+  # Runs on pushes to main as well, on purpose: render.yaml deploys on checksPass, and a commit
+  # whose full stack is broken is exactly the commit that must not deploy.
   e2e-docker:
     name: e2e full-stack gates
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - run: scripts/e2e-docker.sh
