@@ -16,6 +16,7 @@ Rules
 |---|---|---|---|---|---|---|---|
 | (primary) | main | Claude Fable 5.1 (planning session with Chris) | planning + 0 | Planning docs (done), Phase 0 foundation PR #1 (merged), agent PR comments + cleanup PR #2 (merged) | done 2026-09-18 | 2026-09-17 | no |
 | `.worktrees/feat/2-api-core` | feat/2-api-core | Claude Fable 5.1 (session with Chris) | 2 | Projects + clone service (SSRF guard, jsoup rewrite, data-vm-id), versions (diff, stateAt, 409, 422, restore), page serving | in-progress | 2026-09-18 | additive only if needed; Flyway V2+ only |
+| `.worktrees/feat/3-web-shell-help` | feat/3-web-shell-help | Claude Fable 5.1 (session with Chris) | 3 | Web shell: URL entry → POST /projects, resizable split editor, Control Panel state machine + /dev route, live help page via runtime CSS generator, MSW mocks; re-skin from Claude Design mocks | in-progress | 2026-09-18 | no (consumes openapi + catalog read-only) |
 | .worktrees/feat/phase-1-catalog | feat/phase-1-catalog | Claude Fable 5.1 (orchestrator + subagents) | 1 | Close Phase 1 exit criteria: cross-language (version, animationId) agreement, catalog 1.1.0 adding `fillMode` standard param | in progress | 2026-09-18 | yes — `schema.json` (additive: `fillMode` standard key), new `versions/1.1.0.json`, `current` bump |
 
 ## Notices (newest first)
@@ -39,6 +40,7 @@ Agents claim a task here before creating a worktree so two agents do not pick th
 | Task | Claimed by | Date |
 |---|---|---|
 | Phase 2 — API core (projects, clone service, versions, stateAt, restore) | Claude Fable 5.1 (session with Chris) · worktree `.worktrees/feat/2-api-core` | 2026-09-18 |
+| Phase 3 — Web shell + help page | Claude Fable 5.1 (session with Chris) · worktree `.worktrees/feat/3-web-shell-help` | 2026-09-18 |
 
 ## Facts other agents need
 
