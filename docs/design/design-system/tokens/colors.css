@@ -1,0 +1,68 @@
+:root {
+  /* Base — Brand palette (lavender greys, deep-violet bar, one violet accent) */
+  --vm-bar: #221b45;
+  --vm-bar-ink: #ffffff;
+  --vm-bar-ink-muted: rgba(255, 255, 255, 0.85);
+  --vm-bar-border: rgba(255, 255, 255, 0.25);
+  --vm-bar-chip: rgba(255, 255, 255, 0.12);
+  --vm-bar-accent: #8f74ff;
+  --vm-bar-dot: #b39dff;
+  --vm-canvas: #ecebf5;
+  --vm-panel: #f3f1fb;
+  --vm-surface: #ffffff;
+  --vm-surface-muted: #eeebfa;
+  --vm-surface-sunken: #e6e2f7;
+  --vm-border: #dcd8ee;
+  --vm-border-strong: #dcd8ee;
+  --vm-divider: #ecebf5;
+  --vm-ink: #1d1d1f;
+  --vm-ink-2: #7a7392;
+  --vm-ink-3: #a89fc9;
+  --vm-ink-4: #cfc9e6;
+  --vm-ink-inverse: #ffffff;
+  --vm-accent: #7c5cff;
+  --vm-accent-strong: #4a35b8;
+  --vm-accent-hover: #6b4de6;
+  --vm-accent-pressed: #5b3fd0;
+  --vm-accent-soft: rgba(124, 92, 255, 0.15);
+  --vm-accent-tint: #f3f0ff;
+  --vm-success: #34c759;
+  --vm-warning: #ff9f0a;
+  --vm-danger: #d0342c;
+  --vm-scrim: rgba(34, 27, 69, 0.4);
+
+  /* Semantic aliases */
+  --surface-canvas: var(--vm-canvas);
+  --surface-panel: var(--vm-panel);
+  --surface-card: var(--vm-surface);
+  --surface-control: var(--vm-surface-muted);
+  --surface-control-track: var(--vm-surface-sunken);
+  --text-body: var(--vm-ink);
+  --text-muted: var(--vm-ink-2);
+  --text-faint: var(--vm-ink-3);
+  --text-disabled: var(--vm-ink-4);
+  --text-on-accent: var(--vm-ink-inverse);
+  --text-link: var(--vm-accent);
+  --text-tab-active: var(--vm-accent-strong);
+  --surface-bar: var(--vm-bar);
+  --text-on-bar: var(--vm-bar-ink);
+  --text-danger: var(--vm-danger);
+  --border-default: var(--vm-border);
+  --border-control: var(--vm-border-strong);
+  --border-divider: var(--vm-divider);
+  --border-focus: var(--vm-accent);
+  --selection-ring: var(--vm-accent);
+  --diff-add: var(--vm-success);
+  --diff-change: var(--vm-warning);
+  --diff-remove: var(--vm-danger);
+
+  /* Shadows */
+  --shadow-sheet: 0 10px 36px rgba(34,27,69,.16);
+  --shadow-card: 0 1px 2px rgba(0,0,0,.04);
+  --shadow-raised: 0 1px 2px rgba(34,27,69,.12);
+  --shadow-thumb: 0 0 0 1.5px var(--vm-accent);
+  --shadow-popover: 0 6px 20px rgba(0,0,0,.2);
+  --shadow-modal: 0 20px 60px rgba(34,27,69,.3);
+  --shadow-accent: 0 4px 12px rgba(124,92,255,.35);
+  --focus-ring: 0 0 0 3px var(--vm-accent-soft);
+}

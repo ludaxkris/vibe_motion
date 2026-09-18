@@ -1,0 +1,5 @@
+# Prompt for Claude Code
+
+Paste this after dropping the `design_handoff_vibe_motion_editor/` folder into the repo root (or `docs/design/`):
+
+> Read `design_handoff_vibe_motion_editor/README.md` fully, then `design_handoff_vibe_motion_editor/design-system/readme.md` and `tokens/*.css`. Implement Phase 3 of `docs/build_plan.md` in `apps/web` against these designs: (1) map the tokens to CSS variables in `globals.css` and Tailwind theme, (2) build the Control Panel as an explicit state machine (idle → selected → choosing → tuning) with the shadcn/ui primitives noted in the handoff, (3) build `/`, `/p/[projectId]`, `/help` with MSW mocks per `openapi.yaml`, (4) add a `/dev` route that renders every panel state and both dialogs. Match the handoff pixel-for-pixel; where the handoff and `docs/` conflict, the docs win on behaviour and the handoff wins on visuals — log the conflict in `docs/deferred_tasks.md`. Follow `CLAUDE.md` (worktree, gates, TDD, `vm-` prefix). Screenshot each state with the screenshot-runner and compare against `ui_kit/index.html`.
