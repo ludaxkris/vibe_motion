@@ -39,8 +39,14 @@ class CatalogManifestTest :
             repository.currentVersion shouldBe manifest.current
         }
 
-        test("bundled versions equal the manifest's versions, in the same order") {
-            repository.versions() shouldBe manifest.versions.keys.toList()
+        test("bundled versions equal the manifest's version set") {
+            // Compares as sets, not lists: kotlinx.serialization does not guarantee that a
+            // deserialized Map's key iteration order reflects the source JSON's key order.
+            repository.versions().toSet() shouldBe manifest.versions.keys
+        }
+
+        test("bundled versions are ascending by semver, matching the manifest's keys sorted the same way") {
+            repository.versions() shouldBe manifest.versions.keys.sortedWith(::compareSemver)
         }
 
         test("every version's animation ids equal the manifest's ids, in file order") {

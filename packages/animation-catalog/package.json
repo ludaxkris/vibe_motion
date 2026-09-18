@@ -12,15 +12,13 @@
       "import": "./dist/index.js"
     },
     "./schema.json": "./schema.json",
-    "./manifest.json": "./manifest.json",
     "./versions/*": "./versions/*"
   },
   "files": [
     "dist",
     "versions",
     "current",
-    "schema.json",
-    "manifest.json"
+    "schema.json"
   ],
   "scripts": {
     "validate": "node scripts/validate.mjs",

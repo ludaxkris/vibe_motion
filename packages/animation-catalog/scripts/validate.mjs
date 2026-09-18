@@ -22,6 +22,7 @@ const validate = ajv.compile(readSchema());
 
 const files = listVersionFiles();
 const problems = [];
+const catalogsByVersion = new Map();
 
 if (files.length === 0) problems.push("no files under versions/");
 
@@ -32,6 +33,7 @@ for (const { version, file } of files) {
     for (const e of validate.errors ?? []) problems.push(`${version}: ${e.instancePath || "/"} ${e.message}`);
     continue;
   }
+  catalogsByVersion.set(version, catalog);
   if (catalog.version !== version) problems.push(`${version}: "version" field is ${catalog.version}, must equal the file name`);
   const ids = new Set();
   for (const entry of catalog.entries) {
@@ -45,14 +47,57 @@ for (const { version, file } of files) {
       if (p.cssVar && !entry.keyframes.includes(`var(${p.cssVar})`) && !(entry.baseStyles ?? "").includes(`var(${p.cssVar})`)) {
         problems.push(`${version}/${entry.id}: ${p.cssVar} is declared but never referenced in keyframes or baseStyles`);
       }
+      // type: "select" needs somewhere to choose from, and a default that is one of the choices.
+      // No versions/*.json published so far (1.0.0 or 1.1.0) has a select param without options,
+      // so this rule applies unconditionally; if a future version ever needs an exception, scope
+      // it here the same way the fillMode rule below is scoped by version.
+      if (p.type === "select") {
+        if (!Array.isArray(p.options) || p.options.length === 0) {
+          problems.push(`${version}/${entry.id}: param ${p.key} is type select but declares no options`);
+        } else if (!p.options.includes(p.default)) {
+          problems.push(`${version}/${entry.id}: param ${p.key} default "${p.default}" is not one of its options`);
+        }
+      }
     }
     if (entry.defaultTrigger && !entry.triggers.includes(entry.defaultTrigger)) {
       problems.push(`${version}/${entry.id}: defaultTrigger ${entry.defaultTrigger} not in triggers`);
     }
-    // fillMode became a standard key in 1.1.0 (CLAUDE.md: every animation exposes the
-    // standard animation-* properties including fill-mode). 1.0.0 predates it and is exempt.
+    // fillMode became a standard key in 1.1.0 (docs/build_plan.md §4 Phase 1: every animation
+    // exposes the standard animation-* properties including fill-mode). Versions before 1.1.0
+    // (by semver, not merely "not 1.0.0" — a future 1.0.x metadata-only patch would predate it
+    // too) are exempt.
     if (compareSemver(version, "1.1.0") >= 0 && !keys.has("fillMode")) {
       problems.push(`${version}/${entry.id}: missing fillMode param (standard key from 1.1.0 onward)`);
+    }
+  }
+}
+
+// keyframesName() (src/index.ts) names the exported @keyframes rule vm-<id>-v<major>, encoding
+// only the MAJOR version. So if two published versions share a major and diverge in keyframes
+// or baseStyles for the same animationId, a page mixing assignments pinned to different versions
+// of that major would collide on one @keyframes rule/base style and get a nondeterministic
+// result. Within a major, keyframes and baseStyles must therefore stay byte-identical across
+// versions for any id both declare (metadata like name/description/params may still change).
+const seenInMajor = new Map(); // `${major}:${id}` -> { version, keyframes, baseStyles }
+for (const { version } of files) {
+  const catalog = catalogsByVersion.get(version);
+  if (!catalog) continue; // already reported as invalid above
+  const major = version.split(".")[0];
+  for (const entry of catalog.entries) {
+    const key = `${major}:${entry.id}`;
+    const prior = seenInMajor.get(key);
+    if (!prior) {
+      seenInMajor.set(key, { version, keyframes: entry.keyframes, baseStyles: entry.baseStyles ?? "" });
+      continue;
+    }
+    if (prior.keyframes !== entry.keyframes) {
+      problems.push(
+        `${entry.id}: keyframes differ between ${prior.version} and ${version} (both major ${major}); ` +
+          `keyframesName() only encodes the major version, so these would collide`,
+      );
+    }
+    if (prior.baseStyles !== (entry.baseStyles ?? "")) {
+      problems.push(`${entry.id}: baseStyles differ between ${prior.version} and ${version} (both major ${major})`);
     }
   }
 }

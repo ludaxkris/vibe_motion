@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { CATALOGS, CATALOG_VERSIONS } from "../src/index.js";
 
+// Mirrors scripts/lib.mjs's compareSemver. Not imported from there directly: scripts/*.mjs is
+// untyped JS outside this package's tsconfig (types: ["node"], include: ["src", "test"]), so
+// importing it would fail `tsc -p tsconfig.json` without a declaration file.
+function compareSemver(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  return 0;
+}
+
 /**
  * Catalog 1.1.0 adds `fillMode` as a sixth standard param (README, CHANGELOG.md). It must
  * change nothing else relative to 1.0.0: same ids, same keyframes, same other params (in the
@@ -41,7 +51,7 @@ describe("catalog 1.1.0: fillMode is the only change from 1.0.0", () => {
       attention: "none",
       emphasis: "none",
       continuous: "none",
-      hover: "both",
+      hover: "forwards",
     };
     const emphasisOverrides: Record<string, string> = {
       highlight: "forwards",
@@ -52,17 +62,24 @@ describe("catalog 1.1.0: fillMode is the only change from 1.0.0", () => {
       const fillMode = entry.params.find((p) => p.key === "fillMode");
       expect(fillMode, `${entry.id} must declare fillMode`).toBeDefined();
       const expected =
-        entry.category === "emphasis" && entry.id in emphasisOverrides
+        entry.category === "emphasis" && Object.hasOwn(emphasisOverrides, entry.id)
           ? emphasisOverrides[entry.id]
           : expectedByCategory[entry.category];
       expect(fillMode?.default, entry.id).toBe(expected);
     }
   });
 
-  it("only 1.0.0 is exempt from declaring fillMode", () => {
+  it("no fillMode param carries a label (the other five standard keys don't either)", () => {
+    for (const entry of CATALOGS["1.1.0"].entries) {
+      const fillMode = entry.params.find((p) => p.key === "fillMode");
+      expect(fillMode?.label, entry.id).toBeUndefined();
+    }
+  });
+
+  it("every version from 1.1.0 onward (by semver, not just != 1.0.0) declares fillMode on every entry", () => {
     for (const version of CATALOG_VERSIONS) {
       const declaresAll = CATALOGS[version].entries.every((e) => e.params.some((p) => p.key === "fillMode"));
-      expect(declaresAll, version).toBe(version !== "1.0.0");
+      expect(declaresAll, version).toBe(compareSemver(version, "1.1.0") >= 0);
     }
   });
 });
