@@ -15,6 +15,7 @@ Rules
 | Worktree | Branch | Agent / session | Phase | Task | Status | Started | Touches shared contract? |
 |---|---|---|---|---|---|---|---|
 | (primary) | main | Claude Fable 5.1 (planning session with Chris) | planning | Build plan, architecture, user flow, CLAUDE.md, subagents, render.yaml | done 2026-09-18 | 2026-09-17 | no |
+| `.worktrees/feat/0-foundation` | feat/0-foundation | Claude Fable 5.1 (session with Chris) | 0 | Monorepo scaffold, gates, openapi.yaml, Flyway baseline, Dockerfile, CI | in-progress | 2026-09-18 | yes — creates openapi.yaml + schema.json (Phase 0 freeze) |
 
 ## Notices (newest first)
 
@@ -31,7 +32,7 @@ Agents claim a task here before creating a worktree so two agents do not pick th
 
 | Task | Claimed by | Date |
 |---|---|---|
-| — | — | — |
+| Phase 0 — Foundation (monorepo, gates, OpenAPI, Flyway, Dockerfile, CI) | Claude Fable 5.1 (session with Chris) · worktree `.worktrees/feat/0-foundation` | 2026-09-18 |
 
 ## Facts other agents need
 
