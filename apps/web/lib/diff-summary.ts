@@ -65,8 +65,13 @@ const SILENT: Readonly<Record<string, readonly string[]>> = {
   iteration: ["1"],
 };
 
-/** Absent, in the before/after columns of a changed row. */
-const ABSENT = "—";
+/**
+ * Absent, in the before/after columns of a changed row. Words rather than a
+ * dash: the handoff's glyph set is "✦ ↻ ‹ ▾ ⌕ › ✓ ∞ !" and nothing else. Not
+ * "none" — that is a real `fillMode` value in this catalog, so "fillMode none
+ * → both" would not say whether the param was unset or set to `none`.
+ */
+const ABSENT = "not set";
 
 /** The handoff's glyph for an endless repeat; every other value speaks for itself. */
 function displayValue(value: string): string {
@@ -115,11 +120,22 @@ function addedMeta(assignment: Assignment, lookup: CatalogLookup): string {
     .join(" · ");
 }
 
-/** "trigger load → hover · duration 600ms → 800ms" — only the differences. */
+/**
+ * "trigger load → hover · duration 600ms → 800ms" — only the differences.
+ *
+ * When the *animation itself* was swapped the params are not comparable: two
+ * entries declare different knobs, so a key-by-key diff reads as a row of
+ * appearing and vanishing params ("scale not set → 1.05 · distance 24px → not
+ * set") that says nothing a reader wants. In that case the row says what the
+ * element now is instead — the swap, then the new assignment's added-style
+ * meta. Fields that *are* comparable across a swap (the catalog pin, the
+ * trigger) still read as before → after.
+ */
 function changedMeta(before: Assignment, after: Assignment, lookup: CatalogLookup): string {
   const parts: string[] = [];
+  const swapped = before.animationId !== after.animationId;
 
-  if (before.animationId !== after.animationId) {
+  if (swapped) {
     parts.push(`animation ${nameOf(before, lookup)} → ${nameOf(after, lookup)}`);
   }
   if (before.catalogVersion !== after.catalogVersion) {
@@ -127,6 +143,12 @@ function changedMeta(before: Assignment, after: Assignment, lookup: CatalogLooku
   }
   if (before.trigger !== after.trigger) {
     parts.push(`trigger ${before.trigger} → ${after.trigger}`);
+  }
+
+  if (swapped) {
+    const meta = addedMeta(after, lookup);
+    if (meta) parts.push(meta);
+    return parts.join(" · ");
   }
 
   const entry = lookup(after.catalogVersion, after.animationId);

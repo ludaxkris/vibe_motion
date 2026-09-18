@@ -130,29 +130,40 @@ describe("summariseDiff", () => {
     expect(summary.rows[0].meta).toBe("trigger load → hover");
   });
 
-  it("names a swapped animation and a repinned catalog version", () => {
+  it("describes a swapped animation by what it now is, not by a cross-entry param diff", () => {
+    // `distance` and `scale` belong to different animations; diffing them
+    // against each other would read as a row of appearing and vanishing knobs.
+    const summary = summariseDiff({ "vm-3": fadeInUp() }, { "vm-3": pulse() }, lookup);
+
+    expect(summary.rows[0]).toMatchObject({ kind: "changed", name: "Pulse" });
+    expect(summary.rows[0].meta).toBe(
+      "animation Fade In Up → Pulse · 1200ms · ease-in-out · ∞ · 1.05",
+    );
+  });
+
+  it("still names a trigger and a catalog repin alongside the swap", () => {
     const summary = summariseDiff(
       { "vm-3": fadeInUp() },
-      { "vm-3": { ...pulse(), catalogVersion: "2.0.0" } },
+      { "vm-3": { ...pulse(), catalogVersion: "2.0.0", trigger: "hover" } },
       lookup,
     );
 
     // 2.0.0 has no `pulse`, so the row falls back to the id it pinned.
-    expect(summary.rows[0]).toMatchObject({ kind: "changed", name: "pulse" });
-    expect(summary.rows[0].meta).toContain("animation Fade In Up → pulse");
-    expect(summary.rows[0].meta).toContain("catalog 1.1.0 → 2.0.0");
+    expect(summary.rows[0].meta).toBe(
+      "animation Fade In Up → pulse · catalog 1.1.0 → 2.0.0 · trigger load → hover · 1200ms · ease-in-out · ∞ · 1.05",
+    );
   });
 
-  it("marks a param that appeared or went away with an em dash", () => {
+  it("says a param is not set rather than drawing a glyph the handoff does not allow", () => {
     const withoutDistance = fadeInUp();
     delete withoutDistance.params.distance;
 
     expect(
       summariseDiff({ "vm-3": withoutDistance }, { "vm-3": fadeInUp() }, lookup).rows[0].meta,
-    ).toBe("distance — → 24px");
+    ).toBe("distance not set → 24px");
     expect(
       summariseDiff({ "vm-3": fadeInUp() }, { "vm-3": withoutDistance }, lookup).rows[0].meta,
-    ).toBe("distance 24px → —");
+    ).toBe("distance 24px → not set");
   });
 
   it("reports a removed assignment by the name its own catalog version gave it", () => {
