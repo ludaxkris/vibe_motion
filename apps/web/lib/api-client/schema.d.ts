@@ -121,8 +121,39 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** The cloned page with the bridge script injected. Used as the editor iframe `src`. */
+        /**
+         * The cloned page with the bridge script injected. Used as the editor iframe `src`.
+         * @description `base_html` is immutable, so the response is a pure function of the project id and the
+         *     renderer and carries a strong `ETag`. It is sent `private, no-cache`: always revalidate,
+         *     never serve stale — a deleted project must 404 and a CSP fix must not wait out a max-age.
+         *     A revalidation hit answers 304 without reading the stored document.
+         */
         get: operations["getProjectPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bridge/vm-bridge.js": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Vibe Motion bridge script loaded by the rendered project page (added in Phase 2, additive)
+         * @description `GET /projects/{projectId}/page` adds `<script src="/bridge/vm-bridge.js">` and a CSP of
+         *     `script-src 'self'` at serve time, so this is the only script a cloned page can run.
+         *     The stored `base_html` never contains it.
+         *
+         *     Sent `no-cache` with a content-hash `ETag`: the bridge evolves with the editor, and a
+         *     stale bridge talking to a newer shell is worse than a conditional request per page view.
+         */
+        get: operations["getBridgeScript"];
         put?: never;
         post?: never;
         delete?: never;
@@ -361,13 +392,45 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /**
+         * @description `payload_too_large`: the JSON request body exceeds 256 KB. Enforced from `Content-Length`
+         *     and again while reading, so a chunked body is cut off at the same limit.
+         */
+        PayloadTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `project_busy`: the project row lock could not be taken within the transaction's
+         *     `lock_timeout`, so another save or restore on the same project is still in flight. Retry.
+         */
+        ProjectBusy: {
+            headers: {
+                "Retry-After": components["headers"]["RetryAfter"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: {
         projectId: string;
         versionId: string;
     };
     requestBodies: never;
-    headers: never;
+    headers: {
+        /** @description Seconds to wait before retrying the same request. */
+        RetryAfter: number;
+        /** @description Strong validator. Send it back as `If-None-Match` to revalidate. */
+        ETag: string;
+        /** @description Always revalidate; never serve a stale copy. */
+        CacheControl: string;
+    };
     pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -496,7 +559,10 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            /** @description Source page exceeds the size cap */
+            /**
+             * @description Either the request body exceeds the 256 KB JSON limit (`payload_too_large`) or the
+             *     source page exceeds the clone size cap (`page_too_large`). The `code` tells them apart.
+             */
             413: {
                 headers: {
                     [name: string]: unknown;
@@ -517,6 +583,19 @@ export interface operations {
             /** @description Rate limited */
             429: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /**
+             * @description `clone_busy`: this instance is already running its maximum number of concurrent clones.
+             *     A clone can peak above 100 MB of heap, so the limit protects the instance. Retry.
+             */
+            503: {
+                headers: {
+                    "Retry-After": components["headers"]["RetryAfter"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -572,7 +651,10 @@ export interface operations {
     getProjectPage: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description The `ETag` from a previous response. A match answers 304. */
+                "If-None-Match"?: string;
+            };
             path: {
                 projectId: components["parameters"]["projectId"];
             };
@@ -583,13 +665,62 @@ export interface operations {
             /** @description HTML document */
             200: {
                 headers: {
+                    ETag: components["headers"]["ETag"];
+                    "Cache-Control": components["headers"]["CacheControl"];
+                    /** @description Policy the browser enforces for the cloned document; also present as a meta tag. */
+                    "Content-Security-Policy"?: string;
+                    /** @description Always `no-referrer` — the project URL is a capability in v0. */
+                    "Referrer-Policy"?: string;
                     [name: string]: unknown;
                 };
                 content: {
                     "text/html": string;
                 };
             };
+            /** @description Not modified; the cached document is still current */
+            304: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    "Cache-Control": components["headers"]["CacheControl"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             404: components["responses"]["NotFound"];
+        };
+    };
+    getBridgeScript: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The `ETag` from a previous response. A match answers 304. */
+                "If-None-Match"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description JavaScript */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    "Cache-Control": components["headers"]["CacheControl"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/javascript": string;
+                };
+            };
+            /** @description Not modified; the cached script is still current */
+            304: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    "Cache-Control": components["headers"]["CacheControl"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     listVersions: {
@@ -654,7 +785,11 @@ export interface operations {
                     "application/json": components["schemas"]["StaleParentError"];
                 };
             };
-            /** @description Diff references an unknown catalog version or animation id, or invalid params */
+            413: components["responses"]["PayloadTooLarge"];
+            /**
+             * @description Diff references an unknown catalog version or animation id, has an undeclared or
+             *     malformed param value, or exceeds the 2,000 entry cap (`invalid_diff`).
+             */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -663,6 +798,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            503: components["responses"]["ProjectBusy"];
         };
     };
     getVersionState: {
@@ -711,7 +847,11 @@ export interface operations {
             };
         };
         responses: {
-            /** @description New version created and made current */
+            /**
+             * @description New version created and made current. Same shape as `createVersion`'s 201; its
+             *     `catalogVersion` is the TARGET version's, so a restored version reads as a copy of
+             *     what it reproduces.
+             */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -720,7 +860,10 @@ export interface operations {
                     "application/json": components["schemas"]["Version"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            503: components["responses"]["ProjectBusy"];
         };
     };
     exportProject: {

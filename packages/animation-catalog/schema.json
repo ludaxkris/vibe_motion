@@ -65,7 +65,7 @@
         },
         "keyframes": {
           "type": "string",
-          "description": "Body of the @keyframes block only (the part inside the outer braces). The generator wraps it as `@keyframes vm-<id>-v<major> { ... }`. Reference animation-specific knobs as var(--vm-<key>).",
+          "description": "Body of the @keyframes block only (the part inside the outer braces). The generator wraps it as `@keyframes vm-<id>-v<major>-<minor>-<patch> { ... }` (the full catalog version, via keyframesName(animationId, version), never just the major). Reference animation-specific knobs as var(--vm-<key>).",
           "minLength": 1
         },
         "params": {

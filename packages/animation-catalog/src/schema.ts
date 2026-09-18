@@ -22,7 +22,7 @@ export interface CatalogEntry {
   category: "entrance" | "exit" | "attention" | "emphasis" | "continuous" | "hover";
   description: string;
   /**
-   * Body of the @keyframes block only (the part inside the outer braces). The generator wraps it as `@keyframes vm-<id>-v<major> { ... }`. Reference animation-specific knobs as var(--vm-<key>).
+   * Body of the @keyframes block only (the part inside the outer braces). The generator wraps it as `@keyframes vm-<id>-v<major>-<minor>-<patch> { ... }` (the full catalog version, via keyframesName(animationId, version), never just the major). Reference animation-specific knobs as var(--vm-<key>).
    */
   keyframes: string;
   /**

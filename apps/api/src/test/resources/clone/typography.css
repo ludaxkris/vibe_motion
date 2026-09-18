@@ -1,0 +1,10 @@
+@import url("fonts/base.css");
+
+@font-face {
+  font-family: "Northwind";
+  src: url(fonts/northwind.woff2) format("woff2");
+}
+
+h1 {
+  font-family: "Northwind", serif;
+}

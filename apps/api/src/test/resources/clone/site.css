@@ -1,0 +1,23 @@
+@import url("typography.css") screen;
+@import "print.css";
+
+:root {
+  --brand: #0b5;
+}
+
+body {
+  background: url(../img/paper.png) repeat;
+  color: var(--brand);
+}
+
+.card {
+  background-image: url('img/card.svg');
+}
+
+.inline {
+  background: url(data:image/gif;base64,R0lGODlhAQABAAAAACw=);
+}
+
+.absolute {
+  background: url("https://cdn.example.net/texture.png");
+}

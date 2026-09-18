@@ -40,10 +40,12 @@ dependencies {
     runtimeOnly(libs.flyway.database.postgresql)
     implementation(libs.hikaricp)
     runtimeOnly(libs.postgresql)
+    implementation(libs.jsoup)
     implementation(libs.logback.classic)
 
     testImplementation(libs.kotest.runner.junit5)
     testImplementation(libs.kotest.assertions.core)
+    testImplementation(libs.kotest.property)
     testImplementation(libs.ktor.server.test.host)
     testImplementation(libs.testcontainers.postgresql)
     testImplementation(libs.postgresql)

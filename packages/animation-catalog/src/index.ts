@@ -27,8 +27,14 @@ export function getEntry(version: string, animationId: string): CatalogEntry | u
   return getCatalog(version)?.entries.find((e) => e.id === animationId);
 }
 
-/** Keyframes name used in the runtime and in exports. Includes the catalog major version so
- *  assignments authored under different catalog versions never collide. */
+const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+/** Keyframes name used in the runtime and in exports. Named by the full (animationId,
+ *  catalogVersion) pair — which is already the immutable identity of a keyframes template —
+ *  so assignments authored under different catalog versions never collide, by construction. */
 export function keyframesName(animationId: string, version: string): string {
-  return `vm-${animationId}-v${version.split(".")[0]}`;
+  if (!SEMVER_RE.test(version)) {
+    throw new Error(`keyframesName: "${version}" is not a strict MAJOR.MINOR.PATCH semver`);
+  }
+  return `vm-${animationId}-v${version.split(".").join("-")}`;
 }

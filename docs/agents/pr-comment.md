@@ -4,32 +4,18 @@ Every subagent posts its final report as a comment on the PR it worked on, so fi
 
 ## Procedure
 
-1. Find the PR for the current branch: `gh pr view --json number,url -q '.number'` (from the worktree). If the caller gave you a PR number, use that. If there is no PR, skip the comment and say so in your report; never create a PR yourself.
-2. Write the comment body to a temp file. Start it with the marker line for your agent, then a heading, then your full report in the format your definition specifies:
-
-   ```
-   <!-- vibe-motion-agent:<agent-name> -->
-   ## 🤖 <agent-name> — <short outcome> · `<short sha>`
-
-   <your report>
-
-   <sub>Posted by the `<agent-name>` subagent · <ISO date>. Re-runs update this comment.</sub>
-   ```
-
-   Markers: `<!-- vibe-motion-agent:code-reviewer -->`, `test-writer`, `code-architect`, `test-runner`, `screenshot-runner`. Short outcome examples: `APPROVE`, `BLOCKED`, `ALL GREEN`, `RED`, `SOUND WITH CHANGES`, `12 tests added`, `9 screenshots`.
-3. Upsert:
+1. Find the PR for the current branch: `gh pr view --json number -q .number` (from the worktree). If the caller gave you a PR number, use that. If there is no PR, skip the comment and say so in your report; never create a PR yourself.
+2. Write your full report, in the format your definition specifies, to a file in your scratchpad. Do **not** add the marker, heading or footer yourself.
+3. Run exactly one command from the repo (any worktree):
 
    ```bash
-   PR=<number>; MARKER='<!-- vibe-motion-agent:<agent-name> -->'; BODY=/path/to/body.md
-   REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-   CID=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -1)
-   if [ -n "$CID" ]; then
-     gh api -X PATCH "repos/$REPO/issues/comments/$CID" -F body=@"$BODY" >/dev/null && echo "updated comment $CID"
-   else
-     gh pr comment "$PR" --body-file "$BODY"
-   fi
+   scripts/pr-comment.sh <pr-number> <agent-name> "<short outcome>" <body-file>
    ```
-4. Put the comment URL in your final report to the caller (`gh pr view $PR --json url -q .url` + `#issuecomment-<id>`, or the URL `gh pr comment` prints).
+
+   `agent-name` is one of `code-reviewer`, `test-writer`, `code-architect`, `test-runner`, `screenshot-runner`. Short outcome examples: `APPROVE`, `BLOCKED`, `ALL GREEN`, `RED`, `SOUND WITH CHANGES`, `12 tests added`, `9 screenshots`.
+
+   The script adds the hidden marker `<!-- vibe-motion-agent:<agent-name> -->`, the heading with the PR head sha, and the footer; finds your existing comment by marker and updates it; creates one only if none exists; and removes duplicates. **Never call `gh pr comment` yourself**: that always creates a new comment.
+4. Put the URL the script prints in your final report to the caller.
 
 ## Rules
 
