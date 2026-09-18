@@ -35,11 +35,9 @@ function typeUrl(value: string) {
   fireEvent.change(field(), { target: { value } });
 }
 
-function pasteUrl(value: string) {
-  // jsdom does not synthesise the `input` event a paste causes, so the paste is
-  // modelled the way the browser delivers it: the field's value, changed.
-  fireEvent.change(field(), { target: { value } });
-}
+// jsdom does not synthesise the `input` event a paste causes, so the paste is
+// modelled the way the browser delivers it: the field's value, changed.
+const pasteUrl = typeUrl;
 
 function clone() {
   fireEvent.click(screen.getByRole("button", { name: /^(clone|retry)$/i }));
@@ -425,10 +423,12 @@ describe("EntryScreen failures", () => {
 
   it.each([
     [CLONE_FAILURE_HOSTS.unreachable, "the site didn’t respond"],
-    [CLONE_FAILURE_HOSTS.loginRequired, "it redirected to a sign-in screen"],
-    [CLONE_FAILURE_HOSTS.blockedHost, "that host is blocked"],
+    [CLONE_FAILURE_HOSTS.blocked, "that host is blocked"],
     [CLONE_FAILURE_HOSTS.notHtml, "isn’t an HTML page"],
-    [CLONE_FAILURE_HOSTS.tooLarge, "it’s over 10 MB"],
+    [CLONE_FAILURE_HOSTS.pageTooLarge, "it’s over 10 MB"],
+    [CLONE_FAILURE_HOSTS.busy, "Vibe Motion is busy right now."],
+    [CLONE_FAILURE_HOSTS.internalError, "Something went wrong on our side."],
+    [CLONE_FAILURE_HOSTS.loginRequired, "it redirected to a sign-in screen"],
     [CLONE_FAILURE_HOSTS.rateLimited, "Too many clone requests"],
   ])("explains why %s could not be cloned", async (host, sentence) => {
     renderScreen();
@@ -463,6 +463,18 @@ describe("EntryScreen failures", () => {
     for (const term of ["Unreachable", "Too large", "Blocked host", "Not HTML"]) {
       expect(within(card).getByText(term)).toBeInTheDocument();
     }
+  });
+
+  it("leaves the other-reasons card off a failure that is not about the page", async () => {
+    renderScreen();
+
+    typeUrl(CLONE_FAILURE_HOSTS.busy);
+    clone();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Vibe Motion is busy right now.");
+    expect(
+      screen.queryByRole("region", { name: /other reasons a clone can fail/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("clears the failure as soon as the URL is edited", async () => {

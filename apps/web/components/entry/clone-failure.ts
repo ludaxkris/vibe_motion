@@ -3,10 +3,13 @@
  * the reason, plus a muted sentence saying what to do about it
  * (`docs/design/README.md` "1. Entry", error state 3b).
  *
- * `apps/api/openapi.yaml` fixes the statuses `POST /projects` can answer with
- * (400 / 413 / 422 / 429) but types `Error.code` as a bare string, so the code
- * is matched first and the status is the fallback — an unknown code from a
- * newer API still lands on the right sentence rather than on raw server prose.
+ * The keys are the service's own vocabulary (`apps/api` `clone/PageCloner.kt`
+ * and `Application.kt`): `invalid_url`, `url_blocked`, `url_unreachable` and
+ * `not_html` (422), `page_too_large` and `payload_too_large` (413),
+ * `clone_busy` (503) and `internal_error`. `openapi.yaml` types `Error.code` as
+ * a bare string, so nothing enforces that from the contract side — the code is
+ * matched first and the HTTP status is the fallback, which keeps an unknown
+ * code from a newer API on the right sentence rather than on raw server prose.
  */
 
 export type CloneFailure = {
@@ -30,45 +33,87 @@ export class CloneRequestError extends Error {
   }
 }
 
-type Sentences = Pick<CloneFailure, "headline" | "detail">;
+type Sentences = {
+  headline: string;
+  detail: string;
+  /**
+   * The failure is about the page that was asked for, so the handoff's list of
+   * the other things that can go wrong with a page is worth offering. False for
+   * anything about the address, the request or the service itself, where that
+   * list would only misdirect.
+   */
+  aboutThePage: boolean;
+};
 
 const BY_CODE: Record<string, Sentences> = {
-  login_required: {
-    headline: "Couldn’t clone this page — it redirected to a sign-in screen.",
-    detail:
-      "Vibe Motion can only clone public pages. Try the public URL, or a page that doesn’t need a session.",
-  },
-  unreachable: {
+  // -- Emitted by the service today ----------------------------------------
+  url_unreachable: {
     headline: "Couldn’t clone this page — the site didn’t respond.",
     detail: "DNS failed, or the page took longer than 15 seconds. Check the address and try again.",
+    aboutThePage: true,
   },
-  blocked_host: {
+  url_blocked: {
     headline: "Couldn’t clone this page — that host is blocked.",
     detail: "Private, local and link-local addresses can’t be cloned. Use a public URL.",
+    aboutThePage: true,
   },
   not_html: {
     headline: "Couldn’t clone this page — that address isn’t an HTML page.",
     detail: "PDFs, images and JSON can’t be cloned. Link to the page itself.",
+    aboutThePage: true,
   },
-  too_large: {
+  page_too_large: {
     headline: "Couldn’t clone this page — it’s over 10 MB.",
     detail: "The page and its CSS together have to stay under 10 MB.",
-  },
-  rate_limited: {
-    headline: "Too many clone requests.",
-    detail: "Wait a moment, then try again.",
+    aboutThePage: true,
   },
   invalid_url: {
     headline: "That isn’t a valid web address.",
     detail: "Enter a host and path, like nimbus.app/pricing.",
+    aboutThePage: false,
+  },
+  /** The request body, not the page: `POST /projects` only carries the URL. */
+  payload_too_large: {
+    headline: "That request was too large to send.",
+    detail: "The address itself is too long. Try the page without its query string.",
+    aboutThePage: false,
+  },
+  clone_busy: {
+    headline: "Vibe Motion is busy right now.",
+    detail: "Too many pages are being cloned at once. Try again in a few seconds.",
+    aboutThePage: false,
+  },
+  internal_error: {
+    headline: "Something went wrong on our side.",
+    detail:
+      "Try again in a moment. If it keeps happening, this page may be one Vibe Motion can’t handle.",
+    aboutThePage: false,
+  },
+
+  // -- Tolerated, not emitted yet -------------------------------------------
+  /** The sentence the handoff showcases in state 3b. */
+  login_required: {
+    headline: "Couldn’t clone this page — it redirected to a sign-in screen.",
+    detail:
+      "Vibe Motion can only clone public pages. Try the public URL, or a page that doesn’t need a session.",
+    aboutThePage: true,
+  },
+  /** Rate limiting lands in Phase 8 (docs/build_plan.md). */
+  rate_limited: {
+    headline: "Too many clone requests.",
+    detail: "Wait a moment, then try again.",
+    aboutThePage: false,
   },
 };
 
-/** openapi.yaml's response descriptions, one code each. */
+/** One code per status, for when the code itself is not one we know. */
 const BY_STATUS: Record<number, string> = {
   400: "invalid_url",
-  413: "too_large",
+  // The page, not the request body: `POST /projects` sends one short URL.
+  413: "page_too_large",
   429: "rate_limited",
+  500: "internal_error",
+  503: "clone_busy",
 };
 
 /** Shown when the server failed the clone without saying anything usable. */
@@ -76,7 +121,8 @@ const GENERIC_DETAIL = "Try another URL, or the same one again in a moment.";
 
 /** The same sentences the server's `invalid_url` gets, for local validation. */
 export const INVALID_URL_FAILURE: CloneFailure = {
-  ...BY_CODE.invalid_url,
+  headline: BY_CODE.invalid_url.headline,
+  detail: BY_CODE.invalid_url.detail,
   showOtherReasons: false,
 };
 
@@ -107,17 +153,19 @@ export function describeCloneFailure(error: unknown): CloneFailure {
     };
   }
 
-  const code = error.code in BY_CODE ? error.code : (BY_STATUS[error.status] ?? "");
-  // A malformed address is about what was typed, not about the page, so the
-  // card of clone reasons under it would be noise.
-  const showOtherReasons = code !== "invalid_url" && error.status !== 400;
-  const sentences = BY_CODE[code];
+  const sentences = BY_CODE[error.code] ?? BY_CODE[BY_STATUS[error.status] ?? ""];
+  if (sentences) {
+    return {
+      headline: sentences.headline,
+      detail: sentences.detail,
+      showOtherReasons: sentences.aboutThePage,
+    };
+  }
 
-  return sentences
-    ? { ...sentences, showOtherReasons }
-    : {
-        headline: "Couldn’t clone this page.",
-        detail: error.message || GENERIC_DETAIL,
-        showOtherReasons,
-      };
+  // An unrecognised failure of a clone still is one, so the card applies.
+  return {
+    headline: "Couldn’t clone this page.",
+    detail: error.message || GENERIC_DETAIL,
+    showOtherReasons: true,
+  };
 }

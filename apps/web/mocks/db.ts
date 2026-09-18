@@ -35,37 +35,47 @@ const projects = new Map<string, ProjectRecord>();
 
 /**
  * Hosts that always fail cloning, one per reason the Entry screen explains
- * (`docs/design/README.md` "1. Entry", error state 3b). `apps/api/openapi.yaml`
- * gives `POST /projects` the statuses but not the `Error.code` values — it types
- * `code` as a bare string — so these codes are the mock's proposal for the real
- * service (see the task report's deferred items).
+ * (`docs/design/README.md` "1. Entry", error state 3b).
+ *
+ * The codes and statuses are the service's own (`apps/api`
+ * `clone/PageCloner.kt`, `Application.kt`), not this mock's invention:
+ * `openapi.yaml` types `Error.code` as a bare string, so the mock is the only
+ * place the two sides can be kept honest until the contract lists them.
+ * `loginRequired` and `rateLimited` are the two the service does not emit yet —
+ * the handoff showcases the sign-in sentence and rate limiting arrives in
+ * Phase 8 — and are marked as such below.
  */
 export const CLONE_FAILURE_HOSTS = {
   unreachable: "unreachable.test",
-  loginRequired: "login.test",
-  blockedHost: "blocked.test",
+  blocked: "blocked.test",
   notHtml: "not-html.test",
-  tooLarge: "too-large.test",
+  pageTooLarge: "too-large.test",
+  busy: "busy.test",
+  internalError: "boom.test",
+  /** Not emitted by the service yet. */
+  loginRequired: "login.test",
+  /** Not emitted by the service yet (Phase 8). */
   rateLimited: "rate-limited.test",
 } as const;
 
 /** Host that always fails cloning in the mock, for testing the clone-failure path. */
 export const UNREACHABLE_HOST = CLONE_FAILURE_HOSTS.unreachable;
 
-const CLONE_FAILURES: Record<string, { status: 413 | 422 | 429; code: string; message: string }> = {
+type CloneFailureResponse = {
+  status: 413 | 422 | 429 | 500 | 503;
+  code: string;
+  message: string;
+};
+
+const CLONE_FAILURES: Record<string, CloneFailureResponse> = {
   [CLONE_FAILURE_HOSTS.unreachable]: {
     status: 422,
-    code: "unreachable",
+    code: "url_unreachable",
     message: "The site did not respond within 15 seconds",
   },
-  [CLONE_FAILURE_HOSTS.loginRequired]: {
+  [CLONE_FAILURE_HOSTS.blocked]: {
     status: 422,
-    code: "login_required",
-    message: "The page redirected to a sign-in screen",
-  },
-  [CLONE_FAILURE_HOSTS.blockedHost]: {
-    status: 422,
-    code: "blocked_host",
+    code: "url_blocked",
     message: "Host is not a public address",
   },
   [CLONE_FAILURE_HOSTS.notHtml]: {
@@ -73,10 +83,25 @@ const CLONE_FAILURES: Record<string, { status: 413 | 422 | 429; code: string; me
     code: "not_html",
     message: "Response was application/pdf, not HTML",
   },
-  [CLONE_FAILURE_HOSTS.tooLarge]: {
+  [CLONE_FAILURE_HOSTS.pageTooLarge]: {
     status: 413,
-    code: "too_large",
+    code: "page_too_large",
     message: "Page and its CSS exceed the 10 MB cap",
+  },
+  [CLONE_FAILURE_HOSTS.busy]: {
+    status: 503,
+    code: "clone_busy",
+    message: "All clone workers are in use",
+  },
+  [CLONE_FAILURE_HOSTS.internalError]: {
+    status: 500,
+    code: "internal_error",
+    message: "Unhandled failure while cloning",
+  },
+  [CLONE_FAILURE_HOSTS.loginRequired]: {
+    status: 422,
+    code: "login_required",
+    message: "The page redirected to a sign-in screen",
   },
   [CLONE_FAILURE_HOSTS.rateLimited]: {
     status: 429,
@@ -106,12 +131,17 @@ function err(code: string, message: string, details?: Record<string, unknown>): 
 // Projects
 // ---------------------------------------------------------------------------
 
+// 500 and 503 are not in `openapi.yaml`'s `createProject` responses but the
+// service emits them (`internal_error`, `clone_busy`), so the mock does too —
+// the contract is read-only this phase; see the task report's deferred items.
 export type CreateProjectResult =
   | { status: 201; body: Project }
   | { status: 400; body: ApiError }
   | { status: 413; body: ApiError }
   | { status: 422; body: ApiError }
-  | { status: 429; body: ApiError };
+  | { status: 429; body: ApiError }
+  | { status: 500; body: ApiError }
+  | { status: 503; body: ApiError };
 
 export function createProject(url: string): CreateProjectResult {
   const parsed = isHttpUrl(url);

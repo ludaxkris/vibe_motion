@@ -32,14 +32,18 @@ describe("mock API: projects", () => {
   });
 
   // One trigger host per reason the Entry screen has to explain
-  // (docs/design/README.md "1. Entry", error state 3b), so the screen's error
-  // mapping can be exercised end to end against the real client.
+  // (docs/design/README.md "1. Entry", error state 3b), carrying the service's
+  // own codes and statuses (apps/api `clone/PageCloner.kt`, `Application.kt`)
+  // so the screen's mapping is exercised against what it will really get.
   it.each([
-    ["unreachable.test", 422, "unreachable"],
-    ["login.test", 422, "login_required"],
-    ["blocked.test", 422, "blocked_host"],
+    ["unreachable.test", 422, "url_unreachable"],
+    ["blocked.test", 422, "url_blocked"],
     ["not-html.test", 422, "not_html"],
-    ["too-large.test", 413, "too_large"],
+    ["too-large.test", 413, "page_too_large"],
+    ["busy.test", 503, "clone_busy"],
+    ["boom.test", 500, "internal_error"],
+    // Not emitted by the service yet; see CLONE_FAILURE_HOSTS.
+    ["login.test", 422, "login_required"],
     ["rate-limited.test", 429, "rate_limited"],
   ])("fails %s with %i %s", async (host, status, code) => {
     const { response, data, error } = await apiClient.POST("/projects", {
@@ -56,10 +60,12 @@ describe("mock API: projects", () => {
     expect(Object.values(CLONE_FAILURE_HOSTS)).toEqual(
       expect.arrayContaining([
         "unreachable.test",
-        "login.test",
         "blocked.test",
         "not-html.test",
         "too-large.test",
+        "busy.test",
+        "boom.test",
+        "login.test",
         "rate-limited.test",
       ]),
     );

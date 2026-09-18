@@ -12,22 +12,18 @@ const failure = (status: number, code: string, message = "server detail") =>
   new CloneRequestError(status, code, message);
 
 describe("describeCloneFailure", () => {
+  // The service's own vocabulary (apps/api `clone/PageCloner.kt`,
+  // `Application.kt`). Every one of these must land on its own sentence.
   it.each([
     [
       422,
-      "login_required",
-      "Couldn’t clone this page — it redirected to a sign-in screen.",
-      "Vibe Motion can only clone public pages. Try the public URL, or a page that doesn’t need a session.",
-    ],
-    [
-      422,
-      "unreachable",
+      "url_unreachable",
       "Couldn’t clone this page — the site didn’t respond.",
       "DNS failed, or the page took longer than 15 seconds. Check the address and try again.",
     ],
     [
       422,
-      "blocked_host",
+      "url_blocked",
       "Couldn’t clone this page — that host is blocked.",
       "Private, local and link-local addresses can’t be cloned. Use a public URL.",
     ],
@@ -38,39 +34,87 @@ describe("describeCloneFailure", () => {
       "PDFs, images and JSON can’t be cloned. Link to the page itself.",
     ],
     [
-      413,
-      "too_large",
-      "Couldn’t clone this page — it’s over 10 MB.",
-      "The page and its CSS together have to stay under 10 MB.",
-    ],
-    [429, "rate_limited", "Too many clone requests.", "Wait a moment, then try again."],
-    [
-      400,
+      422,
       "invalid_url",
       "That isn’t a valid web address.",
       "Enter a host and path, like nimbus.app/pricing.",
     ],
-  ])("maps %i %s to its own sentence", (status, code, headline, detail) => {
+    [
+      413,
+      "page_too_large",
+      "Couldn’t clone this page — it’s over 10 MB.",
+      "The page and its CSS together have to stay under 10 MB.",
+    ],
+    [
+      413,
+      "payload_too_large",
+      "That request was too large to send.",
+      "The address itself is too long. Try the page without its query string.",
+    ],
+    [
+      503,
+      "clone_busy",
+      "Vibe Motion is busy right now.",
+      "Too many pages are being cloned at once. Try again in a few seconds.",
+    ],
+    [
+      500,
+      "internal_error",
+      "Something went wrong on our side.",
+      "Try again in a moment. If it keeps happening, this page may be one Vibe Motion can’t handle.",
+    ],
+  ])("maps the API's %i %s to its own sentence", (status, code, headline, detail) => {
     expect(describeCloneFailure(failure(status, code))).toMatchObject({ headline, detail });
   });
 
-  it("only offers the other-reasons card for failures that are about the page", () => {
-    expect(describeCloneFailure(failure(422, "unreachable")).showOtherReasons).toBe(true);
-    expect(describeCloneFailure(failure(413, "too_large")).showOtherReasons).toBe(true);
-    expect(describeCloneFailure(failure(429, "rate_limited")).showOtherReasons).toBe(true);
-    // A malformed address was never a clone attempt.
-    expect(describeCloneFailure(failure(400, "invalid_url")).showOtherReasons).toBe(false);
+  // Not emitted by the service today: the handoff showcases the sign-in
+  // sentence, and rate limiting is planned (build plan, Phase 8).
+  it.each([
+    [
+      422,
+      "login_required",
+      "Couldn’t clone this page — it redirected to a sign-in screen.",
+      "Vibe Motion can only clone public pages. Try the public URL, or a page that doesn’t need a session.",
+    ],
+    [429, "rate_limited", "Too many clone requests.", "Wait a moment, then try again."],
+  ])("tolerates the not-yet-emitted %i %s", (status, code, headline, detail) => {
+    expect(describeCloneFailure(failure(status, code))).toMatchObject({ headline, detail });
+  });
+
+  it("only offers the other-reasons card when the failure is about the page", () => {
+    for (const code of [
+      "url_unreachable",
+      "url_blocked",
+      "not_html",
+      "page_too_large",
+      "login_required",
+    ]) {
+      expect(describeCloneFailure(failure(422, code)).showOtherReasons).toBe(true);
+    }
+    // These are about the address, the request or the service — listing why a
+    // page can fail to clone would only misdirect.
+    expect(describeCloneFailure(failure(422, "invalid_url")).showOtherReasons).toBe(false);
+    expect(describeCloneFailure(failure(413, "payload_too_large")).showOtherReasons).toBe(false);
+    expect(describeCloneFailure(failure(503, "clone_busy")).showOtherReasons).toBe(false);
+    expect(describeCloneFailure(failure(500, "internal_error")).showOtherReasons).toBe(false);
+    expect(describeCloneFailure(failure(429, "rate_limited")).showOtherReasons).toBe(false);
   });
 
   it("falls back to the status when the code is one the client does not know", () => {
-    expect(describeCloneFailure(failure(413, "payload_too_large")).headline).toBe(
+    expect(describeCloneFailure(failure(400, "bad_request")).headline).toBe(
+      "That isn’t a valid web address.",
+    );
+    expect(describeCloneFailure(failure(413, "some_new_code")).headline).toBe(
       "Couldn’t clone this page — it’s over 10 MB.",
     );
     expect(describeCloneFailure(failure(429, "slow_down")).headline).toBe(
       "Too many clone requests.",
     );
-    expect(describeCloneFailure(failure(400, "bad_request")).headline).toBe(
-      "That isn’t a valid web address.",
+    expect(describeCloneFailure(failure(503, "unavailable")).headline).toBe(
+      "Vibe Motion is busy right now.",
+    );
+    expect(describeCloneFailure(failure(500, "kaboom")).headline).toBe(
+      "Something went wrong on our side.",
     );
   });
 
@@ -112,14 +156,14 @@ describe("isAbortError", () => {
 
   it("is false for anything else", () => {
     expect(isAbortError(new TypeError("Failed to fetch"))).toBe(false);
-    expect(isAbortError(failure(422, "unreachable"))).toBe(false);
+    expect(isAbortError(failure(422, "url_unreachable"))).toBe(false);
     expect(isAbortError(null)).toBe(false);
   });
 });
 
 describe("entry copy", () => {
   it("keeps the client-side validation message identical to the server's invalid_url", () => {
-    expect(INVALID_URL_FAILURE).toEqual(describeCloneFailure(failure(400, "invalid_url")));
+    expect(INVALID_URL_FAILURE).toEqual(describeCloneFailure(failure(422, "invalid_url")));
   });
 
   it("lists the handoff's four other reasons a clone can fail", () => {
