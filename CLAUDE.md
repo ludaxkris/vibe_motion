@@ -17,7 +17,8 @@ Vibe Motion is a web tool that lets product designers add CSS animations to an e
 7. **No secrets in the repo.** Secrets are `sync: false` in `render.yaml` and entered in the Render dashboard. Locally use `.env.local` (gitignored). Never print environment values in logs or PR descriptions.
 8. **Screenshots never touch working branches.** Screenshot files are committed only to the orphan branch `pr_screenshot` by the `screenshot-runner` subagent and linked from PR comments. Never `git add` a `.png`/`.jpg` on any other branch; `.gitignore` blocks common screenshot paths as a backstop. If you see screenshots in a diff, treat it as a blocking review finding.
 9. **Versions are user-initiated diffs.** A version is created only when the user clicks Save. Each version stores a diff from its parent, never full state; full state is materialised by `stateAt()` in the API. Every assignment in a diff carries `catalogVersion`. Live preview edits are a client-side draft and must not call the API.
-10. **Do not ask the user for permission for reversible work.** Do ask before: force-pushing, deleting branches you did not create, editing `render.yaml` database fields (they are immutable on Render), or changing another agent's in-flight files.
+10. **Clean up after merge.** Once the PR you were reviewing or authoring is merged to `main`, run `scripts/cleanup-merged.sh <branch>` from the primary checkout. It verifies the PR is merged on GitHub, removes the worktree under `.worktrees/<branch>`, deletes the local branch and its remote-tracking ref, and removes the PR's temp files. Then update `memory.md`: mark the worktree entry done (or remove it) and drop the claim. Never clean a branch whose PR is still open; the script refuses to.
+11. **Do not ask the user for permission for reversible work.** Do ask before: force-pushing, deleting branches you did not create, editing `render.yaml` database fields (they are immutable on Render), or changing another agent's in-flight files.
 
 ## Repository map
 
@@ -44,6 +45,7 @@ pnpm gates                       # ALL gates (web + api + catalog); what CI runs
 pnpm --filter web test           # vitest
 pnpm --filter web e2e            # playwright (needs api running)
 pnpm --filter animation-catalog validate
+scripts/cleanup-merged.sh <branch> # after the PR merges: remove worktree, branch, temp files
 
 cd apps/api && ./gradlew run     # API on :8080, needs DATABASE_URL
 cd apps/api && ./gradlew check   # ktlint + kotest (Testcontainers Postgres, needs Docker)
@@ -92,7 +94,7 @@ Defined in `.claude/agents/`. Use them; do not re-implement their job inline.
 
 Every subagent posts its report as an upserted comment on the PR (one comment per agent, updated on re-runs; procedure in `docs/agents/pr-comment.md`), so findings and results live with the code.
 
-Typical PR flow: implement (TDD) → `test-writer` fills gaps → `pnpm gates` → `screenshot-runner` if UI changed → `code-reviewer` → address blocking items → `test-runner` on final commit → mark ready.
+Typical PR flow: implement (TDD) → `test-writer` fills gaps → `pnpm gates` → `screenshot-runner` if UI changed → `code-reviewer` → address blocking items → `test-runner` on final commit → mark ready → (after merge) `scripts/cleanup-merged.sh <branch>` + memory.md update.
 
 ## Definition of done for a task
 
@@ -101,4 +103,5 @@ Typical PR flow: implement (TDD) → `test-writer` fills gaps → `pnpm gates` �
 - `openapi.yaml` / `schema.json` updated if contracts changed, client regenerated.
 - `docs/deferred_tasks.md` has entries for anything skipped.
 - `memory.md` entry updated to "done" or removed, with a one-line pointer to the PR.
+- After merge: worktree, local branch and temp files removed via `scripts/cleanup-merged.sh`.
 - PR description follows the template and includes the Test-Runner summary.
