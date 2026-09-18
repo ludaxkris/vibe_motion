@@ -15,7 +15,7 @@ Rules
 | Worktree | Branch | Agent / session | Phase | Task | Status | Started | Touches shared contract? |
 |---|---|---|---|---|---|---|---|
 | (primary) | main | Claude Fable 5.1 (planning session with Chris) | planning | Build plan, architecture, user flow, CLAUDE.md, subagents, render.yaml | done 2026-09-18 | 2026-09-17 | no |
-| `.worktrees/feat/0-foundation` | feat/0-foundation | Claude Fable 5.1 (session with Chris) | 0 | Monorepo scaffold, gates, openapi.yaml, Flyway baseline, Dockerfile, CI | PR #1 draft, gates green, in review | 2026-09-18 | yes — creates openapi.yaml + schema.json (Phase 0 freeze) |
+| `.worktrees/feat/0-foundation` | feat/0-foundation | Claude Fable 5.1 (session with Chris) | 0 | Monorepo scaffold, gates, openapi.yaml, Flyway baseline, Dockerfile, CI | PR #1 ready for review: CI green, test-runner green on 5d9e609, code-reviewer APPROVE. Awaiting merge by Chris. | 2026-09-18 | yes — creates openapi.yaml + schema.json (Phase 0 freeze) |
 
 ## Notices (newest first)
 
