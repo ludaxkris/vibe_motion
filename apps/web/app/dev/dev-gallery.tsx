@@ -104,7 +104,7 @@ function Frame({
 }
 
 /** The 320px column a Control Panel state lives in, panel background included. */
-const PANEL_FRAME = "w-[320px] bg-vm-panel p-3";
+const PANEL_FRAME = "w-[var(--panel-width)] bg-vm-panel p-3";
 
 function ChoosingFrame({ initialSearch = "" }: { initialSearch?: string }) {
   const [search, setSearch] = useState(initialSearch);

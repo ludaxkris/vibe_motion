@@ -65,7 +65,10 @@ describe("/dev", () => {
     for (const [frameId, panelId] of panels) {
       const frame = screen.getByTestId(frameId);
       expect(within(frame).getByTestId(panelId)).toBeInTheDocument();
-      expect(frame.querySelector("[data-dev-frame-body]")).toHaveClass("w-[320px]");
+      // --panel-width is 320px; the e2e measures it where layout exists.
+      expect(frame.querySelector("[data-dev-frame-body]")).toHaveClass(
+        "w-[var(--panel-width)]",
+      );
     }
   });
 
