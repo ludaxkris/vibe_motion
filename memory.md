@@ -57,5 +57,6 @@ Agents claim a task here before creating a worktree so two agents do not pick th
 - Primary checkout: `/Users/christung/Projects/anthropic/vibe_motion`. Remote `origin` = `ludaxkris/vibe_motion` (private). Worktrees go under `.worktrees/<branch>` (gitignored).
 - Long-lived branches: `main` (code), `pr_screenshot` (orphan, screenshots only).
 - Kotlin toolchain on this machine: JDK 21. Node 25 is installed; the project targets Node 22 LTS on Render, so use `.nvmrc`/`engines` and do not rely on Node 25-only APIs.
+- **Render is live (2026-09-18).** Workspace `Kithcard` (shared with Kithcard services; never touch `kithcard-*`), project `vibe-motion` / env `production`: https://vibe-motion-web.onrender.com, https://vibe-motion-api.onrender.com (`/health` reports db + deployed commit), Postgres `vibe-motion-db`. Deploys from `main` on `checksPass`. PR previews are `-pr-<N>` URLs. Open: DT-015 (web half), DT-074, DT-075.
 - Render CLI is not installed locally. `render blueprints validate` cannot be run here until it is; validate `render.yaml` against `https://render.com/schema/render.yaml.json` instead.
 - Claude Design mocks from Chris live in `docs/design/` on `main`. Reference only, not production code; start at `docs/design/README.md`.
