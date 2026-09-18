@@ -134,6 +134,9 @@ export function ChoosingPanel({
           aria-label="Search animations"
           placeholder="Search animations"
           prefix="⌕"
+          // The handoff's field is the glyph and the text, nothing else;
+          // WebKit's own clear button would be a second, unstyled control.
+          className="[&_input::-webkit-search-cancel-button]:appearance-none"
           value={search}
           onChange={(event) => onSearchChange?.(event.target.value)}
         />

@@ -157,7 +157,11 @@ export function SplitPane({
 
   return (
     <div ref={containerRef} className="flex min-h-0 flex-1">
-      <div className="min-w-0 flex-1">{typeof left === "function" ? left(isDragging) : left}</div>
+      {/* A flex container, not a block: the pane's child (the preview and its
+          sheet) has to be able to fill the row's full height. */}
+      <div className="flex min-w-0 flex-1">
+        {typeof left === "function" ? left(isDragging) : left}
+      </div>
       <div
         role="separator"
         aria-label={separatorLabel}

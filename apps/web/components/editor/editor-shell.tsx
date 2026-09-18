@@ -70,7 +70,7 @@ function EditorFrame({
 /** The bar's 7px dot + caption, shown only while the draft differs from the saved version. */
 function UnsavedIndicator() {
   return (
-    <span className="flex shrink-0 items-center gap-1.5 text-xs text-vm-bar-ink-muted">
+    <span className="flex shrink-0 items-center gap-[5px] text-xs text-vm-bar-ink-muted">
       <span aria-hidden="true" className="size-[7px] rounded-full bg-vm-bar-dot" />
       Unsaved
     </span>

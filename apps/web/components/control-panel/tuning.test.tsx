@@ -226,6 +226,17 @@ describe("TuningPanel", () => {
     expect(onRemove).toHaveBeenCalledOnce();
   });
 
+  it("gives a segmented of long CSS keywords the row's full width", () => {
+    const { container } = renderTuning("spin");
+
+    // Inline, four "alternate-reverse"-sized segments across ~198px clip to
+    // the same visible text; stacked they stay distinguishable.
+    expect(container.querySelector("[data-param='direction']")?.className).toContain("flex-col");
+    expect(container.querySelector("[data-param='duration']")?.className).not.toContain(
+      "flex-col",
+    );
+  });
+
   it("renders a row for every param the entry declares", () => {
     const { container, entry } = renderTuning("glow");
 
