@@ -17,7 +17,33 @@ test("submitting a URL clones the page and opens the editor", async ({ page }) =
   await page.getByRole("button", { name: "Clone page" }).click();
 
   await page.waitForURL(/\/p\/.+/);
-  await expect(page.getByRole("region", { name: "Preview" })).toBeVisible();
+  const preview = page.getByRole("region", { name: "Preview" });
+  await expect(preview).toBeVisible();
+
+  const iframe = preview.getByTitle("Cloned page preview");
+  await expect(
+    iframe.contentFrame().getByRole("heading", { name: "Welcome to the fixture page" }),
+  ).toBeVisible();
+
+  await expect(page.getByRole("complementary", { name: "Control Panel" })).toBeVisible();
+});
+
+test("the Control Panel separator resizes with the keyboard", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByLabel("Page URL").fill("https://example.com");
+  await page.getByRole("button", { name: "Clone page" }).click();
+  await page.waitForURL(/\/p\/.+/);
+
+  const separator = page.getByRole("separator", { name: "Resize Control Panel" });
+  await expect(separator).toHaveAttribute("aria-valuenow", "25");
+
+  await separator.focus();
+  await page.keyboard.press("End");
+  await expect(separator).toHaveAttribute("aria-valuenow", "20");
+
+  await page.keyboard.press("Home");
+  await expect(separator).toHaveAttribute("aria-valuenow", "30");
 });
 
 test("help page lists catalog entries", async ({ page }) => {
