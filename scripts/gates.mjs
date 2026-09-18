@@ -27,6 +27,10 @@ const gates = [
   // type-checked against protocol.ts through its JSDoc imports even though it never imports it.
   { group: "bridge", name: "bridge typecheck", cmd: "pnpm", args: ["--filter", "bridge", "typecheck"] },
   { group: "bridge", name: "bridge test", cmd: "pnpm", args: ["--filter", "bridge", "test"] },
+  // Real-browser specs for what jsdom structurally cannot see: real animations, real layout, a
+  // real IntersectionObserver and a real cascade. No app and no API: the parent page, the framed
+  // page and the script are all fulfilled by `page.route` on three different origins.
+  { group: "bridge", name: "bridge e2e (playwright)", cmd: "pnpm", args: ["--filter", "bridge", "e2e"] },
   // ---- web -----------------------------------------------------------------
   { group: "web", name: "web lint", cmd: "pnpm", args: ["--filter", "web", "lint"] },
   { group: "web", name: "web typecheck", cmd: "pnpm", args: ["--filter", "web", "typecheck"] },
