@@ -14,6 +14,8 @@ export const env = {
    * off by default so a production build never starts the mock worker.
    */
   apiMocking: process.env.NEXT_PUBLIC_API_MOCKING === "enabled",
+  /** True in a production build. Gates dev-only routes such as `/dev/panel`. */
+  isProduction: process.env.NODE_ENV === "production",
 } as const;
 
 export type Env = typeof env;

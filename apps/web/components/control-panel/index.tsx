@@ -3,8 +3,8 @@
 import { Info } from "lucide-react";
 import Link from "next/link";
 
-import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
@@ -13,16 +13,19 @@ import {
 } from "@/components/ui/tooltip";
 import { useEditorStore } from "@/lib/store";
 
+import { ChoosingPanel } from "./choosing";
+import { IdlePanel } from "./idle";
+import { SelectedPanel } from "./selected";
+import { TuningPanel } from "./tuning";
+
 /**
- * Control Panel (wireframe).
- *
- * Phase 5 turns this into the explicit state machine from docs/build_plan.md:
- * idle → selected → choosing → tuning. Phase 6 fills the Versions tab. For now
- * it only reads the placeholder store so the client boundary is real.
+ * Control Panel: idle -> selected -> choosing -> tuning, driven by the
+ * `panel` state machine (`lib/store/panel-machine.ts`). Element selection
+ * from the preview iframe arrives with the bridge (Phase 4); until then
+ * `panel` is only advanced by `/dev/panel` and tests.
  */
 export function ControlPanel() {
-  const selectedVmId = useEditorStore((state) => state.selectedVmId);
-  const unsaved = useEditorStore((state) => state.unsaved);
+  const panel = useEditorStore((state) => state.panel);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -45,8 +48,8 @@ export function ControlPanel() {
             <Info className="size-4" />
           </TooltipTrigger>
           <TooltipContent>
-            Generate, Custom and live tuning arrive in Phase 5. This panel is a
-            placeholder.
+            Click a component in the preview to generate or choose an
+            animation, then tune it live.
           </TooltipContent>
         </Tooltip>
       </div>
@@ -59,11 +62,12 @@ export function ControlPanel() {
               <TabsTrigger value="versions">Versions</TabsTrigger>
             </TabsList>
             <TabsContent value="animation" className="pt-3">
-              <p className="text-sm text-muted-foreground">
-                {selectedVmId
-                  ? `Selected ${selectedVmId}.`
-                  : "Nothing selected. Click a component in the preview to choose or generate an animation."}
-              </p>
+              {panel.status === "idle" && <IdlePanel />}
+              {panel.status === "selected" && <SelectedPanel vmId={panel.vmId} />}
+              {panel.status === "choosing" && <ChoosingPanel vmId={panel.vmId} />}
+              {panel.status === "tuning" && (
+                <TuningPanel vmId={panel.vmId} animationId={panel.animationId} />
+              )}
             </TabsContent>
             <TabsContent value="versions" className="pt-3">
               <p className="text-sm text-muted-foreground">
@@ -72,11 +76,6 @@ export function ControlPanel() {
               </p>
             </TabsContent>
           </Tabs>
-          <Separator />
-          <p className="text-xs text-muted-foreground">
-            {unsaved ? "Unsaved changes" : "No unsaved changes"} · the draggable
-            divider is Phase 3
-          </p>
         </div>
       </ScrollArea>
     </div>
