@@ -16,6 +16,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.103.1
         version: 5.103.1(react@19.2.8)
+      animation-catalog:
+        specifier: workspace:*
+        version: link:../../packages/animation-catalog
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -80,6 +83,9 @@ importers:
       openapi-typescript:
         specifier: ^7.13.0
         version: 7.13.0(typescript@5.9.3)
+      postcss:
+        specifier: ^8.5.28
+        version: 8.5.28
       shadcn:
         specifier: ^4.21.0
         version: 4.21.0(typescript@5.9.3)
