@@ -1,6 +1,6 @@
 # Animation catalog changelog
 
-Files under `versions/` are immutable once merged to `main`. Every change is a new version file, a bump of `current`, and an entry here. Semver: patch = metadata only (name, description, category, labels); minor = new animations or new optional params; major = changed keyframes, removed animations, renamed or removed params.
+Files under `versions/` are immutable once merged to `main`. Every change is a new version file, a bump of `current`, and an entry here. Semver: **patch** = metadata only (name, description, category, labels); **minor** = new animations, or new params (standard or cssVar-backed) whose default reproduces the previous rendering — this may add `var(--vm-x)` references to keyframes/baseStyles; **major** = changed rendering at default params, removed animations, renamed or removed params.
 
 ## 1.1.0 — 2026-09-18
 

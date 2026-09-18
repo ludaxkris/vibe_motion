@@ -252,8 +252,8 @@ flowchart LR
   a["assignment<br/>fade-in-up · 1.0.0 · params"] --> lookup["CATALOGS['1.0.0'].entries['fade-in-up']<br/>(immutable keyframes template + param defs)"]
   lookup --> gen["generator (same code in web runtime and api exporter)"]
   a --> gen
-  gen --> kf["@keyframes vm-fade-in-up-v1 { … }"]
-  gen --> rule[".vm-a1 { animation: vm-fade-in-up-v1 600ms ease-out 0ms 1; --vm-distance: 24px }"]
+  gen --> kf["@keyframes vm-fade-in-up-v1-0-0 { … }"]
+  gen --> rule[".vm-a1 { animation: vm-fade-in-up-v1-0-0 600ms ease-out 0ms 1; --vm-distance: 24px }"]
 ```
 
 Catalog lifecycle:

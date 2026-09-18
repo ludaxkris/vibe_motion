@@ -12,7 +12,7 @@ One product, three surfaces: **Entry** (`/` — URL, clone preview, recent proje
 ## Content fundamentals
 - Voice: calm, direct, second person. “Click any element to animate it.” “Save to keep it as a new version, or discard to leave v5 as is.” Never exclamation marks, never marketing adjectives.
 - Sentence case everywhere, including buttons (“Choose custom animation”, “Open in editor →”). Section labels are the one exception: 11px uppercase with 0.04em tracking (“TRIGGER”, “SELECTED”).
-- Technical identifiers are literal and monospace: element tags (`h1`, `a.cta`, `.plan:2`), version numbers (`v5`), values with units (`600 ms`, `24 px`), CSS (`vm-fade-in-up-v1`). Units are separated from the value and set in the faint ink.
+- Technical identifiers are literal and monospace: element tags (`h1`, `a.cta`, `.plan:2`), version numbers (`v5`), values with units (`600 ms`, `24 px`), CSS (`vm-fade-in-up-v1-1-0`). Units are separated from the value and set in the faint ink.
 - Version labels are auto-generated from the diff and human-readable: “Fade In Up on h1, Pulse on .cta”; removals read “removed Pulse on .cta”.
 - Explanatory captions are 11px muted, one or two short sentences, placed directly under the control they explain. No tooltips for primary explanations.
 - Destructive actions are text links in danger red (“Remove animation”, “Discard”), never filled buttons.
