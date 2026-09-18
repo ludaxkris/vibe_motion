@@ -89,6 +89,31 @@ export function assignmentStyle(
 }
 
 /**
+ * `assignmentStyle` in the shape React's `style` prop takes: standard
+ * properties camel-cased (React rejects `animation-name` as a style key),
+ * custom properties left exactly as they are (React sets `--vm-*` verbatim).
+ *
+ * The picker's card demos and the help page's live demos both render the
+ * animation as an inline style rather than a stylesheet rule, so the
+ * conversion lives here, next to the map it converts, rather than in each
+ * component.
+ */
+export function inlineStyle(
+  entry: CatalogEntry,
+  catalogVersion: string,
+  params?: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const style: Record<string, string> = {};
+  for (const [property, value] of Object.entries(assignmentStyle(entry, catalogVersion, params))) {
+    const key = property.startsWith("--")
+      ? property
+      : property.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
+    style[key] = value;
+  }
+  return style;
+}
+
+/**
  * De-duplicated `@keyframes` CSS for a list of `(entry, catalogVersion)`
  * pairs: one block per distinct keyframes name, in first-seen order.
  */

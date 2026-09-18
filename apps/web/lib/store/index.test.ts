@@ -144,6 +144,81 @@ describe("useEditorStore panel/draft integration", () => {
     expect(useEditorStore.getState()).toMatchObject(initialEditorState);
   });
 
+  it("revertDraft restores the current version's state and clears unsaved", () => {
+    const entry = getCatalogEntry("fade-in")!;
+    const saved = {
+      animationId: "pulse",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: "load" as const,
+      params: resolveCatalogParams(getCatalogEntry("pulse")!),
+    };
+    useEditorStore.setState({ currentVersionState: { "vm-9": saved } });
+    useEditorStore.getState().setSelectedVmId("vm-1");
+    useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: entry.id });
+
+    useEditorStore.getState().revertDraft();
+
+    const state = useEditorStore.getState();
+    expect(state.draftState).toEqual({ "vm-9": saved });
+    expect(selectUnsaved(state)).toBe(false);
+  });
+
+  it("revertDraft leaves the selected element on `selected` when the revert removed its assignment", () => {
+    useEditorStore.getState().setSelectedVmId("vm-1");
+    useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in" });
+
+    useEditorStore.getState().revertDraft();
+
+    expect(useEditorStore.getState().panel).toEqual({ status: "selected", vmId: "vm-1" });
+  });
+
+  it("revertDraft lands on `tuning` when the selected element still has an assignment", () => {
+    const saved = {
+      animationId: "pulse",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: "load" as const,
+      params: resolveCatalogParams(getCatalogEntry("pulse")!),
+    };
+    useEditorStore.setState({ currentVersionState: { "vm-1": saved } });
+    useEditorStore.getState().setSelectedVmId("vm-1");
+    useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in" });
+
+    useEditorStore.getState().revertDraft();
+
+    expect(useEditorStore.getState().panel).toEqual({
+      status: "tuning",
+      vmId: "vm-1",
+      animationId: "pulse",
+    });
+  });
+
+  it("revertDraft stays idle when nothing is selected", () => {
+    useEditorStore.getState().setDraftAssignment("vm-1", {
+      animationId: "fade-in",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: "load",
+      params: {},
+    });
+
+    useEditorStore.getState().revertDraft();
+
+    const state = useEditorStore.getState();
+    expect(state.panel).toEqual({ status: "idle" });
+    expect(state.draftState).toEqual({});
+  });
+
+  it("revertDraft keeps the same panel object when nothing about it changes", () => {
+    useEditorStore.getState().setSelectedVmId("vm-1");
+    const before = useEditorStore.getState().panel;
+
+    useEditorStore.getState().revertDraft();
+
+    expect(useEditorStore.getState().panel).toBe(before);
+  });
+
   it("BACK from tuning returns to choosing, keeping the draft assignment", () => {
     useEditorStore.getState().setSelectedVmId("vm-1");
     useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });

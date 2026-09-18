@@ -63,6 +63,13 @@ export type EditorActions = {
   updateDraftParam: (vmId: string, key: string, value: string) => void;
   /** Drop the draft assignment for `vmId`. */
   removeDraftAssignment: (vmId: string) => void;
+  /**
+   * The top bar's Cancel: throw the draft away and go back to the current
+   * version's state. The Control Panel follows the element it was on —
+   * `tuning` when that element still has an assignment afterwards, `selected`
+   * when the revert took it away (docs/design/README.md, "Interactions").
+   */
+  revertDraft: () => void;
   setMode: (mode: EditorMode) => void;
   reset: () => void;
 };
@@ -165,6 +172,29 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const draftState = { ...state.draftState };
       delete draftState[vmId];
       return { draftState };
+    }),
+
+  revertDraft: () =>
+    set((state) => {
+      const draftState = { ...state.currentVersionState };
+      const { panel } = state;
+      if (panel.status === "idle") return { draftState, panel };
+
+      const assignment = draftState[panel.vmId];
+      const next: PanelState = assignment
+        ? { status: "tuning", vmId: panel.vmId, animationId: assignment.animationId }
+        : { status: "selected", vmId: panel.vmId };
+
+      // Keep the same object when the state is unchanged, so subscribers that
+      // only read `panel` are not re-rendered by a revert that did not move
+      // the panel (the machine's own no-op-by-identity rule).
+      const unchanged =
+        panel.status === next.status &&
+        panel.vmId === next.vmId &&
+        (next.status !== "tuning" ||
+          (panel.status === "tuning" && panel.animationId === next.animationId));
+
+      return { draftState, panel: unchanged ? panel : next };
     }),
 
   setMode: (mode) => set({ mode }),

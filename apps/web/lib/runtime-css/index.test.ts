@@ -1,10 +1,11 @@
-import { CATALOGS, CATALOG_VERSIONS, keyframesName } from "animation-catalog";
+import { CATALOGS, CATALOG_VERSIONS, CURRENT_VERSION, keyframesName } from "animation-catalog";
 import type { CatalogEntry } from "animation-catalog";
 import postcss from "postcss";
 import { describe, expect, it } from "vitest";
 
 import {
   assignmentStyle,
+  inlineStyle,
   keyframesCss,
   resolveParams,
   runtimeStylesheet,
@@ -138,5 +139,36 @@ describe("runtimeStylesheet", () => {
 
   it("returns an empty string for no pairs", () => {
     expect(runtimeStylesheet([])).toBe("");
+  });
+});
+
+describe("inlineStyle", () => {
+  it("camel-cases the standard animation-* properties, for a React style object", () => {
+    const entry = CATALOGS[CURRENT_VERSION].entries.find((e) => e.id === "fade-in-up")!;
+    const style = inlineStyle(entry, CURRENT_VERSION);
+
+    expect(style.animationName).toBe(keyframesName(entry.id, CURRENT_VERSION));
+    expect(style.animationDuration).toBe("600ms");
+    expect(style.animationTimingFunction).toBe("ease-out");
+    expect(style.animationFillMode).toBe("both");
+    expect(style).not.toHaveProperty("animation-name");
+  });
+
+  it("leaves custom properties alone — React sets those verbatim", () => {
+    const entry = CATALOGS[CURRENT_VERSION].entries.find((e) => e.id === "fade-in-up")!;
+    expect(inlineStyle(entry, CURRENT_VERSION)["--vm-distance"]).toBe("24px");
+  });
+
+  it("carries overrides through, exactly like assignmentStyle", () => {
+    const style = inlineStyle(sampleEntry, sampleVersion, { duration: "1200ms" });
+    expect(style.animationDuration).toBe("1200ms");
+  });
+
+  it("keeps the same key count as assignmentStyle for every catalog entry", () => {
+    for (const { entry, version } of allEntries) {
+      expect(Object.keys(inlineStyle(entry, version))).toHaveLength(
+        Object.keys(assignmentStyle(entry, version)).length,
+      );
+    }
   });
 });
