@@ -77,38 +77,56 @@ describe("validate: type select requires options and a default among them", () =
   });
 });
 
-describe("validate: keyframes/baseStyles must stay identical across versions sharing a major", () => {
+describe("validate: superset gate — a minor/patch release must not drop an id or a param key an earlier release in the same major already published", () => {
   it("passes on the real, unmodified catalog (1.0.0 and 1.1.0 are both major 1)", () => {
     expect(runValidate(dir).code).toBe(0);
   });
 
-  it("fails when two versions sharing a major diverge in keyframes for the same id", () => {
-    // 1.0.0 and 1.1.0 are both major 1 and both declare "fade-in". keyframesName() encodes only
-    // the major version, so if their keyframes ever differ, an editor mixing assignments pinned
-    // to each version would collide on one @keyframes rule.
+  it("fails when a later version in the same major drops an animation id the earlier one declared", () => {
     const file = path.join(dir, "versions/1.1.0.json");
     const catalog = JSON.parse(readFileSync(file, "utf8"));
-    const entry = catalog.entries.find((e: { id: string }) => e.id === "fade-in");
-    entry.keyframes = "from { opacity: 0.5; } to { opacity: 1; }"; // diverges from 1.0.0's fade-in
+    catalog.entries = catalog.entries.filter((e: { id: string }) => e.id !== "fade-in");
     writeFileSync(file, JSON.stringify(catalog));
 
     const r = runValidate(dir);
     expect(r.code).toBe(1);
     expect(r.out).toContain("fade-in");
-    expect(r.out).toContain("keyframes differ");
-    expect(r.out).toContain("would collide");
+    expect(r.out).toContain("missing from 1.1.0");
   });
 
-  it("fails when two versions sharing a major diverge in baseStyles for the same id", () => {
+  it("fails when a later version in the same major drops a param key an earlier one declared for a shared id", () => {
     const file = path.join(dir, "versions/1.1.0.json");
     const catalog = JSON.parse(readFileSync(file, "utf8"));
-    const entry = catalog.entries.find((e: { id: string }) => e.id === "scale-in"); // has baseStyles in 1.0.0
-    entry.baseStyles = "transform-origin: top left;"; // diverges from 1.0.0's scale-in
+    const entry = catalog.entries.find((e: { id: string }) => e.id === "fade-in-up");
+    entry.params = entry.params.filter((p: { key: string }) => p.key !== "distance");
+    // distance was the only var(--vm-distance) reference; drop it from keyframes too so this
+    // case only trips the superset gate, not the "cssVar declared but never referenced" check.
+    entry.keyframes = entry.keyframes.replaceAll("var(--vm-distance)", "24px");
     writeFileSync(file, JSON.stringify(catalog));
 
     const r = runValidate(dir);
     expect(r.code).toBe(1);
-    expect(r.out).toContain("scale-in");
-    expect(r.out).toContain("baseStyles differ");
+    expect(r.out).toContain("fade-in-up");
+    expect(r.out).toContain("distance");
+    expect(r.out).toContain("not in 1.1.0");
+  });
+
+  it("passes when a later version in the same major adds a new cssVar param and references it in keyframes (the minor case DT-047 exists for)", () => {
+    const file = path.join(dir, "versions/1.1.0.json");
+    const catalog = JSON.parse(readFileSync(file, "utf8"));
+    const entry = catalog.entries.find((e: { id: string }) => e.id === "fade-in");
+    entry.params.push({
+      key: "tint",
+      label: "Tint",
+      type: "color",
+      default: "currentColor",
+      cssVar: "--vm-tint",
+    });
+    // Default reproduces the previous rendering: color: currentColor is the browser default for
+    // opacity-only keyframes, so this is a genuine minor (new optional param, same rendering).
+    entry.keyframes = `${entry.keyframes} 0% { color: var(--vm-tint); }`;
+    writeFileSync(file, JSON.stringify(catalog));
+
+    expect(runValidate(dir).code).toBe(0);
   });
 });
