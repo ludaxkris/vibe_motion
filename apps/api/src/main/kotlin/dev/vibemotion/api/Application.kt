@@ -3,6 +3,7 @@ package dev.vibemotion.api
 import dev.vibemotion.api.catalog.CatalogRepository
 import dev.vibemotion.api.catalog.ClasspathCatalogRepository
 import dev.vibemotion.api.clone.CloneException
+import dev.vibemotion.api.clone.DnsCachePolicy
 import dev.vibemotion.api.config.AppConfig
 import dev.vibemotion.api.domain.BodyTooLargeException
 import dev.vibemotion.api.domain.EmptyDiffException
@@ -51,6 +52,9 @@ import org.slf4j.event.Level
 private val log = LoggerFactory.getLogger("dev.vibemotion.api.Application")
 
 fun main() {
+    // First, before anything resolves a host name: the JDK latches its DNS cache TTL in a static
+    // initialiser on first InetAddress use, and the database connection below is such a use.
+    DnsCachePolicy.apply()
     val config = AppConfig.fromEnv()
     val database = AppDatabase.start(config.database)
     val catalog = ClasspathCatalogRepository.load()

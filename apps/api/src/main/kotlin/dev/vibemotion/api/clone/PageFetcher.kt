@@ -15,6 +15,7 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.GZIPInputStream
@@ -85,8 +86,11 @@ private class Watchdog private constructor(
          * concurrent clone, which is the very resource this exists to protect.
          */
         private val SCHEDULER: ScheduledExecutorService =
-            Executors.newSingleThreadScheduledExecutor { runnable ->
+            ScheduledThreadPoolExecutor(1) { runnable ->
                 Thread(runnable, "vm-clone-watchdog").apply { isDaemon = true }
+            }.apply {
+                // A disarmed watchdog leaves the queue at once instead of lingering until its delay.
+                removeOnCancelPolicy = true
             }
 
         fun arm(

@@ -346,6 +346,56 @@ class HtmlRewriterTest :
             withClue("took ${elapsed}ms") { elapsed shouldBeLessThan 1_000L }
         }
 
+        test("a long whitespace run inside url( costs milliseconds, in a style block and in a sheet") {
+            // `url(\s*…\s*` with an atom between that can match empty is an ambiguous split of the
+            // run: quadratic. 200 000 spaces used to cost ~160 s in the dangerous-url sweep alone.
+            val run = " ".repeat(200_000)
+            val styleBlock = "<html><head><style>a{background:url($run)}</style></head><body><p>x</p></body></html>"
+            val importSheet = "@import url($run"
+
+            val elapsed =
+                measureTimeMillis {
+                    rewriter.rewrite(styleBlock, EXAMPLE_URL, loaderFor(emptyMap()))
+                    rewriter.rewrite(linkTo("/hostile.css"), EXAMPLE_URL, loaderFor(mapOf(EXAMPLE_SHEET to importSheet)))
+                }
+
+            withClue("took ${elapsed}ms") { elapsed shouldBeLessThan 1_000L }
+        }
+
+        test("whitespace around a url( token is still tolerated after the possessive fix") {
+            val rules = """a{background:url(  "img/a.png"  )} b{background:url(\t img/b.png )}""".replace("\\t", "\t")
+            val html = "<html><head><style>$rules</style></head><body></body></html>"
+            val rewritten = rewriter.rewrite(html, EXAMPLE_URL, loaderFor(emptyMap())).html
+            val css =
+                Jsoup
+                    .parse(rewritten)
+                    .select("style")
+                    .first()
+                    ?.data()
+                    .orEmpty()
+            css shouldContain """url("https://example.com/img/a.png")"""
+            css shouldContain """url("https://example.com/img/b.png")"""
+            val defused = """<html><head><style>a{background:url(   javascript:alert(1))}</style></head><body></body></html>"""
+            rewriter.rewrite(defused, EXAMPLE_URL, loaderFor(emptyMap())).html shouldNotContain "javascript:"
+        }
+
+        test("regex work over fetched CSS is inside the clone deadline, whatever the pattern shape") {
+            // The between-stage checks number a few dozen. A deadline that only starts throwing after
+            // 200 checks can therefore only fire from INSIDE the regex engine's reads of the input.
+            var checks = 0
+            val lateDeadline =
+                DeadlineCheck {
+                    checks++
+                    if (checks > 200) throw CloneException.Unreachable("clone timed out")
+                }
+            val bigSheet = "a{background:url(img/x.png)}\n".repeat(60_000)
+            val html = "<html><head><style>$bigSheet</style></head><body></body></html>"
+
+            shouldThrow<CloneException.Unreachable> {
+                rewriter.rewrite(html, EXAMPLE_URL, loaderFor(emptyMap()), lateDeadline)
+            }
+        }
+
         test("strips comment nodes, so nothing downstream can be swallowed by one") {
             val html =
                 """

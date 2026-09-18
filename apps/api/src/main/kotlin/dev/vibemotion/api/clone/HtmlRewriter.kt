@@ -76,9 +76,9 @@ class HtmlRewriter(
         deadline.check()
         removeUnsafeElements(document)
         deadline.check()
-        cleanAttributes(document, base)
+        cleanAttributes(document, base, deadline)
         deadline.check()
-        rewriteStyleBlocks(document, base)
+        rewriteStyleBlocks(document, base, deadline)
         deadline.check()
         inlineStylesheets(document, loadStylesheet, deadline)
         deadline.check()
@@ -189,6 +189,7 @@ class HtmlRewriter(
     private fun cleanAttributes(
         document: Document,
         base: String,
+        deadline: DeadlineCheck,
     ) {
         document.getAllElements().forEach { element ->
             element.attributes().map { it.key }.forEach { key ->
@@ -214,7 +215,7 @@ class HtmlRewriter(
                 }
             }
             if (element.hasAttr("style")) {
-                element.attr("style", absolutiseCss(element.attr("style"), base))
+                element.attr("style", absolutiseCss(element.attr("style"), base, deadline))
             }
         }
     }
@@ -222,9 +223,10 @@ class HtmlRewriter(
     private fun rewriteStyleBlocks(
         document: Document,
         base: String,
+        deadline: DeadlineCheck,
     ) {
         document.select("style").forEach { style ->
-            style.replaceData(absolutiseCss(style.data(), base))
+            style.replaceData(absolutiseCss(style.data(), base, deadline))
         }
     }
 
@@ -268,12 +270,13 @@ class HtmlRewriter(
                 }
             if (!budget.consume(sheet.css)) return@forEach
 
-            val inlined = absolutiseCss(inlineImports(sheet.css, sheet.url, loadStylesheet, budget), sheet.url)
+            val inlined =
+                absolutiseCss(inlineImports(sheet.css, sheet.url, loadStylesheet, budget, deadline), sheet.url, deadline)
             val media = link.attr("media").trim()
             val css =
                 if (media.isEmpty() || media.equals("all", ignoreCase = true)) inlined else "@media $media {\n$inlined\n}"
             val style = Element("style").attr("data-vm-source", href)
-            style.appendChild(DataNode(neutraliseStyleTerminator(css)))
+            style.appendChild(DataNode(neutraliseStyleTerminator(css, deadline)))
             link.replaceWith(style)
         }
     }
@@ -287,8 +290,9 @@ class HtmlRewriter(
         sheetUrl: String,
         loadStylesheet: StylesheetLoader,
         budget: CssBudget,
+        deadline: DeadlineCheck,
     ): String =
-        IMPORT_RULE.replace(css) { match ->
+        IMPORT_RULE.replace(GuardedCharSequence(css, deadline)) { match ->
             val reference = match.firstGroup(IMPORT_URL_GROUPS) ?: return@replace match.value
             val target = resolveUrl(sheetUrl, reference) ?: return@replace match.value
             if (!target.startsWith("http", ignoreCase = true) || !budget.claimFetch()) return@replace match.value
@@ -303,7 +307,7 @@ class HtmlRewriter(
                 }
             if (!budget.consume(imported.css)) return@replace match.value
 
-            val body = absolutiseCss(imported.css, imported.url)
+            val body = absolutiseCss(imported.css, imported.url, deadline)
             val media = match.groupValues[IMPORT_MEDIA_GROUP].trim()
             if (media.isEmpty()) body else "@media $media {\n$body\n}"
         }
@@ -409,6 +413,16 @@ class HtmlRewriter(
          * `@import "a" ` with no semicolons: 32 s before, 0.26 s after. Excluding `(` is also what
          * CSS says: an unquoted url token cannot contain one.
          *
+         * Whitespace is matched POSSESSIVELY (`\s*+`). `url\(\s*X\s*` where X can match empty is an
+         * ambiguous split of a whitespace run, which is quadratic however short the tokens are:
+         * `url(` + 200 000 spaces cost ~160 s before, ~1 ms after. A possessive run never gives
+         * characters back, and nothing after it could have used them anyway.
+         *
+         * These two measures are what make the patterns linear; they are not what makes the
+         * rewriter safe. Every regex over fetched content reads its input through
+         * [GuardedCharSequence], so a pattern shape nobody has spotted yet still stops at the
+         * clone's deadline instead of pinning a core.
+         *
          * The cost of bounding is that a pathological token longer than [CSS_TOKEN_MAX] is left
          * exactly as written rather than absolutised, which is what happens to anything unparseable
          * here anyway.
@@ -418,7 +432,7 @@ class HtmlRewriter(
         private const val URL_TOKEN =
             """(?:"([^"]{0,$CSS_TOKEN_MAX})"|'([^']{0,$CSS_TOKEN_MAX})'|([^()"'\s]{0,$CSS_TOKEN_MAX}))"""
 
-        private val CSS_URL = Regex("""url\(\s*$URL_TOKEN\s*\)""", RegexOption.IGNORE_CASE)
+        private val CSS_URL = Regex("""url\(\s*+$URL_TOKEN\s*+\)""", RegexOption.IGNORE_CASE)
 
         /**
          * A scripting scheme inside `url(…)`, swept before anything else in [absolutiseCss].
@@ -430,17 +444,17 @@ class HtmlRewriter(
          */
         private val CSS_DANGEROUS_URL =
             Regex(
-                """url\(\s*["']?\s*(?:javascript|vbscript|data:text/html)[^;{}]{0,$CSS_TOKEN_MAX}""",
+                """url\(\s*+["']?\s*+(?:javascript|vbscript|data:text/html)[^;{}]{0,$CSS_TOKEN_MAX}""",
                 RegexOption.IGNORE_CASE,
             )
         private val CSS_IMPORT_STRING =
             Regex(
-                """@import\s+(?:"([^"]{0,$CSS_TOKEN_MAX})"|'([^']{0,$CSS_TOKEN_MAX})')""",
+                """@import\s++(?:"([^"]{0,$CSS_TOKEN_MAX})"|'([^']{0,$CSS_TOKEN_MAX})')""",
                 RegexOption.IGNORE_CASE,
             )
         private val IMPORT_RULE =
             Regex(
-                """@import\s+(?:url\(\s*$URL_TOKEN\s*\)|"([^"]{0,$CSS_TOKEN_MAX})"|""" +
+                """@import\s++(?:url\(\s*+$URL_TOKEN\s*+\)|"([^"]{0,$CSS_TOKEN_MAX})"|""" +
                     """'([^']{0,$CSS_TOKEN_MAX})')([^;{}]{0,$IMPORT_TAIL_MAX});""",
                 RegexOption.IGNORE_CASE,
             )
@@ -487,17 +501,18 @@ class HtmlRewriter(
         private fun absolutiseCss(
             css: String,
             base: String,
+            deadline: DeadlineCheck,
         ): String {
             if (css.isEmpty()) return css
-            val defused = CSS_DANGEROUS_URL.replace(css, """url("#")""")
+            val defused = CSS_DANGEROUS_URL.replace(GuardedCharSequence(css, deadline), """url("#")""")
             val withUrls =
-                CSS_URL.replace(defused) { match ->
+                CSS_URL.replace(GuardedCharSequence(defused, deadline)) { match ->
                     val reference = match.firstGroup(1..3) ?: return@replace match.value
                     if (isDangerousUrl(reference)) return@replace """url("#")"""
                     val absolute = resolveUrl(base, reference) ?: return@replace match.value
                     "url(\"${absolute.replace("\"", "%22")}\")"
                 }
-            return CSS_IMPORT_STRING.replace(withUrls) { match ->
+            return CSS_IMPORT_STRING.replace(GuardedCharSequence(withUrls, deadline)) { match ->
                 val reference = match.firstGroup(1..2) ?: return@replace match.value
                 val absolute = resolveUrl(base, reference) ?: return@replace match.value
                 "@import \"${absolute.replace("\"", "%22")}\""
@@ -508,7 +523,10 @@ class HtmlRewriter(
          * A stylesheet that contains the characters `</style` would otherwise close the element we
          * are putting it inside and dump the rest of the sheet into the DOM as markup.
          */
-        private fun neutraliseStyleTerminator(css: String): String = STYLE_TERMINATOR.replace(css) { """<\/style""" }
+        private fun neutraliseStyleTerminator(
+            css: String,
+            deadline: DeadlineCheck,
+        ): String = STYLE_TERMINATOR.replace(GuardedCharSequence(css, deadline)) { """<\/style""" }
 
         /**
          * The HTML `srcset` parsing algorithm: skip separators, take the URL up to whitespace, then
