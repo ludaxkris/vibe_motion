@@ -1,0 +1,16 @@
+import React from 'react';
+/** /help — every catalog animation as a live card. */
+export function Help() {
+  const { Button, Input, Chip } = window.VM;
+  const cat = { Entrance: [['Fade In Up', '600ms · ease-out · distance 24px'], ['Fade In', '500ms · ease'], ['Slide In Left', '500ms · ease-out · distance 40px'], ['Scale In', '400ms · ease-out · from 0.9']], Attention: [['Pulse', '1000ms · ease-in-out · scale 1.05'], ['Shake', '600ms · distance 8px'], ['Bounce', '800ms · height 12px']] };
+  const blurb = { Entrance: 'Plays once when the element loads or scrolls into view.', Attention: 'Draws the eye without moving the element far.' };
+  return <div style={{ width: '100%', height: '100%', background: 'var(--surface-card)', color: 'var(--text-body)', fontFamily: 'var(--font-sans)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ height: 'var(--topbar-h)', flex: 'none', background: 'var(--surface-bar)', color: 'var(--text-on-bar)', display: 'flex', alignItems: 'center', gap: 14, padding: '0 16px' }}><span style={{ fontWeight: 700, fontSize: 13, letterSpacing: 'var(--tracking-snug)' }}>Vibe Motion</span><span style={{ width: 1, height: 16, background: 'var(--vm-bar-border)' }} /><span style={{ fontSize: 13, fontWeight: 500 }}>Animations</span><span style={{ font: 'var(--type-mono)', fontSize: 11, background: 'var(--vm-bar-chip)', padding: '2px 6px', borderRadius: 4 }}>catalog 1.0.0</span></div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '16px 48px 0' }}><Chip selected>All 12</Chip><Chip>Entrance 4</Chip><Chip>Attention 3</Chip><Chip>Emphasis 2</Chip><Chip>Continuous 2</Chip><Chip>Hover 1</Chip><Input size="sm" prefix="⌕" placeholder="Search" style={{ marginLeft: 'auto', width: 240 }} /><Button size="sm" variant="secondary">↻ Replay all</Button></div>
+    <div style={{ padding: '24px 48px 0', display: 'flex', flexDirection: 'column', gap: 14, overflow: 'hidden' }}>
+      {Object.keys(cat).map(k => <React.Fragment key={k}><div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: k === 'Entrance' ? 0 : 10 }}><b style={{ fontSize: 15, letterSpacing: '-.01em' }}>{k}</b><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{blurb[k]}</span></div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>{cat[k].map(([n, m]) => <div key={n} style={{ border: '1px solid var(--border-default)', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}><div style={{ height: 120, background: 'var(--surface-panel)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}><span style={{ width: 64, height: 38, borderRadius: 8, background: 'var(--vm-accent)' }} /><span style={{ position: 'absolute', right: 8, bottom: 8, fontSize: 11, background: '#fff', border: '1px solid var(--border-control)', borderRadius: 5, padding: '2px 7px' }}>↻</span></div><div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}><b style={{ fontSize: 13 }}>{n}</b><span style={{ font: 'var(--type-mono)', fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>{m}</span></div></div>)}</div></React.Fragment>)}
+    </div>
+  </div>;
+}
+if (typeof window !== 'undefined') { window.VM = window.VM || {}; window.VM.Help = Help; }

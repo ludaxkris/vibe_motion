@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>
+@keyframes vm-fade-in-up{from{opacity:0;transform:translateY(var(--vm-distance,24px))}to{opacity:1;transform:none}}
+@keyframes vm-fade-in-up-b{from{opacity:0;transform:translateY(var(--vm-distance,24px))}to{opacity:1;transform:none}}
+@keyframes vm-fade-in{from{opacity:0}to{opacity:1}}
+@keyframes vm-fade-in-b{from{opacity:0}to{opacity:1}}
+@keyframes vm-slide-in-left{from{opacity:0;transform:translateX(calc(-1*var(--vm-distance,40px)))}to{opacity:1;transform:none}}
+@keyframes vm-slide-in-left-b{from{opacity:0;transform:translateX(calc(-1*var(--vm-distance,40px)))}to{opacity:1;transform:none}}
+@keyframes vm-scale-in{from{opacity:0;transform:scale(var(--vm-scale,.9))}to{opacity:1;transform:none}}
+@keyframes vm-scale-in-b{from{opacity:0;transform:scale(var(--vm-scale,.9))}to{opacity:1;transform:none}}
+@keyframes vm-pulse{0%,100%{transform:scale(1)}50%{transform:scale(var(--vm-scale,1.05))}}
+@keyframes vm-pulse-b{0%,100%{transform:scale(1)}50%{transform:scale(var(--vm-scale,1.05))}}
+@keyframes vm-shake{0%,100%{transform:none}20%,60%{transform:translateX(calc(-1*var(--vm-distance,8px)))}40%,80%{transform:translateX(var(--vm-distance,8px))}}
+@keyframes vm-shake-b{0%,100%{transform:none}20%,60%{transform:translateX(calc(-1*var(--vm-distance,8px)))}40%,80%{transform:translateX(var(--vm-distance,8px))}}
+@keyframes vm-bounce{0%,100%{transform:none}40%{transform:translateY(calc(-1*var(--vm-distance,12px)))}70%{transform:translateY(calc(-.4*var(--vm-distance,12px)))}}
+@keyframes vm-bounce-b{0%,100%{transform:none}40%{transform:translateY(calc(-1*var(--vm-distance,12px)))}70%{transform:translateY(calc(-.4*var(--vm-distance,12px)))}}
+@keyframes vm-float{0%,100%{transform:none}50%{transform:translateY(calc(-1*var(--vm-distance,6px)))}}
+@keyframes vm-float-b{0%,100%{transform:none}50%{transform:translateY(calc(-1*var(--vm-distance,6px)))}}
+@keyframes vm-toast{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+input[type=range]{accent-color:#7c5cff;height:20px;margin:0;flex:1;min-width:0}
+input[type=number],input[type=text]{font-family:inherit}
+input[type=number]::-webkit-inner-spin-button{display:none}
+</style></helmet>
+<div style="width:100%;height:100%;min-height:600px;display:flex;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,'SF Pro Text','Helvetica Neue',Helvetica,system-ui,sans-serif;position:relative;overflow:hidden;font-size:13px">
+
+<div style="flex:1;min-width:0;position:relative;overflow:hidden;background:#fff;cursor:crosshair" onClick="{{ clickBg }}">
+  <div style="font-family:-apple-system,'SF Pro Text','Helvetica Neue',Helvetica,system-ui,sans-serif;color:#1d1d1f;letter-spacing:-.01em;height:100%;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;height:52px;padding:0 48px;border-bottom:1px solid #ececee"><div style="font-weight:700;font-size:16px;letter-spacing:-.02em">nimbus</div><div style="display:flex;gap:28px;font-size:13px;color:#4b4b50"><span>Product</span><span>Docs</span><span style="color:#1d1d1f;font-weight:500">Pricing</span><span>Company</span></div><div style="display:flex;gap:10px;align-items:center;font-size:13px"><span style="color:#4b4b50">Sign in</span><span style="background:#1d1d1f;color:#fff;padding:7px 14px;border-radius:999px;font-weight:500">Get started</span></div></div>
+    <div style="padding:64px 48px 0;display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center">
+      <div style="position:relative;display:inline-block" onClick="{{ click_h1 }}" onMouseEnter="{{ enter_h1 }}" onMouseLeave="{{ leave }}">
+        <div style="{{ anim_h1 }}"><h1 style="margin:0;font-size:48px;line-height:1.05;font-weight:700;letter-spacing:-.03em;text-wrap:balance">Plans that grow with your team.</h1></div>
+        <sc-if value="{{ sel_h1 }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-8px -14px;border:2px solid #7c5cff;border-radius:6px;pointer-events:none"><span style="position:absolute;left:-2px;top:-22px;background:#7c5cff;color:#fff;font:500 11px ui-monospace,Menlo,monospace;padding:2px 7px;border-radius:4px 4px 0 0;letter-spacing:0;white-space:nowrap">{{ tag_h1 }}</span></div></sc-if>
+        <sc-if value="{{ hov_h1 }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-8px -14px;border:1.5px dashed #7c5cff;border-radius:6px;pointer-events:none;opacity:.8"></div></sc-if>
+      </div>
+      <div style="position:relative;display:inline-block" onClick="{{ click_sub }}" onMouseEnter="{{ enter_sub }}" onMouseLeave="{{ leave }}">
+        <div style="{{ anim_sub }}"><p style="margin:0;font-size:17px;color:#6e6e73;max-width:520px;line-height:1.45">Start free. Upgrade when you need more seats, more history, and priority support.</p></div>
+        <sc-if value="{{ sel_sub }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-6px -10px;border:2px solid #7c5cff;border-radius:6px;pointer-events:none"><span style="position:absolute;left:-2px;top:-22px;background:#7c5cff;color:#fff;font:500 11px ui-monospace,Menlo,monospace;padding:2px 7px;border-radius:4px 4px 0 0;letter-spacing:0;white-space:nowrap">{{ tag_sub }}</span></div></sc-if>
+        <sc-if value="{{ hov_sub }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-6px -10px;border:1.5px dashed #7c5cff;border-radius:6px;pointer-events:none;opacity:.8"></div></sc-if>
+      </div>
+      <div style="display:inline-flex;background:#f2f2f4;border-radius:999px;padding:3px;font-size:13px;margin-top:6px"><span style="padding:6px 14px;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08);font-weight:500">Monthly</span><span style="padding:6px 14px;color:#6e6e73">Yearly <span style="color:#7c5cff;font-weight:500">−20%</span></span></div>
+    </div>
+    <div style="margin:40px 48px 0;display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+      <div style="position:relative" onClick="{{ click_plan1 }}" onMouseEnter="{{ enter_plan1 }}" onMouseLeave="{{ leave }}">
+        <div style="{{ anim_plan1 }}"><div style="border:1px solid #e6e6e9;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:14px;height:100%;box-sizing:border-box;background:#fff"><div style="font-size:14px;font-weight:600">Free</div><div style="font-size:34px;font-weight:700;letter-spacing:-.03em">$0<span style="font-size:13px;color:#6e6e73;font-weight:400;letter-spacing:0"> / month</span></div><div style="font-size:13px;color:#6e6e73;line-height:1.5">For trying things out.<br>1 project · 7-day history</div><div style="margin-top:auto;border:1px solid #d2d2d7;border-radius:10px;padding:9px;text-align:center;font-size:13px;font-weight:500">Start free</div></div></div>
+        <sc-if value="{{ sel_plan1 }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-6px;border:2px solid #7c5cff;border-radius:20px;pointer-events:none"><span style="position:absolute;left:-2px;top:-22px;background:#7c5cff;color:#fff;font:500 11px ui-monospace,Menlo,monospace;padding:2px 7px;border-radius:4px 4px 0 0;letter-spacing:0;white-space:nowrap">{{ tag_plan1 }}</span></div></sc-if>
+        <sc-if value="{{ hov_plan1 }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-6px;border:1.5px dashed #7c5cff;border-radius:20px;pointer-events:none;opacity:.8"></div></sc-if>
+      </div>
+      <div style="position:relative" onClick="{{ click_plan2 }}" onMouseEnter="{{ enter_plan2 }}" onMouseLeave="{{ leave }}">
+        <div style="{{ anim_plan2 }}"><div style="border:1.5px solid #1d1d1f;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:14px;position:relative;background:#fff;height:100%;box-sizing:border-box"><div style="position:absolute;top:-11px;left:24px;background:#1d1d1f;color:#fff;font-size:11px;font-weight:500;padding:3px 10px;border-radius:999px">Most popular</div><div style="font-size:14px;font-weight:600">Pro</div><div style="font-size:34px;font-weight:700;letter-spacing:-.03em">$20<span style="font-size:13px;color:#6e6e73;font-weight:400;letter-spacing:0"> / month</span></div><div style="font-size:13px;color:#6e6e73;line-height:1.5">For individuals shipping often.<br>Unlimited projects · 90-day history</div>
+          <div style="position:relative;margin-top:auto" onClick="{{ click_cta }}" onMouseEnter="{{ enter_cta }}" onMouseLeave="{{ leave_cta }}">
+            <div style="{{ anim_cta }}"><div style="background:#1d1d1f;color:#fff;border-radius:10px;padding:10px;text-align:center;font-size:13px;font-weight:500">Upgrade to Pro</div></div>
+            <sc-if value="{{ sel_cta }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-5px;border:2px solid #7c5cff;border-radius:13px;pointer-events:none"><span style="position:absolute;left:-2px;top:-22px;background:#7c5cff;color:#fff;font:500 11px ui-monospace,Menlo,monospace;padding:2px 7px;border-radius:4px 4px 0 0;letter-spacing:0;white-space:nowrap">{{ tag_cta }}</span></div></sc-if>
+            <sc-if value="{{ hov_cta }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-5px;border:1.5px dashed #7c5cff;border-radius:13px;pointer-events:none;opacity:.8"></div></sc-if>
+          </div></div></div>
+        <sc-if value="{{ sel_plan2 }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-6px;border:2px solid #7c5cff;border-radius:20px;pointer-events:none"><span style="position:absolute;left:-2px;top:-22px;background:#7c5cff;color:#fff;font:500 11px ui-monospace,Menlo,monospace;padding:2px 7px;border-radius:4px 4px 0 0;letter-spacing:0;white-space:nowrap">{{ tag_plan2 }}</span></div></sc-if>
+        <sc-if value="{{ hov_plan2 }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-6px;border:1.5px dashed #7c5cff;border-radius:20px;pointer-events:none;opacity:.8"></div></sc-if>
+      </div>
+      <div style="position:relative" onClick="{{ click_plan3 }}" onMouseEnter="{{ enter_plan3 }}" onMouseLeave="{{ leave }}">
+        <div style="{{ anim_plan3 }}"><div style="border:1px solid #e6e6e9;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:14px;height:100%;box-sizing:border-box;background:#fff"><div style="font-size:14px;font-weight:600">Team</div><div style="font-size:34px;font-weight:700;letter-spacing:-.03em">$30<span style="font-size:13px;color:#6e6e73;font-weight:400;letter-spacing:0"> / seat</span></div><div style="font-size:13px;color:#6e6e73;line-height:1.5">For teams that review together.<br>SSO · Shared libraries · Roles</div><div style="margin-top:auto;border:1px solid #d2d2d7;border-radius:10px;padding:9px;text-align:center;font-size:13px;font-weight:500">Talk to sales</div></div></div>
+        <sc-if value="{{ sel_plan3 }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-6px;border:2px solid #7c5cff;border-radius:20px;pointer-events:none"><span style="position:absolute;left:-2px;top:-22px;background:#7c5cff;color:#fff;font:500 11px ui-monospace,Menlo,monospace;padding:2px 7px;border-radius:4px 4px 0 0;letter-spacing:0;white-space:nowrap">{{ tag_plan3 }}</span></div></sc-if>
+        <sc-if value="{{ hov_plan3 }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-6px;border:1.5px dashed #7c5cff;border-radius:20px;pointer-events:none;opacity:.8"></div></sc-if>
+      </div>
+    </div>
+    <div style="margin:44px 48px 0;display:flex;align-items:center;justify-content:center;gap:40px;color:#a1a1a6;font-size:13px;font-weight:600;letter-spacing:.02em"><span>ARCADIA</span><span>Holt&amp;Co</span><span>northwind</span><span>VERTEX</span><span>lumen</span></div>
+  </div>
+  <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:#1d1d1f;color:#fff;font-size:12px;font-weight:500;padding:8px 14px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.2);animation:vm-toast .25s ease-out both;white-space:nowrap">{{ toast }}</div></sc-if>
+</div>
+
+<div style="width:320px;flex:none;background:#fff;border-left:1px solid #e5e5ea;display:flex;flex-direction:column;min-height:0">
+  <div style="display:flex;align-items:center;gap:8px;height:48px;padding:0 16px;border-bottom:1px solid #ececf0;flex:none"><span style="font-size:13px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">nimbus.app/pricing</span>
+    <sc-if value="{{ unsaved }}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#6e6e73;white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:#7c5cff"></span>Unsaved</span></sc-if>
+    <sc-if value="{{ clean }}" hint-placeholder-val="{{ true }}"><span style="font:500 11px ui-monospace,Menlo,monospace;background:#f2f2f4;color:#6e6e73;padding:2px 6px;border-radius:4px">{{ versionLabel }}</span></sc-if>
+  </div>
+  <div style="display:flex;padding:0 8px;border-bottom:1px solid #ececf0;flex:none">
+    <span style="{{ tabAnimateStyle }}" onClick="{{ tabAnimate }}">Animate</span><span style="{{ tabHistoryStyle }}" onClick="{{ tabHistory }}">History</span><span style="{{ tabExportStyle }}" onClick="{{ tabExport }}">Export</span>
+  </div>
+
+  <sc-if value="{{ showAnimate }}" hint-placeholder-val="{{ true }}">
+  <div style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+    <sc-if value="{{ isIdle }}" hint-placeholder-val="{{ true }}">
+      <div style="padding:20px 16px;display:flex;flex-direction:column;gap:12px;border-bottom:1px solid #ececf0;align-items:center;text-align:center"><div style="width:44px;height:44px;border-radius:12px;border:1.5px dashed #c7c7cc;display:flex;align-items:center;justify-content:center;color:#7c5cff;font-size:16px">+</div><div style="font-size:13px;font-weight:600">Click any element to animate it</div><div style="font-size:12px;color:#6e6e73;line-height:1.5">Hover outlines the element. Press <span style="font:500 11px ui-monospace,Menlo,monospace;background:#f2f2f4;padding:1px 5px;border-radius:4px">Esc</span> to deselect.</div></div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:10px"><span style="font-size:11px;font-weight:600;color:#6e6e73;letter-spacing:.04em;text-transform:uppercase">Whole page</span><div style="border:1px solid #d2d2d7;border-radius:8px;padding:10px 12px;min-height:56px;font-size:13px;color:#a1a1a6;line-height:1.45">Describe the feel — “calm, staggered entrances, nothing loops”</div><div style="height:36px;border-radius:8px;border:1px solid #d2d2d7;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:600;cursor:pointer" onClick="{{ autoPage }}"><span style="color:#7c5cff">✦</span>Auto-generate for this page</div></div>
+      <sc-if value="{{ hasAssignments }}" hint-placeholder-val="{{ false }}"><div style="border-top:1px solid #ececf0;display:flex;flex-direction:column"><span style="font-size:11px;font-weight:600;color:#6e6e73;letter-spacing:.04em;text-transform:uppercase;padding:12px 16px 4px">Animated · {{ assignmentCount }}</span>
+        <sc-for list="{{ assignmentRows }}" as="r" hint-placeholder-count="0"><div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #f2f2f4;cursor:pointer" onClick="{{ r.open }}"><span style="font:500 11px ui-monospace,Menlo,monospace;background:#f2f2f4;padding:2px 6px;border-radius:5px;width:52px;text-align:center;flex:none">{{ r.tag }}</span><div style="display:flex;flex-direction:column;gap:1px;flex:1;min-width:0"><span style="font-size:13px;font-weight:500">{{ r.name }}</span><span style="font-size:11px;color:#6e6e73">{{ r.meta }}</span></div><span style="color:#a1a1a6">›</span></div></sc-for>
+        <div style="padding:10px 16px;display:flex;gap:8px"><span style="height:30px;padding:0 12px;border:1px solid #d2d2d7;border-radius:8px;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap" onClick="{{ replay }}">↻ Replay all</span></div></div></sc-if>
+    </sc-if>
+
+    <sc-if value="{{ isSelected }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:16px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid #ececf0"><span style="font-size:11px;font-weight:600;color:#6e6e73;letter-spacing:.04em;text-transform:uppercase">Selected</span><div style="display:flex;align-items:center;gap:8px;min-width:0"><span style="font:500 12px ui-monospace,Menlo,monospace;background:#7c5cff;color:#fff;padding:3px 8px;border-radius:6px;flex:none">{{ selTag }}</span><span style="font-size:12px;color:#6e6e73;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ selText }}</span></div><div style="display:flex;gap:6px;font-size:11px;color:#a1a1a6"><span>No animation yet</span><span>·</span><span style="color:#6e6e73">Esc to deselect</span></div></div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:8px"><span style="font-size:11px;font-weight:600;color:#6e6e73;letter-spacing:.04em;text-transform:uppercase">Add animation</span><div style="height:40px;border-radius:8px;background:#7c5cff;color:#fff;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:600;cursor:pointer" onClick="{{ generate }}">✦ Auto-generate for this element</div><div style="height:40px;border-radius:8px;border:1px solid #d2d2d7;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;cursor:pointer" onClick="{{ choose }}">Choose custom animation</div></div>
+    </sc-if>
+
+    <sc-if value="{{ isChoosing }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;align-items:center;gap:8px;height:44px;padding:0 12px 0 8px;border-bottom:1px solid #ececf0;flex:none"><span style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:15px;color:#6e6e73;cursor:pointer" onClick="{{ backFromChoose }}">‹</span><span style="font-size:13px;font-weight:600;flex:1">Choose animation</span><span style="font:500 12px ui-monospace,Menlo,monospace;background:#7c5cff;color:#fff;padding:3px 8px;border-radius:6px">{{ selTag }}</span></div>
+      <div style="padding:12px 12px 8px;display:flex;flex-direction:column;gap:10px;flex:none"><div style="height:34px;border:1px solid #d2d2d7;border-radius:8px;display:flex;align-items:center;padding:0 10px;gap:8px;font-size:13px"><span style="color:#a1a1a6">⌕</span><input type="text" value="{{ search }}" onChange="{{ setSearch }}" placeholder="Search animations" style="border:0;outline:0;flex:1;font-size:13px;background:transparent;min-width:0"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ cats }}" as="c" hint-placeholder-count="4"><span style="{{ c.style }}" onClick="{{ c.pick }}">{{ c.name }}</span></sc-for></div></div>
+      <div style="padding:4px 12px 12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;overflow:auto;align-content:start;flex:1;min-height:0">
+        <sc-for list="{{ filtered }}" as="a" hint-placeholder-count="6"><div style="{{ a.cardStyle }}" onMouseEnter="{{ a.enter }}" onMouseLeave="{{ a.leave }}" onClick="{{ a.pick }}"><div style="aspect-ratio:16/10;background:#f5f5f7;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden"><span style="{{ a.miniStyle }}"></span></div><span style="font-size:12px;font-weight:500">{{ a.name }}</span></div></sc-for>
+        <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}"><div style="grid-column:1/-1;padding:24px 8px;text-align:center;font-size:12px;color:#6e6e73">No animations match “{{ search }}”.</div></sc-if>
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid #ececf0;display:flex;align-items:center;gap:8px;font-size:11px;color:#6e6e73;flex:none"><span style="width:6px;height:6px;border-radius:50%;background:#7c5cff"></span>Hover a card to preview on the page · click to apply</div>
+    </sc-if>
+
+    <sc-if value="{{ isTuning }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column">
+      <div style="padding:14px 16px;display:flex;flex-direction:column;gap:12px;border-bottom:1px solid #ececf0">
+        <div style="display:flex;align-items:center;gap:8px"><span style="font:500 12px ui-monospace,Menlo,monospace;background:#7c5cff;color:#fff;padding:3px 8px;border-radius:6px;flex:none">{{ selTag }}</span><span style="font-size:13px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ curName }}</span><span style="font-size:12px;font-weight:500;color:#7c5cff;cursor:pointer;white-space:nowrap" onClick="{{ choose }}">Change</span></div>
+        <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11px;font-weight:600;color:#6e6e73;letter-spacing:.04em;text-transform:uppercase">Trigger</span><div style="display:flex;background:#f2f2f4;border-radius:8px;padding:2px"><span style="{{ trigLoadStyle }}" onClick="{{ setTrigLoad }}">On load</span><span style="{{ trigHoverStyle }}" onClick="{{ setTrigHover }}">On hover</span></div></div>
+      </div>
+      <div style="padding:14px 16px;display:flex;flex-direction:column;gap:14px;border-bottom:1px solid #ececf0">
+        <div style="display:flex;align-items:center;gap:10px"><span style="width:56px;font-size:12px;color:#6e6e73;flex:none">Duration</span><input type="range" min="100" max="3000" step="50" value="{{ p.duration }}" onChange="{{ setDuration }}"><div style="width:62px;height:28px;border:1px solid #d2d2d7;border-radius:6px;display:flex;align-items:center;padding:0 6px;gap:2px;flex:none"><input type="number" value="{{ p.duration }}" onChange="{{ setDuration }}" style="width:100%;border:0;outline:0;text-align:right;font:500 12px ui-monospace,Menlo,monospace;background:transparent;padding:0"><span style="color:#a1a1a6;font:500 11px ui-monospace,Menlo,monospace">ms</span></div></div>
+        <div style="display:flex;align-items:center;gap:10px"><span style="width:56px;font-size:12px;color:#6e6e73;flex:none">Delay</span><input type="range" min="0" max="2000" step="50" value="{{ p.delay }}" onChange="{{ setDelay }}"><div style="width:62px;height:28px;border:1px solid #d2d2d7;border-radius:6px;display:flex;align-items:center;padding:0 6px;gap:2px;flex:none"><input type="number" value="{{ p.delay }}" onChange="{{ setDelay }}" style="width:100%;border:0;outline:0;text-align:right;font:500 12px ui-monospace,Menlo,monospace;background:transparent;padding:0"><span style="color:#a1a1a6;font:500 11px ui-monospace,Menlo,monospace">ms</span></div></div>
+        <sc-if value="{{ hasDistance }}" hint-placeholder-val="{{ false }}"><div style="display:flex;align-items:center;gap:10px"><span style="width:56px;font-size:12px;color:#6e6e73;flex:none">Distance</span><input type="range" min="0" max="200" step="1" value="{{ p.distance }}" onChange="{{ setDistance }}"><div style="width:62px;height:28px;border:1px solid #d2d2d7;border-radius:6px;display:flex;align-items:center;padding:0 6px;gap:2px;flex:none"><input type="number" value="{{ p.distance }}" onChange="{{ setDistance }}" style="width:100%;border:0;outline:0;text-align:right;font:500 12px ui-monospace,Menlo,monospace;background:transparent;padding:0"><span style="color:#a1a1a6;font:500 11px ui-monospace,Menlo,monospace">px</span></div></div></sc-if>
+        <sc-if value="{{ hasScale }}" hint-placeholder-val="{{ false }}"><div style="display:flex;align-items:center;gap:10px"><span style="width:56px;font-size:12px;color:#6e6e73;flex:none">Scale</span><input type="range" min="0.5" max="1.5" step="0.01" value="{{ p.scale }}" onChange="{{ setScale }}"><div style="width:62px;height:28px;border:1px solid #d2d2d7;border-radius:6px;display:flex;align-items:center;padding:0 6px;gap:2px;flex:none"><input type="number" step="0.01" value="{{ p.scale }}" onChange="{{ setScale }}" style="width:100%;border:0;outline:0;text-align:right;font:500 12px ui-monospace,Menlo,monospace;background:transparent;padding:0"><span style="color:#a1a1a6;font:500 11px ui-monospace,Menlo,monospace">×</span></div></div></sc-if>
+        <div style="display:flex;align-items:center;gap:10px"><span style="width:56px;font-size:12px;color:#6e6e73;flex:none">Easing</span><select value="{{ p.easing }}" onChange="{{ setEasing }}" style="flex:1;height:28px;border:1px solid #d2d2d7;border-radius:6px;padding:0 6px;font:500 12px ui-monospace,Menlo,monospace;background:#fff;color:#1d1d1f;min-width:0"><option value="ease">ease</option><option value="ease-out">ease-out</option><option value="ease-in">ease-in</option><option value="ease-in-out">ease-in-out</option><option value="linear">linear</option><option value="cubic-bezier(.34,1.56,.64,1)">spring</option></select></div>
+        <div style="display:flex;align-items:center;gap:10px"><span style="width:56px;font-size:12px;color:#6e6e73;flex:none">Repeat</span><div style="flex:1;display:flex;background:#f2f2f4;border-radius:8px;padding:2px"><span style="{{ iter1Style }}" onClick="{{ setIter1 }}">1</span><span style="{{ iter2Style }}" onClick="{{ setIter2 }}">2</span><span style="{{ iter3Style }}" onClick="{{ setIter3 }}">3</span><span style="{{ iterInfStyle }}" onClick="{{ setIterInf }}">∞</span></div></div>
+      </div>
+      <div style="padding:12px 16px;display:flex;align-items:center;gap:8px"><span style="height:30px;padding:0 12px;border:1px solid #d2d2d7;border-radius:8px;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;flex:none" onClick="{{ replay }}">↻ Replay</span><span style="margin-left:auto;font-size:12px;font-weight:500;color:#d0342c;cursor:pointer;white-space:nowrap;flex:none" onClick="{{ remove }}">Remove animation</span></div>
+      </div>
+    </sc-if>
+  </div>
+  <div style="margin-top:auto;padding:12px 16px;border-top:1px solid #ececf0;display:flex;gap:8px;flex:none"><div style="{{ cancelStyle }}" onClick="{{ cancel }}">Cancel</div><div style="{{ saveStyle }}" onClick="{{ openSave }}">Save</div></div>
+  </sc-if>
+
+  <sc-if value="{{ showHistory }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column">
+      <sc-for list="{{ versions }}" as="v" hint-placeholder-count="1"><div style="{{ v.style }}"><span style="font:600 12px ui-monospace,Menlo,monospace;width:24px;flex:none">{{ v.n }}</span><div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:0"><span style="font-size:13px;font-weight:500">{{ v.label }}</span><span style="font-size:11px;color:#6e6e73">{{ v.meta }}</span></div></div></sc-for>
+    </div>
+    <div style="margin-top:auto;padding:12px 16px;border-top:1px solid #ececf0;font-size:11px;color:#6e6e73;line-height:1.5">Versions are created only when you Save. Viewing/restoring is out of this proof-of-concept.</div>
+  </sc-if>
+
+  <sc-if value="{{ showExport }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 16px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid #ececf0;flex:none"><div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:11px;font-weight:600;color:#6e6e73;letter-spacing:.04em;text-transform:uppercase">Exporting</span><span style="font-size:12px;white-space:nowrap"><span style="font:600 12px ui-monospace,Menlo,monospace">{{ versionLabel }}</span> <span style="color:#6e6e73">· current</span></span></div><span style="font-size:11px;color:#a1a1a6;line-height:1.5">CSS is generated from the saved version. Class names are prefixed vm-.</span></div>
+    <div style="display:flex;flex-direction:column;flex:1;min-height:0"><div style="display:flex;gap:2px;padding:10px 12px 0;font:500 11px ui-monospace,Menlo,monospace;white-space:nowrap;flex:none"><span style="padding:6px 8px;color:#6e6e73">index.html</span><span style="padding:6px 8px;border-radius:6px 6px 0 0;background:#1d1d1f;color:#fff">vibe-motion.css</span></div><div style="margin:0 12px;background:#1d1d1f;color:#d4d4d8;border-radius:0 8px 8px 8px;padding:30px 12px 12px;font:10.5px/1.6 ui-monospace,Menlo,monospace;flex:1;overflow:auto;position:relative;white-space:pre;min-height:0">{{ exportCss }}<span style="position:absolute;top:8px;right:8px;background:rgba(255,255,255,.1);color:#fff;padding:3px 8px;border-radius:5px;font:500 11px system-ui,sans-serif;cursor:pointer" onClick="{{ copyCss }}">Copy</span></div></div>
+    <div style="margin-top:auto;padding:12px 16px;border-top:1px solid #ececf0;display:flex;gap:8px;flex:none"><div style="flex:1;height:36px;border-radius:8px;border:1px solid #d2d2d7;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;cursor:pointer" onClick="{{ copyCss }}">Copy CSS</div><div style="flex:1.3;height:36px;border-radius:8px;background:#1d1d1f;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600">Download .zip</div></div>
+  </sc-if>
+</div>
+
+<sc-if value="{{ showGuard }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:0;background:rgba(29,29,31,.32);display:flex;align-items:center;justify-content:center;z-index:10"><div style="width:380px;background:#fff;border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:10px;box-shadow:0 20px 60px rgba(0,0,0,.25)"><div style="font-size:15px;font-weight:600">Save changes to {{ selTag }}?</div><div style="font-size:13px;color:#6e6e73;line-height:1.5">You have unsaved changes on this element. Save to keep them as a new version, or discard to leave {{ versionLabel }} as is.</div><div style="display:flex;gap:8px;margin-top:8px"><div style="height:36px;padding:0 14px;border-radius:8px;display:flex;align-items:center;font-size:13px;font-weight:500;color:#d0342c;cursor:pointer" onClick="{{ guardDiscard }}">Discard</div><div style="margin-left:auto;height:36px;padding:0 14px;border:1px solid #d2d2d7;border-radius:8px;display:flex;align-items:center;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap" onClick="{{ guardKeep }}">Keep editing</div><div style="height:36px;padding:0 16px;border-radius:8px;background:#7c5cff;color:#fff;display:flex;align-items:center;font-size:13px;font-weight:600;cursor:pointer" onClick="{{ guardSave }}">Save</div></div></div></div></sc-if>
+
+<sc-if value="{{ showSave }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:0;background:rgba(29,29,31,.32);display:flex;align-items:center;justify-content:center;z-index:10"><div style="width:420px;background:#fff;border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,.25)"><div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:15px;font-weight:600">Save as {{ nextVersionLabel }}</span><span style="font-size:12px;color:#6e6e73">from {{ versionLabel }}</span></div><div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11px;font-weight:600;color:#6e6e73;letter-spacing:.04em;text-transform:uppercase">Label</span><input type="text" value="{{ saveLabel }}" onChange="{{ setSaveLabel }}" style="height:38px;border:1px solid #7c5cff;border-radius:8px;padding:0 12px;font-size:13px;outline:0;box-shadow:0 0 0 3px rgba(124,92,255,.15)"></div><div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11px;font-weight:600;color:#6e6e73;letter-spacing:.04em;text-transform:uppercase">Changes in this version</span><div style="border:1px solid #e5e5ea;border-radius:8px;overflow:hidden;font-size:12px"><sc-for list="{{ diffRows }}" as="d" hint-placeholder-count="1"><div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #ececf0"><span style="{{ d.signStyle }}">{{ d.sign }}</span><span style="font:500 11px ui-monospace,Menlo,monospace;background:#f2f2f4;padding:1px 5px;border-radius:4px">{{ d.tag }}</span><span>{{ d.name }}</span><span style="margin-left:auto;color:#6e6e73;white-space:nowrap">{{ d.meta }}</span></div></sc-for></div></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px"><div style="height:36px;padding:0 14px;border:1px solid #d2d2d7;border-radius:8px;display:flex;align-items:center;font-size:13px;font-weight:500;cursor:pointer" onClick="{{ closeSave }}">Cancel</div><div style="height:36px;padding:0 16px;border-radius:8px;background:#7c5cff;color:#fff;display:flex;align-items:center;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap" onClick="{{ confirmSave }}">Save version</div></div></div></div></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:800}}">
+class Component extends DCLogic {
+  static _init() {
+    if (Component.C) return Component.C;
+    var CATALOG = [
+      { id: 'fade-in-up', name: 'Fade In Up', cat: 'Entrance', duration: 600, easing: 'ease-out', distance: 24 },
+      { id: 'fade-in', name: 'Fade In', cat: 'Entrance', duration: 500, easing: 'ease' },
+      { id: 'slide-in-left', name: 'Slide In Left', cat: 'Entrance', duration: 500, easing: 'ease-out', distance: 40 },
+      { id: 'scale-in', name: 'Scale In', cat: 'Entrance', duration: 400, easing: 'ease-out', scale: 0.9 },
+      { id: 'pulse', name: 'Pulse', cat: 'Attention', duration: 1000, easing: 'ease-in-out', scale: 1.05, iteration: 'infinite' },
+      { id: 'shake', name: 'Shake', cat: 'Attention', duration: 600, easing: 'ease-in-out', distance: 8 },
+      { id: 'bounce', name: 'Bounce', cat: 'Attention', duration: 800, easing: 'ease-out', distance: 12 },
+      { id: 'float', name: 'Float', cat: 'Continuous', duration: 2000, easing: 'ease-in-out', distance: 6, iteration: 'infinite' },
+    ];
+    var CATS = ['All', 'Entrance', 'Attention', 'Continuous'];
+    var ELS = ['h1', 'sub', 'plan1', 'plan2', 'plan3', 'cta'];
+    var TAG = { h1: 'h1', sub: 'p.lede', plan1: '.plan:1', plan2: '.plan:2', plan3: '.plan:3', cta: 'a.cta' };
+    var TEXT = { h1: '“Plans that grow with your team.”', sub: '“Start free. Upgrade when…”', plan1: 'Free plan card', plan2: 'Pro plan card', plan3: 'Team plan card', cta: '“Upgrade to Pro”' };
+    var HEUR = { h1: 'fade-in-up', sub: 'fade-in', plan1: 'fade-in-up', plan2: 'fade-in-up', plan3: 'fade-in-up', cta: 'pulse' };
+    var byId = id => CATALOG.find(a => a.id === id);
+    var defaults = (id, extra = {}) => { const a = byId(id); return { animId: id, trigger: 'load', duration: a.duration, delay: 0, easing: a.easing, distance: a.distance ?? 0, scale: a.scale ?? 1, iteration: a.iteration ?? '1', ...extra }; };
+    var clone = o => JSON.parse(JSON.stringify(o));
+    var TAB_ON = { flex: 1, textAlign: 'center', padding: '10px 0', fontSize: 13, fontWeight: 600, borderBottom: '2px solid #1d1d1f', marginBottom: -1, cursor: 'pointer' };
+    var TAB_OFF = { flex: 1, textAlign: 'center', padding: '10px 0', fontSize: 13, color: '#6e6e73', cursor: 'pointer' };
+    var SEG_ON = { flex: 1, textAlign: 'center', padding: '5px 0', fontSize: 12, fontWeight: 500, background: '#fff', borderRadius: 6, boxShadow: '0 1px 2px rgba(0,0,0,.08)', cursor: 'pointer' };
+    var SEG_OFF = { flex: 1, textAlign: 'center', padding: '5px 0', fontSize: 12, color: '#6e6e73', cursor: 'pointer' };
+    var BTN = { flex: 1, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, cursor: 'pointer' };
+    return (Component.C = { CATALOG, CATS, ELS, TAG, TEXT, HEUR, byId, defaults, clone, TAB_ON, TAB_OFF, SEG_ON, SEG_OFF, BTN });
+  }
+
+  state = { selected: null, hover: null, mode: 'idle', tab: 'animate', assignments: {}, saved: {}, versions: [{ n: 0, label: 'Cloned', meta: 'nimbus.app/pricing · 42 elements' }], search: '', cat: 'All', preview: null, replay: 0, guard: null, saveOpen: false, saveLabel: '', toast: '' };
+  componentDidMount() { this._key = e => { if (e.key === 'Escape') this.deselect(); }; window.addEventListener('keydown', this._key); }
+  componentWillUnmount() { window.removeEventListener('keydown', this._key); clearTimeout(this._t); }
+  unsaved() { const { CATALOG, CATS, ELS, TAG, TEXT, HEUR, byId, defaults, clone, TAB_ON, TAB_OFF, SEG_ON, SEG_OFF, BTN } = Component._init(); return JSON.stringify(this.state.assignments) !== JSON.stringify(this.state.saved); }
+  select(id) { const { CATALOG, CATS, ELS, TAG, TEXT, HEUR, byId, defaults, clone, TAB_ON, TAB_OFF, SEG_ON, SEG_OFF, BTN } = Component._init(); this.setState({ selected: id, mode: this.state.assignments[id] ? 'tuning' : 'selected', preview: null, tab: 'animate' }); }
+  deselect() { const { CATALOG, CATS, ELS, TAG, TEXT, HEUR, byId, defaults, clone, TAB_ON, TAB_OFF, SEG_ON, SEG_OFF, BTN } = Component._init(); if (this.unsaved() || this.state.guard || this.state.saveOpen) return; this.setState({ selected: null, mode: 'idle', preview: null }); }
+  guarded(fn) { const { CATALOG, CATS, ELS, TAG, TEXT, HEUR, byId, defaults, clone, TAB_ON, TAB_OFF, SEG_ON, SEG_OFF, BTN } = Component._init(); if (this.unsaved()) this.setState({ guard: fn }); else fn(); }
+  setParam(k, v) { const { CATALOG, CATS, ELS, TAG, TEXT, HEUR, byId, defaults, clone, TAB_ON, TAB_OFF, SEG_ON, SEG_OFF, BTN } = Component._init(); const a = clone(this.state.assignments); a[this.state.selected][k] = v; this.setState({ assignments: a }); }
+  applyAnim(id, extra) { const { CATALOG, CATS, ELS, TAG, TEXT, HEUR, byId, defaults, clone, TAB_ON, TAB_OFF, SEG_ON, SEG_OFF, BTN } = Component._init(); const a = clone(this.state.assignments); a[this.state.selected] = defaults(id, extra); this.setState({ assignments: a, mode: 'tuning', preview: null, search: '', cat: 'All' }); }
+  animStyle(id) { const { CATALOG, CATS, ELS, TAG, TEXT, HEUR, byId, defaults, clone, TAB_ON, TAB_OFF, SEG_ON, SEG_OFF, BTN } = Component._init();
+    const s = this.state; let a = s.assignments[id];
+    if (s.preview && s.selected === id) a = defaults(s.preview);
+    if (!a) return {};
+    if (a.trigger === 'hover' && s.hover !== id) return {};
+    return { animation: `vm-${a.animId}${s.replay % 2 ? '-b' : ''} ${a.duration}ms ${a.easing} ${a.delay}ms ${a.iteration} both`, '--vm-distance': a.distance + 'px', '--vm-scale': a.scale };
+  }
+  diff() { const { CATALOG, CATS, ELS, TAG, TEXT, HEUR, byId, defaults, clone, TAB_ON, TAB_OFF, SEG_ON, SEG_OFF, BTN } = Component._init(); const rows = []; const { assignments: a, saved: sv } = this.state; for (const id of ELS) { const n = a[id], o = sv[id]; if (n && !o) rows.push({ sign: '+', signStyle: { color: '#34c759', fontWeight: 700 }, tag: TAG[id], name: byId(n.animId).name, meta: `${n.trigger} · ${n.duration}ms` }); else if (!n && o) rows.push({ sign: '−', signStyle: { color: '#d0342c', fontWeight: 700 }, tag: TAG[id], name: byId(o.animId).name, meta: 'removed' }); else if (n && o && JSON.stringify(n) !== JSON.stringify(o)) rows.push({ sign: '~', signStyle: { color: '#ff9f0a', fontWeight: 700 }, tag: TAG[id], name: byId(n.animId).name, meta: `${n.trigger} · ${n.duration}ms · ${n.delay}ms` }); } return rows; }
+  autoLabel() { const { CATALOG, CATS, ELS, TAG, TEXT, HEUR, byId, defaults, clone, TAB_ON, TAB_OFF, SEG_ON, SEG_OFF, BTN } = Component._init(); const d = this.diff(); return d.slice(0, 2).map(r => `${r.sign === '−' ? 'removed ' : ''}${r.name} on ${r.tag}`).join(', ') + (d.length > 2 ? ` +${d.length - 2} more` : ''); }
+  toast(msg) { const { CATALOG, CATS, ELS, TAG, TEXT, HEUR, byId, defaults, clone, TAB_ON, TAB_OFF, SEG_ON, SEG_OFF, BTN } = Component._init(); this.setState({ toast: msg }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ toast: '' }), 2200); }
+  exportCss() { const { CATALOG, CATS, ELS, TAG, TEXT, HEUR, byId, defaults, clone, TAB_ON, TAB_OFF, SEG_ON, SEG_OFF, BTN } = Component._init();
+    const { saved } = this.state; const used = {}; let out = `/* Vibe Motion · v${this.state.versions[0].n} · catalog 1.0.0 */\n`; let i = 1;
+    for (const id of ELS) { const a = saved[id]; if (!a) continue; if (!used[a.animId]) { used[a.animId] = 1; out += `@keyframes vm-${a.animId}-v1 { … }\n`; } out += `.vm-a${i++}${a.trigger === 'hover' ? ':hover' : ''} { /* ${TAG[id]} */\n  --vm-distance: ${a.distance}px; --vm-scale: ${a.scale};\n  animation: vm-${a.animId}-v1 ${a.duration}ms\n    ${a.easing} ${a.delay}ms ${a.iteration} both;\n}\n`; }
+    return i === 1 ? out + '\n/* No saved animations yet. Save a version first. */' : out;
+  }
+  renderVals() { const { CATALOG, CATS, ELS, TAG, TEXT, HEUR, byId, defaults, clone, TAB_ON, TAB_OFF, SEG_ON, SEG_OFF, BTN } = Component._init();
+    const s = this.state, sel = s.selected, unsaved = this.unsaved(); const cur = sel ? s.assignments[sel] : null; const curDef = cur ? byId(cur.animId) : null;
+    const v = { unsaved, clean: !unsaved, versionLabel: 'v' + s.versions[0].n, nextVersionLabel: 'v' + (s.versions[0].n + 1), toast: s.toast,
+      showAnimate: s.tab === 'animate', showHistory: s.tab === 'history', showExport: s.tab === 'export',
+      isIdle: s.mode === 'idle', isSelected: s.mode === 'selected', isChoosing: s.mode === 'choosing', isTuning: s.mode === 'tuning' && !!cur,
+      selTag: sel ? TAG[sel] : '', selText: sel ? TEXT[sel] : '', curName: curDef ? curDef.name : '', p: cur || {}, hasDistance: !!(curDef && curDef.distance != null), hasScale: !!(curDef && curDef.scale != null),
+      search: s.search, showGuard: !!s.guard, showSave: s.saveOpen, saveLabel: s.saveLabel, diffRows: this.diff(), exportCss: this.exportCss(),
+      leave: () => this.setState({ hover: null }), leave_cta: e => { e.stopPropagation(); this.setState({ hover: 'plan2' }); },
+      clickBg: () => this.deselect(),
+      generate: () => this.applyAnim(HEUR[sel], sel === 'cta' ? { trigger: 'hover', iteration: '1', duration: 400 } : { delay: sel.startsWith('plan') ? (Number(sel.slice(-1)) - 1) * 120 : 0 }),
+      autoPage: () => { const a = {}; a.h1 = defaults('fade-in-up'); a.sub = defaults('fade-in', { delay: 150 }); [1, 2, 3].forEach(n => a['plan' + n] = defaults('fade-in-up', { delay: 240 + (n - 1) * 120 })); a.cta = defaults('pulse', { trigger: 'hover', iteration: '1', duration: 400 }); this.setState({ assignments: a, replay: s.replay + 1 }); },
+      choose: () => this.setState({ mode: 'choosing', preview: null }), backFromChoose: () => this.setState({ mode: cur ? 'tuning' : 'selected', preview: null, search: '', cat: 'All' }),
+      setSearch: e => this.setState({ search: e.target.value }),
+      replay: () => this.setState({ replay: s.replay + 1 }),
+      remove: () => { const a = clone(s.assignments); delete a[sel]; this.setState({ assignments: a, mode: 'selected' }); },
+      cancel: () => { if (!unsaved) return; const sv = clone(s.saved); this.setState({ assignments: sv, mode: sel ? (sv[sel] ? 'tuning' : 'selected') : 'idle' }); },
+      cancelStyle: { ...BTN, border: '1px solid #d2d2d7', fontWeight: 500, opacity: unsaved ? 1 : .4 }, saveStyle: { ...BTN, background: '#7c5cff', color: '#fff', fontWeight: 600, opacity: unsaved ? 1 : .4 },
+      openSave: () => { if (!unsaved) return; this.setState({ saveOpen: true, saveLabel: this.autoLabel() }); }, closeSave: () => this.setState({ saveOpen: false, guard: null }), setSaveLabel: e => this.setState({ saveLabel: e.target.value }),
+      confirmSave: () => { const n = s.versions[0].n + 1; const fn = s.guard; this.setState({ versions: [{ n, label: s.saveLabel || this.autoLabel(), meta: 'Just now' }, ...s.versions], saved: clone(s.assignments), saveOpen: false, guard: null }, () => { this.toast(`Saved v${n}`); if (fn) fn(); }); },
+      guardKeep: () => this.setState({ guard: null }), guardDiscard: () => { const fn = s.guard; this.setState({ assignments: clone(s.saved), guard: null }, fn); }, guardSave: () => this.setState({ saveOpen: true, saveLabel: this.autoLabel() }),
+      tabAnimate: () => this.setState({ tab: 'animate' }), tabHistory: () => this.guarded(() => this.setState({ tab: 'history' })), tabExport: () => this.guarded(() => this.setState({ tab: 'export' })),
+      tabAnimateStyle: s.tab === 'animate' ? TAB_ON : TAB_OFF, tabHistoryStyle: s.tab === 'history' ? TAB_ON : TAB_OFF, tabExportStyle: s.tab === 'export' ? TAB_ON : TAB_OFF,
+      copyCss: () => { try { navigator.clipboard.writeText(this.exportCss()); } catch (e) {} this.toast('Copied CSS'); },
+      versions: s.versions.map((x, i) => ({ n: 'v' + x.n, label: x.label, meta: i === 0 ? 'Current · ' + x.meta : x.meta, style: { display: 'flex', gap: 10, padding: '12px 16px', borderBottom: '1px solid #ececf0', background: i === 0 ? '#fafafa' : '#fff' } })),
+      hasAssignments: Object.keys(s.assignments).length > 0, assignmentCount: Object.keys(s.assignments).length,
+      assignmentRows: ELS.filter(id => s.assignments[id]).map(id => { const a = s.assignments[id]; return { tag: TAG[id], name: byId(a.animId).name, meta: `${a.trigger} · ${a.duration}ms · ${a.delay}ms`, open: () => this.select(id) }; }),
+      cats: CATS.map(c => ({ name: c, pick: () => this.setState({ cat: c }), style: s.cat === c ? { fontSize: 12, fontWeight: 500, padding: '4px 10px', borderRadius: 999, background: '#1d1d1f', color: '#fff', cursor: 'pointer' } : { fontSize: 12, padding: '4px 10px', borderRadius: 999, border: '1px solid #d2d2d7', color: '#4b4b50', cursor: 'pointer' } })),
+    };
+    const q = s.search.trim().toLowerCase();
+    v.filtered = CATALOG.filter(a => (s.cat === 'All' || a.cat === s.cat) && (!q || a.name.toLowerCase().includes(q) || a.cat.toLowerCase().includes(q))).map(a => { const on = s.preview === a.id || (cur && cur.animId === a.id && !s.preview); const d = defaults(a.id); return { name: a.name, pick: () => this.applyAnim(a.id), enter: () => this.setState({ preview: a.id }), leave: () => this.setState({ preview: null }),
+      cardStyle: { border: on ? '1.5px solid #7c5cff' : '1px solid #e5e5ea', borderRadius: 10, padding: 8, display: 'flex', flexDirection: 'column', gap: 6, cursor: 'pointer', boxShadow: on ? '0 0 0 3px rgba(124,92,255,.15)' : 'none', background: '#fff' },
+      miniStyle: { width: 30, height: 18, borderRadius: 4, background: '#7c5cff', display: 'block', ...(s.preview === a.id ? { animation: `vm-${a.id} ${d.duration}ms ${d.easing} 0ms infinite both`, '--vm-distance': Math.min(d.distance, 14) + 'px', '--vm-scale': d.scale } : {}) } }; });
+    v.noResults = v.filtered.length === 0;
+    for (const id of ELS) { v['sel_' + id] = sel === id; v['hov_' + id] = s.hover === id && sel !== id; v['tag_' + id] = TAG[id] + (s.assignments[id] ? ' · ' + byId((s.preview && sel === id ? defaults(s.preview) : s.assignments[id]).animId).name : (s.preview && sel === id ? ' · previewing ' + byId(s.preview).name : '')); v['anim_' + id] = this.animStyle(id);
+      v['click_' + id] = e => { e.stopPropagation(); if (sel === id) return; this.guarded(() => this.select(id)); }; v['enter_' + id] = e => { e.stopPropagation(); this.setState({ hover: id }); }; }
+    if (cur) { const set = k => e => this.setParam(k, Number(e.target.value)); v.setDuration = set('duration'); v.setDelay = set('delay'); v.setDistance = set('distance'); v.setScale = set('scale'); v.setEasing = e => this.setParam('easing', e.target.value);
+      v.setTrigLoad = () => this.setParam('trigger', 'load'); v.setTrigHover = () => this.setParam('trigger', 'hover'); v.trigLoadStyle = cur.trigger === 'load' ? SEG_ON : SEG_OFF; v.trigHoverStyle = cur.trigger === 'hover' ? SEG_ON : SEG_OFF;
+      for (const [k, val] of [['1', '1'], ['2', '2'], ['3', '3'], ['Inf', 'infinite']]) { v['setIter' + k] = () => this.setParam('iteration', val); v['iter' + k + 'Style'] = cur.iteration === val ? SEG_ON : SEG_OFF; } }
+    return v;
+  }
+}
+</script>
+</body>
+</html>

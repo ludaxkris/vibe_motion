@@ -1,0 +1,36 @@
+import React from 'react';
+/** /p/{id} — editor in the tuning state, with live sliders, tabs and the unsaved guard. */
+export function Editor() {
+  const { Button, Slider, Segmented, Tabs, Chip, ElementTag, SectionCard, SectionLabel, Dialog, Toast, AnimationCard, VersionRow, ClonedPage, TopBar } = window.VM;
+  const [tab, setTab] = React.useState('Animate');
+  const [p, setP] = React.useState({ duration: 600, delay: 0, distance: 24, trigger: 'load', iteration: '1' });
+  const [unsaved, setUnsaved] = React.useState(true);
+  const [guard, setGuard] = React.useState(null);
+  const [toast, setToast] = React.useState('');
+  const [hover, setHover] = React.useState(null);
+  const set = k => e => { setP({ ...p, [k]: Number(e.target.value) }); setUnsaved(true); };
+  const go = fn => unsaved ? setGuard(() => fn) : fn();
+  const save = () => { setUnsaved(false); setGuard(null); setToast('Saved v6'); setTimeout(() => setToast(''), 2000); };
+  return <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface-canvas)', color: 'var(--text-body)', fontFamily: 'var(--font-sans)', position: 'relative', overflow: 'hidden' }}>
+    <TopBar unsaved={unsaved} onSave={save} onCancel={() => { setP({ duration: 600, delay: 0, distance: 24, trigger: 'load', iteration: '1' }); setUnsaved(false); }} />
+    <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+      <div style={{ flex: 1, minWidth: 0, padding: 'var(--canvas-inset) var(--canvas-inset) 0' }}><div style={{ height: '100%', background: '#fff', borderRadius: '10px 10px 0 0', boxShadow: 'var(--shadow-sheet)', overflow: 'hidden' }}><ClonedPage selected="h1" hover={hover} onHover={setHover} tag="h1 · Fade In Up" onSelect={id => id && id !== 'h1' && go(() => {})} /></div></div>
+      <div style={{ width: 'var(--panel-width)', flex: 'none', background: 'var(--surface-panel)', borderLeft: '1px solid var(--border-default)', display: 'flex', flexDirection: 'column' }}>
+        <Tabs tabs={['Animate', 'History', 'Export']} value={tab} disabledAll={unsaved} onChange={t => go(() => setTab(t))} />
+        <div style={{ margin: '0 12px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+          {tab === 'Animate' && <SectionCard tabbed>
+            <><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ElementTag>h1</ElementTag><b style={{ fontSize: 13, flex: 1 }}>Fade In Up</b><span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-link)', cursor: 'pointer' }}>Change</span></div><SectionLabel>Trigger</SectionLabel><Segmented options={[{ value: 'load', label: 'On load' }, { value: 'hover', label: 'On hover' }, { value: 'view', label: 'In view' }]} value={p.trigger} onChange={v => { setP({ ...p, trigger: v }); setUnsaved(true); }} /></>
+            <><Slider label="Duration" value={p.duration} min={100} max={3000} step={50} unit="ms" onChange={set('duration')} /><Slider label="Delay" value={p.delay} max={2000} step={50} unit="ms" onChange={set('delay')} /><Slider label="Distance" value={p.distance} max={200} unit="px" active onChange={set('distance')} /><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ width: 56, fontSize: 12, color: 'var(--text-muted)' }}>Easing</span><div style={{ flex: 1, height: 28, border: '1px solid var(--border-control)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px' }}><span style={{ font: 'var(--type-mono)' }}>ease-out</span><span style={{ color: 'var(--text-faint)', fontSize: 12 }}>▾</span></div><div style={{ width: 62, height: 28, borderRadius: 6, background: 'var(--surface-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ width: 40, height: 16, borderBottom: '1.5px solid var(--vm-accent)', borderLeft: '1.5px solid var(--vm-accent)', borderRadius: '0 0 0 14px' }} /></div></div><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ width: 56, fontSize: 12, color: 'var(--text-muted)' }}>Repeat</span><div style={{ flex: 1 }}><Segmented dense options={[{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }, { value: 'infinite', label: '∞' }]} value={p.iteration} onChange={v => { setP({ ...p, iteration: v }); setUnsaved(true); }} /></div></div></>
+            <><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Button size="sm" variant="secondary">↻ Replay</Button><span style={{ marginLeft: 'auto' }}><Button variant="danger">Remove animation</Button></span></div></>
+          </SectionCard>}
+          {tab === 'History' && <SectionCard tabbed style={{ padding: 0 }}><div style={{ margin: -14 }}><VersionRow version="v5" label="Pulse on .cta" meta="Current · 2h ago" current /><VersionRow version="v4" label="Slide In on 3 plan cards" meta="Yesterday" /><VersionRow version="v3" label="Fade In Up on h1" meta="Mon 14:02" /><VersionRow version="v2" label="− Pulse on .cta" meta="Mon" /><VersionRow version="v1" label="Pulse on .cta" meta="Mon" /><VersionRow version="v0" label="Cloned" meta="Mon · 42 elements" /></div></SectionCard>}
+          {tab === 'Export' && <SectionCard tabbed><><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}><SectionLabel>Exporting</SectionLabel><span style={{ fontSize: 12, whiteSpace: 'nowrap' }}><b style={{ font: 'var(--type-mono)', fontWeight: 600 }}>v5</b> <span style={{ color: 'var(--text-muted)' }}>· current</span></span></div><Segmented options={[{ value: 'full', label: 'Full page' }, { value: 'snip', label: 'Snippet' }]} value="full" /></><><pre style={{ margin: 0, background: 'var(--vm-ink)', color: '#d4d4d8', borderRadius: 8, padding: 12, font: '10.5px/1.6 var(--font-mono)', whiteSpace: 'pre' }}>{'/* Vibe Motion · v5 */\n@keyframes vm-fade-in-up-v1 { … }\n.vm-a1 {\n  --vm-distance: 24px;\n  animation: vm-fade-in-up-v1\n    600ms ease-out 0ms 1 both;\n}'}</pre><div style={{ display: 'flex', gap: 8 }}><Button variant="secondary" style={{ flex: 1 }}>Copy CSS</Button><Button variant="ink" style={{ flex: 1.3 }}>Download .zip</Button></div></></SectionCard>}
+        </div>
+        <div style={{ padding: '10px 16px 12px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>Save and Cancel live in the top bar so they’re never scrolled away.</div>
+      </div>
+    </div>
+    {guard && <Dialog absolute title="Save changes to h1?" actions={<><Button variant="danger" onClick={() => { setUnsaved(false); const f = guard; setGuard(null); f(); }}>Discard</Button><Button variant="secondary" style={{ marginLeft: 'auto' }} onClick={() => setGuard(null)}>Keep editing</Button><Button onClick={() => { const f = guard; save(); f(); }}>Save</Button></>}><div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>You changed <b style={{ color: 'var(--text-body)', fontWeight: 500 }}>Fade In Up</b> on this element but haven’t saved. Save to keep it as a new version, or discard to leave v5 as is.</div></Dialog>}
+    {toast && <Toast absolute>{toast}</Toast>}
+  </div>;
+}
+if (typeof window !== 'undefined') { window.VM = window.VM || {}; window.VM.Editor = Editor; }

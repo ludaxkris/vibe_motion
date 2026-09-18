@@ -1,0 +1,31 @@
+<!-- @dsCard group="Editor" viewport="1280x844" name="Editor UI kit" subtitle="Entry · Editor (tuning, live) · Help" -->
+<!-- @startingPoint section="Screens" subtitle="Vibe Motion editor, entry and help screens" viewport="1280x844" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../design-system/styles.css"><script type="importmap">{"imports":{"react":"https://esm.sh/react@18.3.1","react-dom/client":"https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1"}}</script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>html,body{margin:0;height:100%;background:var(--surface-canvas);font-family:var(--font-sans)}#root{height:100%;display:flex;flex-direction:column}.sw{height:36px;flex:none;display:flex;align-items:center;gap:4px;padding:0 12px;background:#fff;border-bottom:1px solid var(--border-default);font-size:12px}.sw span{padding:5px 10px;border-radius:6px;cursor:pointer;color:var(--text-muted)}.sw span.on{background:var(--surface-control);color:var(--text-tab-active);font-weight:600}.sw i{margin-left:auto;font-style:normal;color:var(--text-faint);font-size:11px}</style></head><body><div id="root"></div>
+<script type="text/babel" data-type="module" src="../design-system/components/core/Button.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/Input.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/NumberField.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/Slider.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/Segmented.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/Tabs.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/Chip.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/ElementTag.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/VersionBadge.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/SectionCard.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/Dialog.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/Toast.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/AnimationCard.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/VersionRow.jsx"></script>
+<script type="text/babel" data-type="module" src="../design-system/components/core/SelectionRing.jsx"></script>
+<script type="text/babel" data-type="module" src="./ClonedPage.jsx"></script>
+<script type="text/babel" data-type="module" src="./TopBar.jsx"></script>
+<script type="text/babel" data-type="module" src="./Editor.jsx"></script>
+<script type="text/babel" data-type="module" src="./Entry.jsx"></script>
+<script type="text/babel" data-type="module" src="./Help.jsx"></script>
+<script type="text/babel" data-type="module">
+import React from 'react'; import { createRoot } from 'react-dom/client';
+function Kit() { const [s, setS] = React.useState('Editor'); const { Entry, Editor, Help } = window.VM; const S = { Entry, Editor, Help }[s];
+  return <><div className="sw">{['Entry','Editor','Help'].map(k => <span key={k} className={k === s ? 'on' : ''} onClick={() => setS(k)}>{k}</span>)}<i>UI kit switcher — not part of the product</i></div><div style={{ flex: 1, minHeight: 0 }}><S /></div></>; }
+createRoot(document.getElementById('root')).render(<Kit />);
+</script></body></html>
