@@ -18,6 +18,7 @@ Rules
 | `.worktrees/feat/2-api-core` | feat/2-api-core | Claude Fable 5.1 (session with Chris) | 2 | Projects + clone service (SSRF guard, jsoup rewrite, data-vm-id), versions (diff, stateAt, 409, 422, restore), page serving | draft PR open, gates green, in review | 2026-09-18 | yes, additive: `GET /bridge/vm-bridge.js` |
 | `.worktrees/feat/3-web-shell-help` | feat/3-web-shell-help | Claude Fable 5.1 (session with Chris) | 3 | Web shell: URL entry → POST /projects, resizable split editor, Control Panel state machine + /dev route, live help page via runtime CSS generator, MSW mocks; re-skin from Claude Design mocks | in-progress | 2026-09-18 | no (consumes openapi + catalog read-only) |
 | .worktrees/docs/phase-4-plan | docs/phase-4-plan | Claude Fable 5.1 (session w/ Chris) | 4 (planning only) | Bridge protocol spec + Phase 4 implementation plan under `docs/plans/`. Docs only; no code. Reads the Phase 2/3 worktrees read-only. | in progress | 2026-09-18 | proposes bridge protocol additions (spec only) |
+| `.worktrees/chore/pr-comment-script` | chore/pr-comment-script | Claude Fable 5.1 (session with Chris) | — | `scripts/pr-comment.sh`: one-command upsert for agent PR comments (PR #7) | PR open | 2026-09-18 | no |
 
 ## Notices (newest first)
 
