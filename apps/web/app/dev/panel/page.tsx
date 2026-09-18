@@ -1,22 +1,14 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { env } from "@/lib/env";
 
-import { DevPanelDemo } from "./dev-panel-demo";
-
 /**
- * Dev-only: every Control Panel state side by side, plus a live instance
- * driven by buttons that fire `panel-machine` events. 404s in production —
- * element selection from the preview iframe (Phase 4) is the real trigger for
- * these states; until then this route is how they get exercised outside tests.
+ * The Control Panel gallery moved to `/dev`, which shows every panel state
+ * alongside the dialogs, the toast and the Entry states. Kept as a redirect so
+ * links and bookmarks to the old path still land somewhere useful — and still
+ * 404 in production, like everything under `/dev`.
  */
-export default function DevPanelPage() {
+export default function DevPanelPage(): never {
   if (env.isProduction) notFound();
-  // Minimal landmark until Task 9 re-skins this route: `app/layout.tsx` no
-  // longer wraps pages in `<main>` (the top bar has to stay a banner).
-  return (
-    <main className="flex min-h-0 flex-1 flex-col">
-      <DevPanelDemo />
-    </main>
-  );
+  redirect("/dev");
 }

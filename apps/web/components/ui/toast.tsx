@@ -29,6 +29,23 @@ export function useToast() {
 }
 
 /**
+ * The pill itself (`docs/design/design-system/components/core/Toast.jsx`):
+ * black, 12px/500, one line however long the message, sliding up 8px over
+ * `--dur-base`. Separate from `Toaster` so `/dev` can show a standing one
+ * without a timer running under it.
+ */
+export function ToastPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      data-slot="toast"
+      className="rounded-pill bg-vm-ink px-3.5 py-2 text-sm font-medium whitespace-nowrap text-vm-ink-inverse shadow-popover animate-in fade-in slide-in-from-bottom-2 duration-(--dur-base) ease-standard"
+    >
+      {children}
+    </span>
+  )
+}
+
+/**
  * Mount point for the confirmation pill, one per app (`app/providers.tsx`).
  *
  * The live region stays in the DOM whether or not a toast is showing, so the
@@ -52,15 +69,7 @@ export function Toaster() {
       aria-live="polite"
       className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center"
     >
-      {current ? (
-        <span
-          key={current.id}
-          data-slot="toast"
-          className="rounded-pill bg-vm-ink px-3.5 py-2 text-sm font-medium whitespace-nowrap text-vm-ink-inverse shadow-popover animate-in fade-in slide-in-from-bottom-2 duration-(--dur-base) ease-standard"
-        >
-          {current.message}
-        </span>
-      ) : null}
+      {current ? <ToastPill key={current.id}>{current.message}</ToastPill> : null}
     </div>
   )
 }
