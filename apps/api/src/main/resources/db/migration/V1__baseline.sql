@@ -22,10 +22,10 @@ create table versions (
     catalog_version   text        not null,
     diff              jsonb       not null,
     created_at        timestamptz not null default now(),
+    -- Postgres backs this constraint with a btree over (project_id, seq), which is also the
+    -- index every "versions of a project, in order" read wants. No separate index is needed.
     constraint versions_project_id_seq_key unique (project_id, seq)
 );
-
-create index versions_project_id_seq_idx on versions (project_id, seq);
 
 -- projects and versions point at each other, so this side is added afterwards and deferred:
 -- creating a project with its version 0, or deleting a project, happens in one transaction.

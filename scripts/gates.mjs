@@ -17,7 +17,11 @@ const gates = [
   // ---- catalog -------------------------------------------------------------
   { group: "catalog", name: "catalog validate", cmd: "pnpm", args: ["--filter", "animation-catalog", "validate"] },
   { group: "catalog", name: "catalog immutable", cmd: "pnpm", args: ["--filter", "animation-catalog", "check-immutable"] },
+  { group: "catalog", name: "catalog typecheck", cmd: "pnpm", args: ["--filter", "animation-catalog", "typecheck"] },
   { group: "catalog", name: "catalog test", cmd: "pnpm", args: ["--filter", "animation-catalog", "test"] },
+  // Generated artifacts (catalog TS types, web API client) must be committed in sync with
+  // their sources, otherwise a contract edit can silently leave another app on a stale client.
+  { group: "catalog", name: "generated artifacts up to date", cmd: "node", args: ["scripts/check-generated.mjs"] },
   // ---- web -----------------------------------------------------------------
   { group: "web", name: "web lint", cmd: "pnpm", args: ["--filter", "web", "lint"] },
   { group: "web", name: "web typecheck", cmd: "pnpm", args: ["--filter", "web", "typecheck"] },

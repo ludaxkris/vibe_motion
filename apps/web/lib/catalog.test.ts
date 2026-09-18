@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -9,7 +12,12 @@ import {
 
 describe("catalog", () => {
   it("authors against the version in packages/animation-catalog/current", () => {
-    expect(CURRENT_CATALOG_VERSION).toBe("1.0.0");
+    // Reads the real pointer file so bumping `current` without updating lib/catalog.ts fails here.
+    const current = readFileSync(
+      path.resolve(__dirname, "../../../packages/animation-catalog/current"),
+      "utf8",
+    ).trim();
+    expect(CURRENT_CATALOG_VERSION).toBe(current);
     expect(getCatalog().version).toBe(CURRENT_CATALOG_VERSION);
   });
 

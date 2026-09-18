@@ -44,7 +44,7 @@ object Versions : Table("versions") {
     override val primaryKey = PrimaryKey(id)
 
     init {
+        // Also the read index for "versions of a project, in order"; see V1__baseline.sql.
         uniqueIndex("versions_project_id_seq_key", projectId, seq)
-        index("versions_project_id_seq_idx", false, projectId, seq)
     }
 }

@@ -271,7 +271,12 @@ export interface components {
             /** Format: uri */
             sourceUrl: string;
             title: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Always present. The DB column is nullable only because projects and versions reference
+             *     each other (deferrable FK); the API creates a project and its version 0 in one transaction
+             *     and never exposes a project without a current version.
+             */
             currentVersionId: string;
             /** Format: date-time */
             createdAt: string;

@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "pnpm --filter web dev",
     "gen:client": "pnpm --filter web gen:client",
-    "gen:types": "pnpm --filter animation-catalog gen:types",
+    "gen:types": "pnpm --filter animation-catalog gen-types",
     "gates": "node scripts/gates.mjs",
     "gates:web": "node scripts/gates.mjs web",
     "gates:api": "node scripts/gates.mjs api",

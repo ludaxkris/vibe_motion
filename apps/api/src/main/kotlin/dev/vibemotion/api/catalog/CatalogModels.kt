@@ -6,7 +6,9 @@ import kotlinx.serialization.Serializable
 /**
  * Kotlin mirror of `packages/animation-catalog/schema.json`. The JSON Schema stays authoritative;
  * these classes exist so the API fails loudly at startup if a published catalog file ever drifts
- * away from it. Unknown keys are *not* tolerated, for the same reason.
+ * away from it. Keys this build does not know about are ignored, because a MINOR catalog release
+ * may add optional fields and an older API must still boot; unknown enum values are still fatal.
+ * See the `Json` configuration in `ClasspathCatalogRepository`.
  */
 @Serializable
 data class Catalog(

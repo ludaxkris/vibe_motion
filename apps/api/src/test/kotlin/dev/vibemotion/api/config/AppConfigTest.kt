@@ -3,6 +3,7 @@ package dev.vibemotion.api.config
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 
 class AppConfigTest :
     FunSpec({
@@ -30,6 +31,27 @@ class AppConfigTest :
 
             settings.user shouldBe "vibe@motion"
             settings.password shouldBe "p@ss:word"
+        }
+
+        test("keeps a literal + in a password rather than turning it into a space") {
+            val settings = AppConfig.parseDatabaseUrl("postgresql://vibe_motion:pa+ss@db.internal:5432/vibe_motion")
+
+            settings.user shouldBe "vibe_motion"
+            settings.password shouldBe "pa+ss"
+        }
+
+        test("decodes an escaped percent sign into a single percent sign") {
+            val settings = AppConfig.parseDatabaseUrl("postgresql://vibe_motion:pa%25ss@db.internal:5432/vibe_motion")
+
+            settings.user shouldBe "vibe_motion"
+            settings.password shouldBe "pa%ss"
+        }
+
+        test("splits user from password before decoding, so an escaped colon stays inside the user") {
+            val settings = AppConfig.parseDatabaseUrl("postgresql://us%3Aer:pw@db.internal:5432/vibe_motion")
+
+            settings.user shouldBe "us:er"
+            settings.password shouldBe "pw"
         }
 
         test("tolerates a URL with no credentials") {
@@ -92,5 +114,32 @@ class AppConfigTest :
             val env = mapOf("DATABASE_URL" to "postgresql://u:p@localhost:5432/vibe_motion", "PORT" to "eighty")
 
             shouldThrow<IllegalStateException> { AppConfig.fromEnv { env[it] } }
+        }
+
+        // WEB_ORIGIN feeds the CORS allow-list. A value Ktor cannot read as an absolute origin
+        // silently allow-lists nothing, so the browser sees every request as cross-origin.
+        listOf(
+            "vibe-motion-web.onrender.com",
+            "//vibe-motion-web.onrender.com",
+            "localhost:3000",
+            "ftp://vibe-motion-web.onrender.com",
+            "http://",
+            "/",
+        ).forEach { origin ->
+            test("fails fast when WEB_ORIGIN is '$origin'") {
+                val env = mapOf("DATABASE_URL" to "postgresql://u:p@localhost:5432/vibe_motion", "WEB_ORIGIN" to origin)
+
+                val failure = shouldThrow<IllegalStateException> { AppConfig.fromEnv { env[it] } }
+
+                failure.message.orEmpty() shouldContain "WEB_ORIGIN"
+            }
+        }
+
+        test("accepts an http(s) WEB_ORIGIN with a host, port optional") {
+            listOf("http://localhost:3000", "https://vibe-motion-web.onrender.com", "HTTPS://Example.com/").forEach { origin ->
+                val env = mapOf("DATABASE_URL" to "postgresql://u:p@localhost:5432/vibe_motion", "WEB_ORIGIN" to origin)
+
+                AppConfig.fromEnv { env[it] }.webOrigin shouldBe origin
+            }
         }
     })

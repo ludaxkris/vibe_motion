@@ -74,6 +74,8 @@ fun Application.apiModule(
     }
 
     install(CORS) {
+        // AppConfig has already refused anything Url() cannot read as an absolute http(s) origin,
+        // so this cannot quietly allow-list nothing.
         val origin = Url(config.webOrigin)
         allowHost(origin.hostWithPort, schemes = listOf(origin.protocol.name))
         allowMethod(HttpMethod.Get)

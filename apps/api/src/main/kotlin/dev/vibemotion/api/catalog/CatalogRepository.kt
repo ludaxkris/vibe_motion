@@ -43,8 +43,16 @@ class ClasspathCatalogRepository private constructor(
         private const val ROOT = "catalog"
         private val log = LoggerFactory.getLogger(ClasspathCatalogRepository::class.java)
 
-        /** Strict on purpose: an unknown key means the catalog drifted from schema.json. */
-        private val json = Json { ignoreUnknownKeys = false }
+        /**
+         * Tolerant about keys, strict about values.
+         *
+         * A MINOR catalog release may add optional fields (CLAUDE.md), and this loader runs in
+         * `main()`: rejecting an unknown key would turn "the catalog gained a field" into "the
+         * API will not boot". Clients still get the new field, because [rawJson] serves the file
+         * verbatim. Unknown *enum* values stay fatal — a new category or trigger is a MAJOR
+         * change, and silently dropping one would mean serving animations we cannot honour.
+         */
+        private val json = Json { ignoreUnknownKeys = true }
 
         fun load(classLoader: ClassLoader = ClasspathCatalogRepository::class.java.classLoader): ClasspathCatalogRepository {
             val index =

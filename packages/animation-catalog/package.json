@@ -14,15 +14,22 @@
     "./schema.json": "./schema.json",
     "./versions/*": "./versions/*"
   },
-  "files": ["dist", "versions", "current", "schema.json"],
+  "files": [
+    "dist",
+    "versions",
+    "current",
+    "schema.json"
+  ],
   "scripts": {
     "validate": "node scripts/validate.mjs",
     "check-immutable": "node scripts/check-immutable.mjs",
     "gen-types": "node scripts/gen-types.mjs && tsc -p tsconfig.build.json",
     "build": "pnpm gen-types",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
+    "@types/css-tree": "^2.3.11",
     "@types/node": "^22.18.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",

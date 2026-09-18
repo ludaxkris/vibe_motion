@@ -3,8 +3,10 @@
 // on the base branch must be byte-identical on this branch. Only NEW version
 // files and the `current` pointer may change.
 //
-// Base ref: $CATALOG_BASE_REF, else origin/main, else main. In CI, the checkout
-// must include the base ref (fetch-depth: 0 or an explicit fetch).
+// Base ref: $CATALOG_BASE_REF, else origin/main, else main; the comparison point is
+// the merge-base of that ref and HEAD, so a branch cut before a newer catalog version
+// landed on main is not blamed for "deleting" it. In CI, the checkout must include
+// the base ref (fetch-depth: 0 or an explicit fetch).
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -36,13 +38,19 @@ if (!baseRef) {
   console.error("catalog immutable: cannot find a base ref (origin/main or main). Set CATALOG_BASE_REF.");
   process.exit(1);
 }
+let baseCommit = baseRef;
+try {
+  baseCommit = git(["merge-base", baseRef, "HEAD"]);
+} catch {
+  /* unrelated histories or detached state: fall back to the ref itself */
+}
 
 // Path of versions/ relative to the repo root, as git sees it (avoids /var vs /private/var symlink issues).
 const relVersionsDir = `${git(["rev-parse", "--show-prefix"])}versions`;
 
 let baseFiles;
 try {
-  baseFiles = git(["ls-tree", "--full-tree", "--name-only", baseRef, `${relVersionsDir}/`]).split("\n").filter(Boolean);
+  baseFiles = git(["ls-tree", "--full-tree", "--name-only", baseCommit, `${relVersionsDir}/`]).split("\n").filter(Boolean);
 } catch {
   baseFiles = []; // base has no catalog yet (first introduction) — nothing to protect
 }
@@ -56,7 +64,7 @@ for (const rel of baseFiles) {
     violations.push(`${name}: exists on ${baseRef} but was deleted on this branch`);
     continue;
   }
-  const baseBlob = execFileSync("git", ["show", `${baseRef}:${rel}`], { cwd: pkgRoot });
+  const baseBlob = execFileSync("git", ["show", `${baseCommit}:${rel}`], { cwd: pkgRoot });
   if (sha(baseBlob) !== sha(readFileSync(local.file))) {
     violations.push(`${name}: differs from ${baseRef}. Published catalog files are immutable; add a new version file instead.`);
   }
@@ -67,4 +75,4 @@ if (violations.length) {
   for (const v of violations) console.error(`  - ${v}`);
   process.exit(1);
 }
-console.log(`catalog immutable: OK (${baseFiles.length} published file(s) on ${baseRef} unchanged)`);
+console.log(`catalog immutable: OK (${baseFiles.length} published file(s) at merge-base with ${baseRef} unchanged)`);

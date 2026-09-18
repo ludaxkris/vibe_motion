@@ -24,6 +24,7 @@ import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.update
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
+import java.sql.DriverManager
 import java.time.OffsetDateTime
 import java.util.UUID
 
@@ -88,6 +89,27 @@ class ApiIntegrationTest :
                 response.status shouldBe HttpStatusCode.NotFound
                 json.decodeFromString<ApiError>(response.bodyAsText()).code shouldBe "not_found"
             }
+        }
+
+        test("versions has exactly one index backing (project_id, seq)") {
+            // `unique (project_id, seq)` already creates a btree over exactly those columns. A
+            // second, non-unique copy of it serves no query the first cannot, and costs every
+            // insert an extra index write plus the disk to keep it on.
+            val covering = mutableListOf<String>()
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+                connection.createStatement().use { statement ->
+                    val sql = "select indexname, indexdef from pg_indexes where tablename = 'versions' order by indexname"
+                    statement.executeQuery(sql).use { rows ->
+                        while (rows.next()) {
+                            if (rows.getString("indexdef").contains("(project_id, seq)")) {
+                                covering += rows.getString("indexname")
+                            }
+                        }
+                    }
+                }
+            }
+
+            covering shouldBe listOf("versions_project_id_seq_key")
         }
 
         test("the Exposed tables round-trip against the baseline migration") {

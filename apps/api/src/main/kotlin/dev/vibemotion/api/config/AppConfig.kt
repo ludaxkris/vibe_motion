@@ -43,7 +43,7 @@ data class AppConfig(
                     ?: throw IllegalStateException("DATABASE_URL is required")
             return AppConfig(
                 port = env.long("PORT", DEFAULT_PORT.toLong()).toInt(),
-                webOrigin = env("WEB_ORIGIN")?.takeIf { it.isNotBlank() } ?: DEFAULT_WEB_ORIGIN,
+                webOrigin = requireWebOrigin(env("WEB_ORIGIN")?.takeIf { it.isNotBlank() } ?: DEFAULT_WEB_ORIGIN),
                 database = parseDatabaseUrl(databaseUrl),
                 cloneMaxBytes = env.long("CLONE_MAX_BYTES", DEFAULT_CLONE_MAX_BYTES),
                 cloneTimeoutMs = env.long("CLONE_TIMEOUT_MS", DEFAULT_CLONE_TIMEOUT_MS),
@@ -52,6 +52,31 @@ data class AppConfig(
                         ?: env("RENDER_GIT_COMMIT")?.takeIf { it.isNotBlank() }
                         ?: "dev",
             )
+        }
+
+        /**
+         * Checks that [raw] is something the CORS plugin can turn into an allow-listed origin,
+         * and returns it unchanged.
+         *
+         * `WEB_ORIGIN` is only ever read as an absolute origin (scheme + host + optional port).
+         * A value without a scheme parses without complaint but allow-lists nothing, so every
+         * browser request would fail CORS at runtime with no hint as to why. Refusing to start
+         * turns that into a one-line deploy failure instead.
+         */
+        fun requireWebOrigin(raw: String): String {
+            val value = raw.trim()
+            val uri =
+                runCatching { URI(value) }.getOrElse {
+                    throw IllegalStateException("WEB_ORIGIN must be an absolute http(s) URL, got '$value'", it)
+                }
+            val scheme = uri.scheme?.lowercase()
+            check(scheme == "http" || scheme == "https") {
+                "WEB_ORIGIN must be an absolute http(s) URL such as https://app.example.com, got '$value'"
+            }
+            check(!uri.host.isNullOrBlank()) {
+                "WEB_ORIGIN must include a host, got '$value'"
+            }
+            return value
         }
 
         /**
@@ -77,7 +102,10 @@ data class AppConfig(
             val database = uri.path.orEmpty().removePrefix("/")
             require(database.isNotBlank()) { "DATABASE_URL has no database name" }
 
-            val credentials = uri.userInfo.orEmpty().split(":", limit = 2)
+            // Split the *raw* userinfo: URI.getUserInfo() has already percent-decoded it, so an
+            // escaped colon inside the user name (us%3Aer) would be indistinguishable from the
+            // separator and would move half the user into the password.
+            val credentials = uri.rawUserInfo.orEmpty().split(":", limit = 2)
             val jdbcUrl =
                 buildString {
                     append("jdbc:postgresql://")
@@ -98,7 +126,15 @@ data class AppConfig(
             )
         }
 
-        private fun decode(value: String): String = URLDecoder.decode(value, StandardCharsets.UTF_8)
+        /**
+         * Percent-decodes one half of a URI userinfo component.
+         *
+         * [URLDecoder] implements `application/x-www-form-urlencoded`, where `+` means a space.
+         * A URI userinfo is not a form body: `+` is a literal there, and a password of `pa+ss`
+         * must survive as `pa+ss`. Escaping it before decoding keeps that true while still
+         * decoding every genuine `%xx` escape.
+         */
+        private fun decode(value: String): String = URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8)
 
         private fun ((String) -> String?).long(
             key: String,

@@ -12,11 +12,6 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
-
-env:
-  GATES_ALLOW_SKIPPED: "1" # each job runs one group; SKIPPED only for gates outside that group
 
 jobs:
   catalog:
@@ -32,7 +27,6 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter animation-catalog gen-types
       - run: pnpm gates:catalog
 
   web:
@@ -46,7 +40,6 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter animation-catalog gen-types
       - run: pnpm gates:web
         env:
           NEXT_TELEMETRY_DISABLED: "1"
@@ -76,7 +69,6 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter animation-catalog gen-types
       - run: pnpm --filter web exec playwright install --with-deps chromium
       - run: pnpm gates:e2e
         env:
@@ -93,6 +85,9 @@ jobs:
     needs: [catalog, web, api, e2e]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
     steps:
       - uses: actions/github-script@v7
         env:

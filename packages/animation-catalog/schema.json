@@ -72,7 +72,35 @@
           "type": "array",
           "description": "Adjustable variables. The five standard keys (duration, delay, easing, iteration, direction) map to animation-* properties; any other key must declare cssVar and is set as a custom property on the element.",
           "items": {
-            "$ref": "#/$defs/param"
+            "allOf": [
+              {
+                "$ref": "#/$defs/param"
+              },
+              {
+                "if": {
+                  "properties": {
+                    "key": {
+                      "not": {
+                        "enum": [
+                          "duration",
+                          "delay",
+                          "easing",
+                          "iteration",
+                          "direction"
+                        ]
+                      }
+                    }
+                  },
+                  "type": "object"
+                },
+                "then": {
+                  "required": [
+                    "cssVar"
+                  ],
+                  "type": "object"
+                }
+              }
+            ]
           }
         },
         "triggers": {
@@ -159,30 +187,6 @@
           "pattern": "^--vm-[a-z][a-z0-9-]*$"
         }
       },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "key": {
-                "not": {
-                  "enum": [
-                    "duration",
-                    "delay",
-                    "easing",
-                    "iteration",
-                    "direction"
-                  ]
-                }
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "cssVar"
-            ]
-          }
-        }
-      ],
       "title": "CatalogParam"
     }
   }

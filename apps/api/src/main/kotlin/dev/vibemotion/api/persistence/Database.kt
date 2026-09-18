@@ -4,6 +4,7 @@ import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import dev.vibemotion.api.config.DatabaseSettings
 import org.flywaydb.core.Flyway
+import org.flywaydb.core.api.configuration.FluentConfiguration
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.slf4j.LoggerFactory
 import javax.sql.DataSource
@@ -30,6 +31,10 @@ class AppDatabase private constructor(
         private const val MAX_POOL_SIZE = 8
         private const val CONNECTION_TIMEOUT_MS = 5_000L
 
+        /** 30 attempts, 2s apart: ~60s of waiting for Postgres before startup is allowed to fail. */
+        private const val CONNECT_RETRIES = 30
+        private const val CONNECT_RETRY_INTERVAL_SECONDS = 2
+
         /** Builds the pool, migrates, and connects Exposed. */
         fun start(settings: DatabaseSettings): AppDatabase {
             val dataSource = pool(settings)
@@ -52,21 +57,35 @@ class AppDatabase private constructor(
                     this.maximumPoolSize = maximumPoolSize
                     connectionTimeout = connectionTimeoutMs
                     poolName = "vibe-motion"
-                    // Let the service boot (and report db: down) instead of dying when Postgres
-                    // is briefly unavailable.
+                    // Never open a connection while constructing the pool: construction always
+                    // succeeds and a connection failure surfaces on first use instead. Waiting
+                    // for a briefly unavailable Postgres is [flywayConfiguration]'s job at
+                    // startup; afterwards the pool simply lets /health report "db: down" rather
+                    // than throwing out of the constructor.
                     initializationFailTimeout = -1
                 }
             return HikariDataSource(config)
         }
 
+        /**
+         * Flyway's startup configuration.
+         *
+         * [migrate] runs on the fatal startup path, and Flyway's default `connectRetries` is 0,
+         * so a Postgres that is a few seconds behind the service on a cold deploy or a failover
+         * would kill the process — and the platform would restart it straight back into the same
+         * race. Retrying instead gives startup roughly a minute of patience before it gives up,
+         * which is still fast enough for a genuinely misconfigured `DATABASE_URL` to be obvious.
+         */
+        fun flywayConfiguration(dataSource: DataSource): FluentConfiguration =
+            Flyway
+                .configure()
+                .dataSource(dataSource)
+                .locations("classpath:db/migration")
+                .connectRetries(CONNECT_RETRIES)
+                .connectRetriesInterval(CONNECT_RETRY_INTERVAL_SECONDS)
+
         fun migrate(dataSource: DataSource) {
-            val applied =
-                Flyway
-                    .configure()
-                    .dataSource(dataSource)
-                    .locations("classpath:db/migration")
-                    .load()
-                    .migrate()
+            val applied = flywayConfiguration(dataSource).load().migrate()
             log.info("Flyway applied {} migration(s), schema at {}", applied.migrationsExecuted, applied.targetSchemaVersion)
         }
 

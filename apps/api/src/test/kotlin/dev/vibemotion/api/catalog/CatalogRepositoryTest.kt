@@ -1,5 +1,6 @@
 package dev.vibemotion.api.catalog
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeSorted
@@ -7,10 +8,13 @@ import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotBeBlank
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.InputStream
 
 class CatalogRepositoryTest :
     FunSpec({
@@ -78,4 +82,80 @@ class CatalogRepositoryTest :
             repository.catalog("9.9.9") shouldBe null
             repository.rawJson("9.9.9") shouldBe null
         }
+
+        test("loads a catalog carrying fields this build does not know about") {
+            // A MINOR catalog release may add optional fields (CLAUDE.md). The loader runs in
+            // main(), so an API build that predates such a release must still boot, and must
+            // still serve the file verbatim so newer clients see the new fields.
+            val loader =
+                classLoaderServing(
+                    """
+                    {
+                      "version": "1.0.0",
+                      "generatedAt": "2026-01-01T00:00:00Z",
+                      "entries": [
+                        {
+                          "id": "vm-fade-in",
+                          "name": "Fade In",
+                          "category": "entrance",
+                          "description": "Fades the element in.",
+                          "keyframes": "@keyframes vm-fade-in { from { opacity: 0 } to { opacity: 1 } }",
+                          "params": [],
+                          "triggers": ["load"],
+                          "reducedMotionFallback": "none"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+
+            val loaded = ClasspathCatalogRepository.load(loader)
+
+            loaded.currentVersion shouldBe "1.0.0"
+            val entries = loaded.catalog("1.0.0").shouldNotBeNull().entries
+            entries.single().id shouldBe "vm-fade-in"
+            loaded.rawJson("1.0.0").shouldNotBeNull() shouldContain "reducedMotionFallback"
+        }
+
+        test("still refuses a catalog that uses an enum value this build cannot honour") {
+            // Tolerating unknown *keys* must not become tolerating unknown *values*: a category
+            // or trigger the service does not understand is a MAJOR change, not a MINOR one.
+            val loader =
+                classLoaderServing(
+                    """
+                    {
+                      "version": "1.0.0",
+                      "entries": [
+                        {
+                          "id": "vm-teleport",
+                          "name": "Teleport",
+                          "category": "teleportation",
+                          "description": "Not a category this build knows.",
+                          "keyframes": "@keyframes vm-teleport { from { opacity: 0 } to { opacity: 1 } }",
+                          "params": [],
+                          "triggers": ["load"]
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+
+            shouldThrow<SerializationException> { ClasspathCatalogRepository.load(loader) }
+        }
     })
+
+/**
+ * Serves the three catalog resources from memory, so a synthetic catalog file can be fed to
+ * [ClasspathCatalogRepository.load] without disturbing the ones bundled in the jar.
+ */
+private fun classLoaderServing(catalogJson: String): ClassLoader =
+    object : ClassLoader(null) {
+        private val files =
+            mapOf(
+                "catalog/versions.txt" to "1.0.0\n",
+                "catalog/current" to "1.0.0\n",
+                "catalog/versions/1.0.0.json" to catalogJson,
+            )
+
+        override fun getResourceAsStream(name: String): InputStream? = files[name]?.byteInputStream()
+    }
