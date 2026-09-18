@@ -56,10 +56,16 @@ export function getEntry(version: string, animationId: string): CatalogEntry | u
   return getCatalog(version)?.entries.find((e) => e.id === animationId);
 }
 
-/** Keyframes name used in the runtime and in exports. Includes the catalog major version so
- *  assignments authored under different catalog versions never collide. */
+const SEMVER_RE = /^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$/;
+
+/** Keyframes name used in the runtime and in exports. Named by the full (animationId,
+ *  catalogVersion) pair — which is already the immutable identity of a keyframes template —
+ *  so assignments authored under different catalog versions never collide, by construction. */
 export function keyframesName(animationId: string, version: string): string {
-  return \`vm-\${animationId}-v\${version.split(".")[0]}\`;
+  if (!SEMVER_RE.test(version)) {
+    throw new Error(\`keyframesName: "\${version}" is not a strict MAJOR.MINOR.PATCH semver\`);
+  }
+  return \`vm-\${animationId}-v\${version.split(".").join("-")}\`;
 }
 `;
 writeFileSync(path.join(srcDir, "index.ts"), index);
@@ -67,9 +73,25 @@ writeFileSync(path.join(srcDir, "index.ts"), index);
 // manifest.json: a tiny, committed cross-language source of truth for the set of
 // (version, animationId) pairs, so Kotlin and TS tests can assert they agree without
 // either side importing the other's tooling. Ascending semver, ids in file order.
+//
+// keyframesNames additionally pins the expected keyframesName() output for every
+// (version, id) pair, so the TS and Kotlin implementations of keyframesName() can each be
+// proven to agree with this committed manifest without importing each other's code.
+function keyframesNameForManifest(animationId, version) {
+  return `vm-${animationId}-v${version.split(".").join("-")}`;
+}
+
 const manifest = {
   current,
   versions: Object.fromEntries(files.map(({ version, file }) => [version, readCatalog(file).entries.map((e) => e.id)])),
+  keyframesNames: Object.fromEntries(
+    files.map(({ version, file }) => [
+      version,
+      Object.fromEntries(
+        readCatalog(file).entries.map((e) => [e.id, keyframesNameForManifest(e.id, version)]),
+      ),
+    ]),
+  ),
 };
 writeFileSync(path.join(pkgRoot, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 

@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 private data class CatalogManifest(
     val current: String,
     val versions: Map<String, List<String>>,
+    val keyframesNames: Map<String, Map<String, String>> = emptyMap(),
 )
 
 private val manifestJsonFormat = Json { ignoreUnknownKeys = true }
@@ -56,6 +57,14 @@ class CatalogManifestTest :
                         "manifest lists version $version but the repository has no catalog for it"
                     }
                 entries.map { it.id } shouldBe ids
+            }
+        }
+
+        test("keyframesName() matches manifest.keyframesNames for every (version, id) pair") {
+            manifest.keyframesNames.forEach { (version, byId) ->
+                byId.forEach { (id, expected) ->
+                    keyframesName(id, version) shouldBe expected
+                }
             }
         }
     })

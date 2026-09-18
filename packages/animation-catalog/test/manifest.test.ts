@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CATALOGS, CATALOG_VERSIONS, CURRENT_VERSION } from "../src/index.js";
+import { CATALOGS, CATALOG_VERSIONS, CURRENT_VERSION, keyframesName } from "../src/index.js";
 import manifest from "../manifest.json" with { type: "json" };
 
 /**
@@ -23,6 +23,14 @@ describe("manifest.json agrees with CATALOGS", () => {
     it(`${version}: animation ids match, in file order`, () => {
       const ids = CATALOGS[version].entries.map((e) => e.id);
       expect(manifest.versions[version]).toEqual(ids);
+    });
+
+    it(`${version}: keyframesName() matches manifest.keyframesNames for every id`, () => {
+      for (const entry of CATALOGS[version].entries) {
+        expect(keyframesName(entry.id, version)).toBe(
+          (manifest.keyframesNames as Record<string, Record<string, string>>)[version][entry.id],
+        );
+      }
     });
   }
 });
