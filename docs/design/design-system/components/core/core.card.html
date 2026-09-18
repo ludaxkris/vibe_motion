@@ -1,0 +1,39 @@
+<!-- @dsCard group="Components" viewport="700x820" name="Core controls" subtitle="Every primitive the editor uses, in its key states" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css"><script type="importmap">{"imports":{"react":"https://esm.sh/react@18.3.1","react-dom/client":"https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1"}}</script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>body{margin:0;padding:16px;background:#fff;font:var(--type-ui);color:var(--text-body)}.g{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px}.b{display:flex;flex-direction:column;gap:8px}.b h4{margin:0;font:var(--type-label);text-transform:uppercase;letter-spacing:var(--tracking-label);color:var(--text-muted)}.r{display:flex;gap:8px;align-items:center;flex-wrap:wrap}</style></head><body><div id="root"></div>
+<script type="text/babel" data-type="module" src="../../components/core/Button.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/Input.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/NumberField.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/Slider.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/Segmented.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/Tabs.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/Chip.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/ElementTag.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/VersionBadge.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/SectionCard.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/Dialog.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/Toast.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/AnimationCard.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/VersionRow.jsx"></script>
+<script type="text/babel" data-type="module" src="../../components/core/SelectionRing.jsx"></script>
+<script type="text/babel" data-type="module">
+import React from 'react'; import { createRoot } from 'react-dom/client';
+const { Button, Input, Slider, Segmented, Tabs, Chip, ElementTag, VersionBadge, SectionCard, SectionLabel, Dialog, Toast, AnimationCard, VersionRow, SelectionRing } = window.VM;
+function Card() {
+  const [v, setV] = React.useState(600);
+  return <div className="g">
+    <div className="b"><h4>Button</h4><div className="r"><Button glow>Save</Button><Button variant="secondary">Cancel</Button><Button variant="secondary" icon="✦">Auto-generate</Button><Button variant="ink">Clone</Button><Button disabled>Save</Button><Button variant="danger">Remove animation</Button></div><div className="r" style={{background:'var(--vm-bar)',padding:8,borderRadius:8}}><Button variant="bar">Cancel</Button><Button variant="barPrimary">Save</Button><VersionBadge version="v5" onBar /><VersionBadge unsaved onBar /></div></div>
+    <div className="b"><h4>Input</h4><Input size="xl" prefix="https://" value="nimbus.app/pricing" /><Input size="sm" prefix="⌕" placeholder="Search animations" /><Input value="app.nimbus.app/admin" state="error" /></div>
+    <div className="b"><h4>Slider + NumberField</h4><Slider label="Duration" value={v} min={100} max={3000} step={50} unit="ms" onChange={e=>setV(Number(e.target.value))} /><Slider label="Distance" value={24} max={200} unit="px" active /></div>
+    <div className="b"><h4>Segmented · Tabs · Chip</h4><Segmented options={[{value:'load',label:'On load'},{value:'hover',label:'On hover'},{value:'view',label:'In view'}]} value="load" /><Segmented dense options={[1,2,3,'∞'].map(x=>({value:String(x),label:String(x)}))} value="1" /><div style={{background:'var(--vm-panel)',borderRadius:8}}><Tabs tabs={['Animate','History','Export']} value="Animate" /></div><div className="r"><Chip selected>All</Chip><Chip>Entrance</Chip><Chip>Attention</Chip></div></div>
+    <div className="b"><h4>ElementTag · VersionBadge</h4><div className="r"><ElementTag>h1</ElementTag><ElementTag tone="muted" size="sm">.plan ×3</ElementTag><ElementTag tone="muted" size="sm">a.cta</ElementTag><VersionBadge version="v5" /><VersionBadge unsaved /></div></div>
+    <div className="b"><h4>AnimationCard</h4><div className="r" style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr'}}><AnimationCard name="Fade In Up" /><AnimationCard name="Slide In Left" active demoStyle={{transform:'translateX(-8px)',opacity:.7}} /><AnimationCard name="Pulse" demoStyle={{boxShadow:'0 0 0 4px var(--vm-accent-soft)'}} /></div></div>
+    <div className="b"><h4>SectionCard (tabbed)</h4><div style={{background:'var(--vm-panel)',padding:'0 12px 12px',borderRadius:8}}><Tabs tabs={['Animate','History','Export']} value="Animate" /><SectionCard tabbed><><div className="r"><ElementTag>h1</ElementTag><b style={{fontSize:13}}>Fade In Up</b><span style={{marginLeft:'auto',fontSize:12,fontWeight:500,color:'var(--text-link)'}}>Change</span></div><SectionLabel>Trigger</SectionLabel><Segmented options={[{value:'load',label:'On load'},{value:'hover',label:'On hover'}]} value="load" /></><><Slider label="Delay" value={0} max={2000} unit="ms" /></></SectionCard></div></div>
+    <div className="b"><h4>VersionRow</h4><div style={{border:'1px solid var(--border-default)',borderRadius:8,overflow:'hidden'}}><VersionRow version="v5" label="Pulse on .cta" meta="Current · 2h ago" current /><VersionRow version="v3" label="Fade In Up on h1" meta="Viewing · Mon" viewing><div className="r"><Button size="sm">Restore</Button><Button size="sm" variant="secondary">Export v3</Button></div></VersionRow></div></div>
+    <div className="b"><h4>SelectionRing</h4><div className="r" style={{padding:'24px 8px 8px',gap:40}}><SelectionRing selected tag="h1 · Fade In Up" style={{flex:1}}><div style={{height:40,background:'var(--vm-surface-muted)',borderRadius:6}} /></SelectionRing><SelectionRing hover style={{flex:1}}><div style={{height:40,background:'var(--vm-surface-muted)',borderRadius:6}} /></SelectionRing></div></div>
+    <div className="b"><h4>Dialog · Toast</h4><div style={{position:'relative',height:190,background:'var(--vm-canvas)',borderRadius:8,overflow:'hidden'}}><Dialog absolute width={300} title="Save changes to h1?" actions={<><Button variant="danger">Discard</Button><Button variant="secondary" style={{marginLeft:'auto'}}>Keep editing</Button><Button>Save</Button></>}><div style={{fontSize:12,color:'var(--text-muted)',lineHeight:1.5}}>Save to keep them as a new version, or discard.</div></Dialog><Toast absolute>Saved v6</Toast></div></div>
+  </div>;
+}
+createRoot(document.getElementById('root')).render(<Card />);
+</script></body></html>

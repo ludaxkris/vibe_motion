@@ -1,0 +1,441 @@
+{
+  "version": "1.1.0",
+  "entries": [
+    {
+      "id": "fade-in",
+      "name": "Fade In",
+      "category": "entrance",
+      "description": "Element fades from transparent to fully visible.",
+      "keyframes": "from { opacity: 0; } to { opacity: 1; }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "600ms", "min": "100ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "fillMode", "type": "select", "default": "both", "options": ["none", "forwards", "backwards", "both"] }
+      ],
+      "triggers": ["load", "in-view"],
+      "defaultTrigger": "load"
+    },
+    {
+      "id": "fade-in-up",
+      "name": "Fade In Up",
+      "category": "entrance",
+      "description": "Fades in while rising from below.",
+      "keyframes": "from { opacity: 0; transform: translateY(var(--vm-distance)); } to { opacity: 1; transform: none; }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "600ms", "min": "100ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "fillMode", "type": "select", "default": "both", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "distance", "label": "Distance", "type": "length", "default": "24px", "min": "0px", "max": "200px", "step": "2px", "cssVar": "--vm-distance" }
+      ],
+      "triggers": ["load", "in-view"],
+      "defaultTrigger": "load"
+    },
+    {
+      "id": "fade-in-down",
+      "name": "Fade In Down",
+      "category": "entrance",
+      "description": "Fades in while dropping from above.",
+      "keyframes": "from { opacity: 0; transform: translateY(calc(-1 * var(--vm-distance))); } to { opacity: 1; transform: none; }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "600ms", "min": "100ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "fillMode", "type": "select", "default": "both", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "distance", "label": "Distance", "type": "length", "default": "24px", "min": "0px", "max": "200px", "step": "2px", "cssVar": "--vm-distance" }
+      ],
+      "triggers": ["load", "in-view"],
+      "defaultTrigger": "load"
+    },
+    {
+      "id": "fade-in-left",
+      "name": "Fade In Left",
+      "category": "entrance",
+      "description": "Fades in while sliding from the left.",
+      "keyframes": "from { opacity: 0; transform: translateX(calc(-1 * var(--vm-distance))); } to { opacity: 1; transform: none; }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "600ms", "min": "100ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "fillMode", "type": "select", "default": "both", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "distance", "label": "Distance", "type": "length", "default": "32px", "min": "0px", "max": "300px", "step": "2px", "cssVar": "--vm-distance" }
+      ],
+      "triggers": ["load", "in-view"],
+      "defaultTrigger": "load"
+    },
+    {
+      "id": "fade-in-right",
+      "name": "Fade In Right",
+      "category": "entrance",
+      "description": "Fades in while sliding from the right.",
+      "keyframes": "from { opacity: 0; transform: translateX(var(--vm-distance)); } to { opacity: 1; transform: none; }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "600ms", "min": "100ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "fillMode", "type": "select", "default": "both", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "distance", "label": "Distance", "type": "length", "default": "32px", "min": "0px", "max": "300px", "step": "2px", "cssVar": "--vm-distance" }
+      ],
+      "triggers": ["load", "in-view"],
+      "defaultTrigger": "load"
+    },
+    {
+      "id": "scale-in",
+      "name": "Scale In",
+      "category": "entrance",
+      "description": "Grows from a smaller size while fading in.",
+      "keyframes": "from { opacity: 0; transform: scale(var(--vm-from-scale)); } to { opacity: 1; transform: scale(1); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "500ms", "min": "100ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "cubic-bezier(0.16, 1, 0.3, 1)" },
+        { "key": "fillMode", "type": "select", "default": "both", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "fromScale", "label": "Start scale", "type": "number", "default": "0.8", "min": "0", "max": "1", "step": "0.05", "cssVar": "--vm-from-scale" }
+      ],
+      "triggers": ["load", "in-view"],
+      "defaultTrigger": "load",
+      "baseStyles": "transform-origin: center;"
+    },
+    {
+      "id": "slide-in-up",
+      "name": "Slide In Up",
+      "category": "entrance",
+      "description": "Slides up into place without changing opacity.",
+      "keyframes": "from { transform: translateY(var(--vm-distance)); } to { transform: none; }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "500ms", "min": "100ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "fillMode", "type": "select", "default": "both", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "distance", "label": "Distance", "type": "length", "default": "40px", "min": "0px", "max": "400px", "step": "4px", "cssVar": "--vm-distance" }
+      ],
+      "triggers": ["load", "in-view"],
+      "defaultTrigger": "load"
+    },
+    {
+      "id": "blur-in",
+      "name": "Blur In",
+      "category": "entrance",
+      "description": "Sharpens from a blur while fading in.",
+      "keyframes": "from { opacity: 0; filter: blur(var(--vm-blur)); } to { opacity: 1; filter: blur(0); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "700ms", "min": "100ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "fillMode", "type": "select", "default": "both", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "blur", "label": "Blur amount", "type": "length", "default": "12px", "min": "1px", "max": "40px", "step": "1px", "cssVar": "--vm-blur" }
+      ],
+      "triggers": ["load", "in-view"],
+      "defaultTrigger": "load"
+    },
+    {
+      "id": "flip-in-x",
+      "name": "Flip In X",
+      "category": "entrance",
+      "description": "Rotates in around the horizontal axis.",
+      "keyframes": "from { opacity: 0; transform: perspective(600px) rotateX(var(--vm-angle)); } to { opacity: 1; transform: perspective(600px) rotateX(0); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "700ms", "min": "100ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "fillMode", "type": "select", "default": "both", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "angle", "label": "Start angle", "type": "angle", "default": "-90deg", "min": "-180deg", "max": "180deg", "step": "5deg", "cssVar": "--vm-angle" }
+      ],
+      "triggers": ["load", "in-view"],
+      "defaultTrigger": "load",
+      "baseStyles": "backface-visibility: hidden;"
+    },
+    {
+      "id": "fade-out",
+      "name": "Fade Out",
+      "category": "exit",
+      "description": "Element fades to transparent.",
+      "keyframes": "from { opacity: 1; } to { opacity: 0; }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "500ms", "min": "100ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-in" },
+        { "key": "fillMode", "type": "select", "default": "forwards", "options": ["none", "forwards", "backwards", "both"] }
+      ],
+      "triggers": ["load", "hover", "in-view"],
+      "defaultTrigger": "hover"
+    },
+    {
+      "id": "fade-out-down",
+      "name": "Fade Out Down",
+      "category": "exit",
+      "description": "Fades out while sinking downward.",
+      "keyframes": "from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(var(--vm-distance)); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "500ms", "min": "100ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-in" },
+        { "key": "fillMode", "type": "select", "default": "forwards", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "distance", "label": "Distance", "type": "length", "default": "24px", "min": "0px", "max": "200px", "step": "2px", "cssVar": "--vm-distance" }
+      ],
+      "triggers": ["load", "hover", "in-view"],
+      "defaultTrigger": "hover"
+    },
+    {
+      "id": "scale-out",
+      "name": "Scale Out",
+      "category": "exit",
+      "description": "Shrinks while fading out.",
+      "keyframes": "from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(var(--vm-to-scale)); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "400ms", "min": "100ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-in" },
+        { "key": "fillMode", "type": "select", "default": "forwards", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "toScale", "label": "End scale", "type": "number", "default": "0.8", "min": "0", "max": "1", "step": "0.05", "cssVar": "--vm-to-scale" }
+      ],
+      "triggers": ["load", "hover", "in-view"],
+      "defaultTrigger": "hover",
+      "baseStyles": "transform-origin: center;"
+    },
+    {
+      "id": "pulse",
+      "name": "Pulse",
+      "category": "attention",
+      "description": "Gently scales up and back down.",
+      "keyframes": "0%, 100% { transform: scale(1); } 50% { transform: scale(var(--vm-scale)); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "1200ms", "min": "200ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-in-out" },
+        { "key": "iteration", "type": "iteration", "default": "infinite" },
+        { "key": "fillMode", "type": "select", "default": "none", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "scale", "label": "Peak scale", "type": "number", "default": "1.05", "min": "1", "max": "1.5", "step": "0.01", "cssVar": "--vm-scale" }
+      ],
+      "triggers": ["load", "hover", "in-view"],
+      "defaultTrigger": "load",
+      "baseStyles": "transform-origin: center;"
+    },
+    {
+      "id": "shake",
+      "name": "Shake",
+      "category": "attention",
+      "description": "Rapid horizontal shake.",
+      "keyframes": "0%, 100% { transform: translateX(0); } 10%, 30%, 50%, 70%, 90% { transform: translateX(calc(-1 * var(--vm-distance))); } 20%, 40%, 60%, 80% { transform: translateX(var(--vm-distance)); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "700ms", "min": "200ms", "max": "3000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-in-out" },
+        { "key": "iteration", "type": "iteration", "default": "1" },
+        { "key": "fillMode", "type": "select", "default": "none", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "distance", "label": "Distance", "type": "length", "default": "8px", "min": "1px", "max": "40px", "step": "1px", "cssVar": "--vm-distance" }
+      ],
+      "triggers": ["load", "hover", "in-view"],
+      "defaultTrigger": "hover"
+    },
+    {
+      "id": "bounce",
+      "name": "Bounce",
+      "category": "attention",
+      "description": "Bounces upward and settles.",
+      "keyframes": "0%, 20%, 53%, 100% { transform: translateY(0); } 40%, 43% { transform: translateY(calc(-1 * var(--vm-height))); } 70% { transform: translateY(calc(-0.5 * var(--vm-height))); } 90% { transform: translateY(calc(-0.15 * var(--vm-height))); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "1000ms", "min": "300ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "iteration", "type": "iteration", "default": "1" },
+        { "key": "fillMode", "type": "select", "default": "none", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "height", "label": "Bounce height", "type": "length", "default": "20px", "min": "2px", "max": "120px", "step": "2px", "cssVar": "--vm-height" }
+      ],
+      "triggers": ["load", "hover", "in-view"],
+      "defaultTrigger": "load",
+      "baseStyles": "transform-origin: center bottom;"
+    },
+    {
+      "id": "wobble",
+      "name": "Wobble",
+      "category": "attention",
+      "description": "Sways side to side with slight rotation.",
+      "keyframes": "0%, 100% { transform: none; } 15% { transform: translateX(calc(-1 * var(--vm-distance))) rotate(-5deg); } 30% { transform: translateX(calc(0.8 * var(--vm-distance))) rotate(3deg); } 45% { transform: translateX(calc(-0.6 * var(--vm-distance))) rotate(-3deg); } 60% { transform: translateX(calc(0.4 * var(--vm-distance))) rotate(2deg); } 75% { transform: translateX(calc(-0.2 * var(--vm-distance))) rotate(-1deg); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "1000ms", "min": "300ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-in-out" },
+        { "key": "iteration", "type": "iteration", "default": "1" },
+        { "key": "fillMode", "type": "select", "default": "none", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "distance", "label": "Sway distance", "type": "length", "default": "16px", "min": "2px", "max": "80px", "step": "2px", "cssVar": "--vm-distance" }
+      ],
+      "triggers": ["load", "hover", "in-view"],
+      "defaultTrigger": "hover"
+    },
+    {
+      "id": "heartbeat",
+      "name": "Heartbeat",
+      "category": "attention",
+      "description": "Double pulse like a heartbeat.",
+      "keyframes": "0%, 28%, 70%, 100% { transform: scale(1); } 14%, 42% { transform: scale(var(--vm-scale)); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "1300ms", "min": "400ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-in-out" },
+        { "key": "iteration", "type": "iteration", "default": "infinite" },
+        { "key": "fillMode", "type": "select", "default": "none", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "scale", "label": "Peak scale", "type": "number", "default": "1.1", "min": "1", "max": "1.6", "step": "0.01", "cssVar": "--vm-scale" }
+      ],
+      "triggers": ["load", "hover", "in-view"],
+      "defaultTrigger": "load",
+      "baseStyles": "transform-origin: center;"
+    },
+    {
+      "id": "glow",
+      "name": "Glow",
+      "category": "emphasis",
+      "description": "Soft glowing box shadow that swells and fades.",
+      "keyframes": "0%, 100% { box-shadow: 0 0 0 0 var(--vm-color); } 50% { box-shadow: 0 0 var(--vm-radius) calc(var(--vm-radius) / 4) var(--vm-color); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "1600ms", "min": "300ms", "max": "6000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-in-out" },
+        { "key": "iteration", "type": "iteration", "default": "infinite" },
+        { "key": "fillMode", "type": "select", "default": "none", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "color", "label": "Glow color", "type": "color", "default": "rgba(99, 102, 241, 0.6)", "cssVar": "--vm-color" },
+        { "key": "radius", "label": "Glow radius", "type": "length", "default": "16px", "min": "2px", "max": "80px", "step": "2px", "cssVar": "--vm-radius" }
+      ],
+      "triggers": ["load", "hover", "in-view"],
+      "defaultTrigger": "load"
+    },
+    {
+      "id": "highlight",
+      "name": "Highlight",
+      "category": "emphasis",
+      "description": "Background sweeps to a highlight color and holds.",
+      "keyframes": "from { background-color: transparent; } to { background-color: var(--vm-color); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "600ms", "min": "100ms", "max": "5000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "fillMode", "type": "select", "default": "forwards", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "color", "label": "Highlight color", "type": "color", "default": "rgba(250, 204, 21, 0.4)", "cssVar": "--vm-color" }
+      ],
+      "triggers": ["load", "hover", "in-view"],
+      "defaultTrigger": "in-view"
+    },
+    {
+      "id": "underline-sweep",
+      "name": "Underline Sweep",
+      "category": "emphasis",
+      "description": "An underline grows in from the left using background-size.",
+      "keyframes": "from { background-size: 0% var(--vm-thickness); } to { background-size: 100% var(--vm-thickness); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "500ms", "min": "100ms", "max": "3000ms", "step": "50ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "fillMode", "type": "select", "default": "forwards", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "color", "label": "Line color", "type": "color", "default": "currentColor", "cssVar": "--vm-color" },
+        { "key": "thickness", "label": "Thickness", "type": "length", "default": "2px", "min": "1px", "max": "12px", "step": "1px", "cssVar": "--vm-thickness" }
+      ],
+      "triggers": ["load", "hover", "in-view"],
+      "defaultTrigger": "hover",
+      "baseStyles": "background-image: linear-gradient(var(--vm-color), var(--vm-color)); background-repeat: no-repeat; background-position: 0 100%; text-decoration: none;"
+    },
+    {
+      "id": "spin",
+      "name": "Spin",
+      "category": "continuous",
+      "description": "Continuous rotation.",
+      "keyframes": "from { transform: rotate(0deg); } to { transform: rotate(360deg); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "2000ms", "min": "200ms", "max": "20000ms", "step": "100ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "linear" },
+        { "key": "iteration", "type": "iteration", "default": "infinite" },
+        { "key": "direction", "type": "direction", "default": "normal" },
+        { "key": "fillMode", "type": "select", "default": "none", "options": ["none", "forwards", "backwards", "both"] }
+      ],
+      "triggers": ["load", "hover", "in-view"],
+      "defaultTrigger": "load",
+      "baseStyles": "transform-origin: center;"
+    },
+    {
+      "id": "float",
+      "name": "Float",
+      "category": "continuous",
+      "description": "Slow vertical drift up and down.",
+      "keyframes": "0%, 100% { transform: translateY(0); } 50% { transform: translateY(calc(-1 * var(--vm-distance))); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "3000ms", "min": "500ms", "max": "10000ms", "step": "100ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "ease-in-out" },
+        { "key": "iteration", "type": "iteration", "default": "infinite" },
+        { "key": "fillMode", "type": "select", "default": "none", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "distance", "label": "Drift distance", "type": "length", "default": "10px", "min": "1px", "max": "60px", "step": "1px", "cssVar": "--vm-distance" }
+      ],
+      "triggers": ["load", "in-view"],
+      "defaultTrigger": "load"
+    },
+    {
+      "id": "shimmer",
+      "name": "Shimmer",
+      "category": "continuous",
+      "description": "A light band sweeps across the element.",
+      "keyframes": "from { background-position: -200% 0; } to { background-position: 200% 0; }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "2000ms", "min": "500ms", "max": "10000ms", "step": "100ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "5000ms", "step": "50ms" },
+        { "key": "easing", "type": "easing", "default": "linear" },
+        { "key": "iteration", "type": "iteration", "default": "infinite" },
+        { "key": "fillMode", "type": "select", "default": "none", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "color", "label": "Shimmer color", "type": "color", "default": "rgba(255, 255, 255, 0.5)", "cssVar": "--vm-color" }
+      ],
+      "triggers": ["load", "in-view"],
+      "defaultTrigger": "load",
+      "baseStyles": "background-image: linear-gradient(100deg, transparent 30%, var(--vm-color) 50%, transparent 70%); background-size: 200% 100%; background-repeat: no-repeat;"
+    },
+    {
+      "id": "hover-lift",
+      "name": "Hover Lift",
+      "category": "hover",
+      "description": "Lifts slightly and gains a shadow. Intended for hover.",
+      "keyframes": "from { transform: translateY(0); box-shadow: 0 0 0 rgba(0,0,0,0); } to { transform: translateY(calc(-1 * var(--vm-distance))); box-shadow: 0 var(--vm-distance) calc(var(--vm-distance) * 2) rgba(0, 0, 0, 0.15); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "200ms", "min": "50ms", "max": "1000ms", "step": "10ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "1000ms", "step": "10ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "fillMode", "type": "select", "default": "forwards", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "distance", "label": "Lift distance", "type": "length", "default": "4px", "min": "1px", "max": "24px", "step": "1px", "cssVar": "--vm-distance" }
+      ],
+      "triggers": ["hover"],
+      "defaultTrigger": "hover"
+    },
+    {
+      "id": "hover-grow",
+      "name": "Hover Grow",
+      "category": "hover",
+      "description": "Scales up slightly. Intended for hover.",
+      "keyframes": "from { transform: scale(1); } to { transform: scale(var(--vm-scale)); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "200ms", "min": "50ms", "max": "1000ms", "step": "10ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "1000ms", "step": "10ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "fillMode", "type": "select", "default": "forwards", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "scale", "label": "Scale", "type": "number", "default": "1.05", "min": "1", "max": "1.5", "step": "0.01", "cssVar": "--vm-scale" }
+      ],
+      "triggers": ["hover"],
+      "defaultTrigger": "hover",
+      "baseStyles": "transform-origin: center;"
+    },
+    {
+      "id": "hover-tilt",
+      "name": "Hover Tilt",
+      "category": "hover",
+      "description": "Tilts by a small angle. Intended for hover.",
+      "keyframes": "from { transform: rotate(0deg); } to { transform: rotate(var(--vm-angle)); }",
+      "params": [
+        { "key": "duration", "type": "duration", "default": "200ms", "min": "50ms", "max": "1000ms", "step": "10ms" },
+        { "key": "delay", "type": "duration", "default": "0ms", "min": "0ms", "max": "1000ms", "step": "10ms" },
+        { "key": "easing", "type": "easing", "default": "ease-out" },
+        { "key": "fillMode", "type": "select", "default": "forwards", "options": ["none", "forwards", "backwards", "both"] },
+        { "key": "angle", "label": "Tilt angle", "type": "angle", "default": "3deg", "min": "-30deg", "max": "30deg", "step": "1deg", "cssVar": "--vm-angle" }
+      ],
+      "triggers": ["hover"],
+      "defaultTrigger": "hover",
+      "baseStyles": "transform-origin: center;"
+    }
+  ]
+}

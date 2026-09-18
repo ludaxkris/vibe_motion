@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="width:100%;height:100%;background:#fff;font-family:-apple-system,'SF Pro Text','Helvetica Neue',Helvetica,system-ui,sans-serif;color:#1d1d1f;overflow:hidden;position:relative;letter-spacing:-.01em">
+  <div style="display:flex;align-items:center;justify-content:space-between;height:52px;padding:0 48px;border-bottom:1px solid #ececee;position:relative">
+    <div style="font-weight:700;font-size:16px;letter-spacing:-.02em">nimbus</div>
+    <div style="display:flex;gap:28px;font-size:13px;color:#4b4b50"><span>Product</span><span>Docs</span><span style="color:#1d1d1f;font-weight:500">Pricing</span><span>Company</span></div>
+    <div style="display:flex;gap:10px;align-items:center;font-size:13px"><span style="color:#4b4b50">Sign in</span><span style="background:#1d1d1f;color:#fff;padding:7px 14px;border-radius:999px;font-weight:500">Get started</span></div>
+    <sc-if value="{{ selNav }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-2px 40px;border:2px solid #7c5cff;border-radius:4px;pointer-events:none"><span style="position:absolute;left:-2px;top:-20px;background:#7c5cff;color:#fff;font:500 11px ui-monospace,Menlo,monospace;padding:2px 7px;border-radius:4px 4px 0 0">{{ label }}</span></div></sc-if>
+  </div>
+  <div style="padding:64px 48px 0;display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center">
+    <div style="position:relative;display:inline-block">
+      <h1 style="margin:0;font-size:48px;line-height:1.05;font-weight:700;letter-spacing:-.03em;text-wrap:balance">Plans that grow with your team.</h1>
+      <sc-if value="{{ selH1 }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-8px -14px;border:2px solid #7c5cff;border-radius:6px;pointer-events:none"><span style="position:absolute;left:-2px;top:-22px;background:#7c5cff;color:#fff;font:500 11px ui-monospace,Menlo,monospace;padding:2px 7px;border-radius:4px 4px 0 0;letter-spacing:0">{{ label }}</span></div></sc-if>
+      <sc-if value="{{ hovH1 }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-8px -14px;border:1.5px dashed #7c5cff;border-radius:6px;pointer-events:none;opacity:.8"><span style="position:absolute;left:-1px;top:-20px;background:#fff;color:#7c5cff;border:1px solid #7c5cff;font:500 10px ui-monospace,Menlo,monospace;padding:1px 6px;border-radius:4px;letter-spacing:0">h1</span></div></sc-if>
+      <sc-if value="{{ badges }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:-14px;top:-14px;background:#7c5cff;color:#fff;font:500 10px system-ui,sans-serif;padding:2px 7px;border-radius:999px;letter-spacing:0">Fade In Up</span></sc-if>
+    </div>
+    <p style="margin:0;font-size:17px;color:#6e6e73;max-width:520px;line-height:1.45">Start free. Upgrade when you need more seats, more history, and priority support.</p>
+    <div style="display:inline-flex;background:#f2f2f4;border-radius:999px;padding:3px;font-size:13px;margin-top:6px"><span style="padding:6px 14px;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08);font-weight:500">Monthly</span><span style="padding:6px 14px;color:#6e6e73">Yearly <span style="color:#7c5cff;font-weight:500">−20%</span></span></div>
+  </div>
+  <div style="position:relative;margin:40px 48px 0">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+      <div style="border:1px solid #e6e6e9;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:14px;position:relative">
+        <div style="font-size:14px;font-weight:600">Free</div>
+        <div style="font-size:34px;font-weight:700;letter-spacing:-.03em">$0<span style="font-size:13px;color:#6e6e73;font-weight:400;letter-spacing:0"> / month</span></div>
+        <div style="font-size:13px;color:#6e6e73;line-height:1.5">For trying things out.<br>1 project · 7-day history</div>
+        <div style="margin-top:auto;border:1px solid #d2d2d7;border-radius:10px;padding:9px;text-align:center;font-size:13px;font-weight:500">Start free</div>
+        <sc-if value="{{ badges }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:12px;top:12px;background:#7c5cff;color:#fff;font:500 10px system-ui,sans-serif;padding:2px 7px;border-radius:999px;letter-spacing:0">Slide In · 0ms</span></sc-if>
+      </div>
+      <div style="border:1.5px solid #1d1d1f;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:14px;position:relative;background:#fff">
+        <div style="position:absolute;top:-11px;left:24px;background:#1d1d1f;color:#fff;font-size:11px;font-weight:500;padding:3px 10px;border-radius:999px">Most popular</div>
+        <div style="font-size:14px;font-weight:600">Pro</div>
+        <div style="font-size:34px;font-weight:700;letter-spacing:-.03em">$20<span style="font-size:13px;color:#6e6e73;font-weight:400;letter-spacing:0"> / month</span></div>
+        <div style="font-size:13px;color:#6e6e73;line-height:1.5">For individuals shipping often.<br>Unlimited projects · 90-day history</div>
+        <div style="position:relative;margin-top:auto">
+          <div style="background:#1d1d1f;color:#fff;border-radius:10px;padding:10px;text-align:center;font-size:13px;font-weight:500">Upgrade to Pro</div>
+          <sc-if value="{{ selCta }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-5px;border:2px solid #7c5cff;border-radius:13px;pointer-events:none"><span style="position:absolute;left:-2px;top:-22px;background:#7c5cff;color:#fff;font:500 11px ui-monospace,Menlo,monospace;padding:2px 7px;border-radius:4px 4px 0 0;letter-spacing:0">{{ label }}</span></div></sc-if>
+          <sc-if value="{{ badges }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:-6px;top:-12px;background:#7c5cff;color:#fff;font:500 10px system-ui,sans-serif;padding:2px 7px;border-radius:999px;letter-spacing:0">Pulse · hover</span></sc-if>
+        </div>
+        <sc-if value="{{ selCard }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-6px;border:2px solid #7c5cff;border-radius:20px;pointer-events:none"><span style="position:absolute;left:-2px;top:-22px;background:#7c5cff;color:#fff;font:500 11px ui-monospace,Menlo,monospace;padding:2px 7px;border-radius:4px 4px 0 0;letter-spacing:0">{{ label }}</span></div></sc-if>
+        <sc-if value="{{ badges }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:12px;top:12px;background:#7c5cff;color:#fff;font:500 10px system-ui,sans-serif;padding:2px 7px;border-radius:999px;letter-spacing:0">Slide In · 120ms</span></sc-if>
+      </div>
+      <div style="border:1px solid #e6e6e9;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:14px;position:relative">
+        <div style="font-size:14px;font-weight:600">Team</div>
+        <div style="font-size:34px;font-weight:700;letter-spacing:-.03em">$30<span style="font-size:13px;color:#6e6e73;font-weight:400;letter-spacing:0"> / seat</span></div>
+        <div style="font-size:13px;color:#6e6e73;line-height:1.5">For teams that review together.<br>SSO · Shared libraries · Roles</div>
+        <div style="margin-top:auto;border:1px solid #d2d2d7;border-radius:10px;padding:9px;text-align:center;font-size:13px;font-weight:500">Talk to sales</div>
+        <sc-if value="{{ badges }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:12px;top:12px;background:#7c5cff;color:#fff;font:500 10px system-ui,sans-serif;padding:2px 7px;border-radius:999px;letter-spacing:0">Slide In · 240ms</span></sc-if>
+      </div>
+    </div>
+    <sc-if value="{{ selPlans }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-10px;border:2px solid #7c5cff;border-radius:22px;pointer-events:none"><span style="position:absolute;left:-2px;top:-22px;background:#7c5cff;color:#fff;font:500 11px ui-monospace,Menlo,monospace;padding:2px 7px;border-radius:4px 4px 0 0;letter-spacing:0">{{ label }}</span></div></sc-if>
+  </div>
+  <div style="margin:44px 48px 0;display:flex;align-items:center;justify-content:center;gap:40px;color:#a1a1a6;font-size:13px;font-weight:600;letter-spacing:.02em"><span>ARCADIA</span><span>Holt&amp;Co</span><span>northwind</span><span>VERTEX</span><span>lumen</span></div>
+  <sc-if value="{{ dim }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:0;background:rgba(255,255,255,.45);pointer-events:none"></div></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:960,&quot;height&quot;:800},&quot;selected&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;none&quot;,&quot;nav&quot;,&quot;h1&quot;,&quot;cta&quot;,&quot;card&quot;,&quot;plans&quot;],&quot;default&quot;:&quot;none&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;hover&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;none&quot;,&quot;h1&quot;],&quot;default&quot;:&quot;none&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;label&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;h1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;badges&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;dim&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const s = this.props.selected ?? 'none', h = this.props.hover ?? 'none';
+    return {
+      selNav: s === 'nav', selH1: s === 'h1', selCta: s === 'cta', selCard: s === 'card', selPlans: s === 'plans',
+      hovH1: h === 'h1',
+      label: this.props.label ?? s,
+      badges: !!this.props.badges,
+      dim: !!this.props.dim,
+    };
+  }
+}
+</script>
+</body>
+</html>

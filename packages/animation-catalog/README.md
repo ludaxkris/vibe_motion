@@ -25,4 +25,6 @@ Semver: patch = metadata only (name, description, category, labels); minor = new
 
 ## Entry shape
 
-See `schema.json`. In short: `id`, `name`, `category`, `description`, `keyframes` (body only; the generator wraps it as `@keyframes vm-<id>-v<major>`), `params` (standard keys `duration`, `delay`, `easing`, `iteration`, `direction` map to `animation-*`; any other key declares a `cssVar` referenced inside the keyframes), `triggers`, optional `defaultTrigger` and `baseStyles`.
+See `schema.json`. In short: `id`, `name`, `category`, `description`, `keyframes` (body only; the generator wraps it as `@keyframes vm-<id>-v<major>`), `params` (standard keys `duration`, `delay`, `easing`, `iteration`, `direction`, `fillMode` map to `animation-*`; any other key declares a `cssVar` referenced inside the keyframes), `triggers`, optional `defaultTrigger` and `baseStyles`.
+
+`fillMode` (from catalog 1.1.0 onward) is a `select` param with `options: ["none", "forwards", "backwards", "both"]` and maps to `animation-fill-mode`; every entry from 1.1.0 onward must declare it (`pnpm validate` enforces this; 1.0.0 entries are exempt since the key did not exist yet).

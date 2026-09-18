@@ -41,11 +41,12 @@ data class CatalogParam(
     val options: List<String>? = null,
     val cssVar: String? = null,
 ) {
-    /** True for the five keys that map straight onto `animation-*` properties. */
+    /** True for the six keys that map straight onto `animation-*` properties. */
     val isStandard: Boolean get() = key in STANDARD_KEYS
 
     companion object {
-        val STANDARD_KEYS: Set<String> = setOf("duration", "delay", "easing", "iteration", "direction")
+        /** `fillMode` (-> `animation-fill-mode`) became standard in catalog 1.1.0; 1.0.0 predates it. */
+        val STANDARD_KEYS: Set<String> = setOf("duration", "delay", "easing", "iteration", "direction", "fillMode")
     }
 }
 

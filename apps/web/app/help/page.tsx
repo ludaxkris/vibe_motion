@@ -17,10 +17,11 @@ export const metadata: Metadata = {
 /**
  * Help page (wireframe).
  *
- * Renders the catalog read at build time from
- * `packages/animation-catalog/versions/1.0.0.json`. Phase 3 replaces each card's
- * body with a live demo driven by the same runtime CSS generator the editor uses,
- * so this page doubles as a visual test of the catalog.
+ * Renders the catalog read at build time from `packages/animation-catalog/versions/`
+ * (currently `lib/catalog.ts`'s pinned version — see `CURRENT_CATALOG_VERSION`).
+ * Phase 3 replaces each card's body with a live demo driven by the same runtime
+ * CSS generator the editor uses, so this page doubles as a visual test of the
+ * catalog.
  */
 export default function HelpPage() {
   const entries = getCatalogEntries();

@@ -10,14 +10,31 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const generated = ["packages/animation-catalog/src", "apps/web/lib/api-client/schema.d.ts"];
+const generated = [
+  "packages/animation-catalog/src",
+  "packages/animation-catalog/manifest.json",
+  "apps/web/lib/api-client/schema.d.ts",
+];
+
+// Missing entirely (deleted, or not generated yet) is not a crash: it's "0 files" for this
+// snapshot, so the before/after diff below reports it as stale/new instead of throwing ENOENT.
+function safeStat(abs) {
+  try {
+    return statSync(abs);
+  } catch (err) {
+    if (err.code === "ENOENT") return null;
+    throw err;
+  }
+}
 
 function files(p) {
   const abs = path.join(root, p);
-  if (statSync(abs).isFile()) return [p];
+  const stat = safeStat(abs);
+  if (!stat) return [];
+  if (stat.isFile()) return [p];
   return readdirSync(abs, { recursive: true })
     .map((f) => path.join(p, String(f)))
-    .filter((f) => statSync(path.join(root, f)).isFile())
+    .filter((f) => safeStat(path.join(root, f))?.isFile() ?? false)
     .sort();
 }
 

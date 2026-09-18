@@ -26,7 +26,7 @@ export interface CatalogEntry {
    */
   keyframes: string;
   /**
-   * Adjustable variables. The five standard keys (duration, delay, easing, iteration, direction) map to animation-* properties; any other key must declare cssVar and is set as a custom property on the element.
+   * Adjustable variables. The six standard keys (duration, delay, easing, iteration, direction, fillMode) map to animation-* properties; any other key must declare cssVar and is set as a custom property on the element.
    */
   params: (CatalogParam & {
     [k: string]: unknown;

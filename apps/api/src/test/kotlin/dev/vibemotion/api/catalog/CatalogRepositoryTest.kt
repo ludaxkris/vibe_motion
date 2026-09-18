@@ -56,6 +56,21 @@ class CatalogRepositoryTest :
             }
         }
 
+        test("fillMode is a standard key and every entry from 1.1.0 onward (by semver) declares it") {
+            CatalogParam(key = "fillMode", type = ParamType.SELECT, default = "none").isStandard shouldBe true
+
+            // By semver, not `version == "1.0.0"`: fillMode postdates 1.0.0 (docs/build_plan.md
+            // §4 Phase 1), and a future 1.0.x metadata-only patch would predate it too.
+            repository.versions().forEach { version ->
+                if (compareSemver(version, "1.1.0") < 0) return@forEach
+                repository.catalog(version).shouldNotBeNull().entries.forEach { entry ->
+                    withClue("$version/${entry.id} must declare fillMode") {
+                        entry.params.map { it.key } shouldContain "fillMode"
+                    }
+                }
+            }
+        }
+
         test("every non-standard param declares a cssVar, as schema.json requires") {
             repository.versions().forEach { version ->
                 repository.catalog(version).shouldNotBeNull().entries.forEach { entry ->
@@ -143,6 +158,20 @@ class CatalogRepositoryTest :
             shouldThrow<SerializationException> { ClasspathCatalogRepository.load(loader) }
         }
     })
+
+/** Mirrors ClasspathCatalogRepository's private semver comparator, for test-only version checks. */
+internal fun compareSemver(
+    a: String,
+    b: String,
+): Int {
+    val pa = a.split(".").map { it.toIntOrNull() ?: 0 }
+    val pb = b.split(".").map { it.toIntOrNull() ?: 0 }
+    for (i in 0..2) {
+        val d = (pa.getOrElse(i) { 0 }) - (pb.getOrElse(i) { 0 })
+        if (d != 0) return d
+    }
+    return 0
+}
 
 /**
  * Serves the three catalog resources from memory, so a synthetic catalog file can be fed to

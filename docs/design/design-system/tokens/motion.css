@@ -1,0 +1,17 @@
+:root {
+  /* Editor chrome motion */
+  --dur-instant: 100ms;
+  --dur-fast: 150ms;
+  --dur-base: 250ms;
+  --ease-standard: cubic-bezier(.2, 0, 0, 1);
+  --ease-out: ease-out;
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+
+  /* Catalog defaults (what a fresh assignment starts with) */
+  --vm-default-duration: 600ms;
+  --vm-default-delay: 0ms;
+  --vm-default-easing: ease-out;
+  --vm-default-distance: 24px;
+  --vm-default-scale: 1.05;
+  --vm-stagger: 120ms;
+}
