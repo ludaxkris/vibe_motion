@@ -108,7 +108,6 @@ export function SaveDialogContent({
         <SectionLabel id={fieldId}>Label</SectionLabel>
         <Input
           ref={inputRef}
-          size="sm"
           aria-labelledby={fieldId}
           value={label}
           onChange={(event) => onLabelChange(event.target.value)}
@@ -129,10 +128,10 @@ export function SaveDialogContent({
       </div>
 
       <div className="mt-1.5 flex items-center justify-end gap-2">
-        <Button variant="secondary" size="sm" onClick={onCancel}>
+        <Button variant="secondary" onClick={onCancel}>
           Cancel
         </Button>
-        <Button size="sm" disabled={saveDisabled} onClick={onSave}>
+        <Button disabled={saveDisabled} onClick={onSave}>
           Save version
         </Button>
       </div>

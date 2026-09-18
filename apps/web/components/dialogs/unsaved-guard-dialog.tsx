@@ -79,10 +79,10 @@ export function UnsavedGuardDialogContent({
         <Button variant="danger-link" onClick={onDiscard}>
           Discard
         </Button>
-        <Button variant="secondary" size="sm" className="ml-auto" onClick={onKeepEditing}>
+        <Button variant="secondary" className="ml-auto" onClick={onKeepEditing}>
           Keep editing
         </Button>
-        <Button size="sm" disabled={saveDisabled} onClick={onSave}>
+        <Button disabled={saveDisabled} onClick={onSave}>
           Save
         </Button>
       </div>

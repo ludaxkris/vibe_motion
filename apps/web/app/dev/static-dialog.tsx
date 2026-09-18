@@ -21,7 +21,9 @@ export function StaticDialog({
 }) {
   return (
     <div className={cn("flex items-center justify-center p-6", DIALOG_SCRIM)}>
-      <div className={cn(DIALOG_CARD, className)}>{children}</div>
+      <div data-slot="dialog-card" className={cn(DIALOG_CARD, className)}>
+        {children}
+      </div>
     </div>
   );
 }
