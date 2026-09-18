@@ -171,9 +171,15 @@ export function SplitPane({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onKeyDown={handleKeyDown}
+        // The handoff draws no handle at all: the divider *is* the panel's 1px
+        // left border (ruling in docs/plans/phase-3-web-shell.md, "Design
+        // handoff"). So the hairline stays a hairline and the grabbable strip
+        // is an invisible pseudo-element either side of it.
         className={cn(
-          "w-1.5 shrink-0 cursor-col-resize touch-none bg-border transition-colors hover:bg-ring/50 focus-visible:bg-ring focus-visible:outline-none",
-          isDragging && "bg-ring/50",
+          "relative w-px shrink-0 cursor-col-resize touch-none bg-vm-border",
+          "transition-colors duration-(--dur-fast) ease-standard hover:bg-vm-accent",
+          "after:absolute after:inset-y-0 after:-left-1 after:-right-1",
+          isDragging && "bg-vm-accent",
         )}
       />
       <div className="shrink-0 overflow-hidden" style={{ width: `${panelWidth}%` }}>

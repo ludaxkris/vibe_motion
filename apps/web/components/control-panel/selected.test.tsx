@@ -1,32 +1,40 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
-
-import { initialEditorState, useEditorStore } from "@/lib/store";
+import { describe, expect, it, vi } from "vitest";
 
 import { SelectedPanel } from "./selected";
 
-beforeEach(() => {
-  useEditorStore.setState({ ...initialEditorState });
-});
-
 describe("SelectedPanel", () => {
-  it("shows the selected element", () => {
+  it("names the selected element and says it has no animation yet", () => {
     render(<SelectedPanel vmId="vm-42" />);
+
+    expect(screen.getByTestId("panel-selected")).toBeInTheDocument();
+    expect(screen.getByText("Selected")).toBeInTheDocument();
     expect(screen.getByText("vm-42")).toBeInTheDocument();
+    expect(screen.getByText("No animation yet · Esc to deselect")).toBeInTheDocument();
   });
 
-  it("Generate is disabled with a visible hint, since it arrives in Phase 5", () => {
-    render(<SelectedPanel vmId="vm-42" />);
-    expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
-    expect(screen.getByText(/arrives in phase 5/i)).toBeInTheDocument();
+  it("shows the element's own text beside the tag when the bridge supplies it", () => {
+    render(<SelectedPanel vmId="vm-42" elementText="Ship faster with Nimbus" />);
+
+    expect(screen.getByText("Ship faster with Nimbus")).toBeInTheDocument();
   });
 
-  it("Custom dispatches CHOOSE_CUSTOM, moving the panel to choosing", () => {
-    useEditorStore.getState().dispatchPanel({ type: "SELECT", vmId: "vm-42" });
+  it("offers auto-generate (still to come) and the custom picker", () => {
     render(<SelectedPanel vmId="vm-42" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
+    expect(screen.getByText("Add animation")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Auto-generate for this element" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Choose custom animation" })).toBeEnabled();
+  });
 
-    expect(useEditorStore.getState().panel).toEqual({ status: "choosing", vmId: "vm-42" });
+  it("asks for the picker when Choose custom animation is clicked", () => {
+    const onChooseCustom = vi.fn();
+    render(<SelectedPanel vmId="vm-42" onChooseCustom={onChooseCustom} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose custom animation" }));
+
+    expect(onChooseCustom).toHaveBeenCalledOnce();
   });
 });

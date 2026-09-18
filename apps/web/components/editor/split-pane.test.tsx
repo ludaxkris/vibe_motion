@@ -29,6 +29,16 @@ describe("SplitPane", () => {
     expect(screen.getByText("right pane")).toBeInTheDocument();
   });
 
+  it("draws as the panel's 1px border, with a wider invisible hit area", () => {
+    renderSplitPane();
+
+    const handle = separator();
+    expect(handle).toHaveClass("w-px", "bg-vm-border");
+    // The grabbable strip is a pseudo-element, so the hairline stays a hairline.
+    expect(handle.className).toContain("after:-left-1");
+    expect(handle.className).toContain("after:-right-1");
+  });
+
   it("defaults the Control Panel width to 25%, exposed via aria-valuenow", () => {
     renderSplitPane();
 

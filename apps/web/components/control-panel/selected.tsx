@@ -1,34 +1,51 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { useEditorStore } from "@/lib/store";
+import { ElementTag } from "@/components/ui/element-tag";
+import { SectionLabel } from "@/components/ui/section-label";
 
-/** An element is selected but has no animation yet: offer Generate (Phase 5+) or Custom. */
-export function SelectedPanel({ vmId }: { vmId: string }) {
-  const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
+import { PanelCard, PanelSection } from "./panel-card";
 
+/**
+ * An element is selected but has no animation yet (`docs/design/README.md`
+ * "2. Editor", selected).
+ *
+ * Presentational: the store-connected `ControlPanel` supplies the callbacks.
+ */
+export function SelectedPanel({
+  vmId,
+  elementText,
+  onChooseCustom,
+}: {
+  /** `data-vm-id` of the selected element — its tag until the bridge sends a nicer one (Phase 4). */
+  vmId: string;
+  /** The element's own text, once the bridge reports it (Phase 4). */
+  elementText?: string;
+  onChooseCustom?: () => void;
+}) {
   return (
-    <div className="flex flex-col gap-3" data-testid="panel-selected">
-      <p className="text-sm">
-        Selected <span className="font-mono text-xs">{vmId}</span>
-      </p>
-      <div className="flex flex-col gap-1.5">
-        <Button size="sm" disabled aria-describedby="generate-hint">
-          Generate
+    <PanelCard data-testid="panel-selected">
+      <PanelSection className="gap-2">
+        <SectionLabel>Selected</SectionLabel>
+        <div className="flex min-w-0 items-center gap-2">
+          <ElementTag>{vmId}</ElementTag>
+          {elementText ? (
+            <span className="min-w-0 truncate text-sm text-vm-ink-2">{elementText}</span>
+          ) : null}
+        </div>
+        <p className="text-xs text-vm-ink-3">No animation yet · Esc to deselect</p>
+      </PanelSection>
+
+      <PanelSection className="gap-2">
+        <SectionLabel>Add animation</SectionLabel>
+        {/* The mock agent (Phase 5) is what fills this in. */}
+        <Button size="lg" glyph="✦" disabled>
+          Auto-generate for this element
         </Button>
-        {/* A disabled button never fires a hover/focus tooltip, so the hint is
-            visible helper text instead. */}
-        <p id="generate-hint" className="text-xs text-muted-foreground">
-          Arrives in Phase 5.
-        </p>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => dispatchPanel({ type: "CHOOSE_CUSTOM" })}
-        >
-          Custom
+        <Button variant="secondary" size="lg" onClick={onChooseCustom}>
+          Choose custom animation
         </Button>
-      </div>
-    </div>
+      </PanelSection>
+    </PanelCard>
   );
 }

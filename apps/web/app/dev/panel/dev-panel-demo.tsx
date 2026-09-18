@@ -67,6 +67,7 @@ export function DevPanelDemo() {
   const draftState = useEditorStore((state) => state.draftState);
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
   const panel = useEditorStore((state) => state.panel);
+  const setSelectedVmId = useEditorStore((state) => state.setSelectedVmId);
 
   const liveDraftAnimationId = draftState[LIVE_VM_ID]?.animationId;
 
@@ -80,10 +81,13 @@ export function DevPanelDemo() {
         </p>
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StateCard title="idle">
-            <IdlePanel />
+            <IdlePanel assignments={draftState} onSelectElement={setSelectedVmId} />
           </StateCard>
           <StateCard title="selected">
-            <SelectedPanel vmId={GALLERY_VM_ID} />
+            <SelectedPanel
+              vmId={GALLERY_VM_ID}
+              onChooseCustom={() => dispatchPanel({ type: "CHOOSE_CUSTOM" })}
+            />
           </StateCard>
           <StateCard title="choosing">
             <ChoosingPanel vmId={GALLERY_VM_ID} />
