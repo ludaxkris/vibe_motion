@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { keyframesName } from "animation-catalog";
 import { describe, expect, it } from "vitest";
 
 import {
   CURRENT_CATALOG_VERSION,
+  catalogInlineStyle,
+  catalogKeyframes,
   getCatalog,
   getCatalogEntries,
   getCatalogEntry,
@@ -40,5 +43,24 @@ describe("catalog", () => {
     expect(new Set(ids).size).toBe(ids.length);
     expect(getCatalogEntry(ids[0])?.id).toBe(ids[0]);
     expect(getCatalogEntry("no-such-animation")).toBeUndefined();
+  });
+});
+
+describe("catalog type bridges", () => {
+  it("catalogInlineStyle renders an entry's animation as a React style object", () => {
+    const entry = getCatalogEntry("fade-in-up")!;
+    const style = catalogInlineStyle(entry, CURRENT_CATALOG_VERSION);
+
+    expect(style.animationName).toBe(keyframesName(entry.id, CURRENT_CATALOG_VERSION));
+    expect(style.animationDuration).toBe("600ms");
+  });
+
+  it("catalogKeyframes emits one block per entry", () => {
+    const entries = [getCatalogEntry("fade-in")!, getCatalogEntry("pulse")!];
+    const css = catalogKeyframes(entries.map((entry) => [entry, CURRENT_CATALOG_VERSION] as const));
+
+    for (const entry of entries) {
+      expect(css).toContain(`@keyframes ${keyframesName(entry.id, CURRENT_CATALOG_VERSION)}`);
+    }
   });
 });

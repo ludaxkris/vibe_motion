@@ -1,80 +1,190 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { ElementTag } from "@/components/ui/element-tag";
 import { Input } from "@/components/ui/input";
 import type { CatalogEntry } from "@/lib/api-client";
-import { getCatalogEntries } from "@/lib/catalog";
-import { useEditorStore } from "@/lib/store";
+import { CURRENT_CATALOG_VERSION, catalogKeyframes, getCatalogEntries } from "@/lib/catalog";
 
-function groupByCategory(entries: readonly CatalogEntry[]): Map<string, CatalogEntry[]> {
-  const groups = new Map<string, CatalogEntry[]>();
-  for (const entry of entries) {
-    const group = groups.get(entry.category) ?? [];
-    group.push(entry);
-    groups.set(entry.category, group);
-  }
-  return groups;
+import { AnimationCard } from "./animation-card";
+import { PanelCard, PanelSection } from "./panel-card";
+
+/** The chip that is not a category: everything. */
+export const ALL_CATEGORIES = "all";
+
+function categoryLabel(category: string): string {
+  return category.charAt(0).toUpperCase() + category.slice(1);
 }
 
-/** Current-catalog list, grouped by category, with a text filter. Picking an entry starts tuning. */
-export function ChoosingPanel({ vmId }: { vmId: string }) {
-  const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
-  const [filter, setFilter] = useState("");
-  const filterId = useId();
+/** Catalog order, deduplicated — the chip row follows the catalog, not a fixed list. */
+function categoriesOf(entries: readonly CatalogEntry[]): string[] {
+  return [...new Set(entries.map((entry) => entry.category))];
+}
 
-  const filtered = useMemo(() => {
-    const query = filter.trim().toLowerCase();
-    const all = getCatalogEntries();
-    if (!query) return all;
-    return all.filter((entry) => entry.name.toLowerCase().includes(query));
-  }, [filter]);
+/**
+ * The animation picker (`docs/design/README.md` "2. Editor", choosing): a
+ * search field, the category chips, and a 2-column grid of `AnimationCard`s
+ * whose demos play the catalog's real keyframes.
+ *
+ * Presentational and fully controlled — search and category come in as props
+ * so `/dev` (Task 9) can render "choosing" and "choosing with empty search"
+ * without a store.
+ */
+export function ChoosingPanel({
+  vmId,
+  entries = getCatalogEntries(),
+  catalogVersion = CURRENT_CATALOG_VERSION,
+  appliedAnimationId,
+  search,
+  onSearchChange,
+  category,
+  onCategoryChange,
+  onPick,
+  onBack,
+}: {
+  /** The element being animated; shown as the header's tag. */
+  vmId: string;
+  entries?: readonly CatalogEntry[];
+  catalogVersion?: string;
+  /** The animation already on this element, highlighted in the grid. */
+  appliedAnimationId?: string;
+  search: string;
+  onSearchChange?: (search: string) => void;
+  /** A catalog category, or `ALL_CATEGORIES`. */
+  category: string;
+  onCategoryChange?: (category: string) => void;
+  onPick?: (animationId: string) => void;
+  onBack?: () => void;
+}) {
+  // Which card the arrow keys last moved to, by id rather than by index: the
+  // visible list changes under it as the search and the category change.
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const cardRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const groups = useMemo(() => groupByCategory(filtered), [filtered]);
+  const query = search.trim().toLowerCase();
+  const visible = useMemo(
+    () =>
+      entries.filter(
+        (entry) =>
+          (category === ALL_CATEGORIES || entry.category === category) &&
+          (!query || entry.name.toLowerCase().includes(query)),
+      ),
+    [entries, category, query],
+  );
+
+  // One `@keyframes` block per visible entry, injected once: the cards then
+  // only have to set `animation-*` to play the real thing.
+  const keyframes = useMemo(
+    () => catalogKeyframes(visible.map((entry) => [entry, catalogVersion] as const)),
+    [visible, catalogVersion],
+  );
+
+  const highlightIndex = visible.findIndex((entry) => entry.id === highlightId);
+
+  const moveHighlight = (delta: 1 | -1) => {
+    if (visible.length === 0) return;
+    const next =
+      highlightIndex < 0
+        ? delta > 0
+          ? 0
+          : visible.length - 1
+        : Math.min(visible.length - 1, Math.max(0, highlightIndex + delta));
+    setHighlightId(visible[next].id);
+    cardRefs.current[next]?.focus();
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      moveHighlight(event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
+    if (event.key === "Enter" && highlightIndex >= 0) {
+      // Also cancels the focused card's own Enter activation, so an applied
+      // animation is applied exactly once.
+      event.preventDefault();
+      onPick?.(visible[highlightIndex].id);
+    }
+  };
 
   return (
-    <div className="flex flex-col gap-3" data-testid="panel-choosing">
-      <p className="text-sm text-muted-foreground">
-        Choose an animation for <span className="font-mono text-xs">{vmId}</span>
-      </p>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground" htmlFor={filterId}>
-        Filter
-        <Input
-          id={filterId}
-          placeholder="Search animations…"
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
+    <PanelCard data-testid="panel-choosing" onKeyDown={handleKeyDown}>
+      <style>{keyframes}</style>
+
+      <PanelSection className="h-11 flex-row items-center gap-2 py-0">
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Back"
+          glyph="‹"
+          onClick={onBack}
+          className="-ml-1.5 text-lg"
         />
-      </label>
-      {filtered.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No animations match &ldquo;{filter}&rdquo;.</p>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {Array.from(groups.entries()).map(([category, categoryEntries]) => (
-            <div key={category} className="flex flex-col gap-1.5">
-              <h3 className="text-xs font-medium text-muted-foreground capitalize">{category}</h3>
-              <ul className="flex flex-col gap-1">
-                {categoryEntries.map((entry) => (
-                  <li key={entry.id}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full justify-start"
-                      onClick={() => dispatchPanel({ type: "PICK", animationId: entry.id })}
-                    >
-                      {entry.name}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </div>
+        <span className="flex-1 text-md font-semibold">Choose animation</span>
+        <ElementTag size="sm">{vmId}</ElementTag>
+      </PanelSection>
+
+      <PanelSection>
+        <Input
+          type="search"
+          size="sm"
+          aria-label="Search animations"
+          placeholder="Search animations"
+          prefix="⌕"
+          value={search}
+          onChange={(event) => onSearchChange?.(event.target.value)}
+        />
+
+        <div className="flex flex-wrap gap-1.5">
+          <Chip
+            pressed={category === ALL_CATEGORIES}
+            onClick={() => onCategoryChange?.(ALL_CATEGORIES)}
+          >
+            All
+          </Chip>
+          {categoriesOf(entries).map((name) => (
+            <Chip
+              key={name}
+              pressed={category === name}
+              onClick={() => onCategoryChange?.(name)}
+            >
+              {categoryLabel(name)}
+            </Chip>
           ))}
         </div>
-      )}
-      <Button variant="ghost" size="sm" onClick={() => dispatchPanel({ type: "BACK" })}>
-        Back
-      </Button>
-    </div>
+
+        {visible.length === 0 ? (
+          <p className="py-2 text-sm text-vm-ink-2">
+            No animations match &ldquo;{search.trim()}&rdquo;.
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {visible.map((entry, index) => (
+              <AnimationCard
+                key={entry.id}
+                ref={(element) => {
+                  cardRefs.current[index] = element;
+                }}
+                entry={entry}
+                catalogVersion={catalogVersion}
+                applied={entry.id === appliedAnimationId}
+                onApply={() => onPick?.(entry.id)}
+                onFocus={() => setHighlightId(entry.id)}
+              />
+            ))}
+          </div>
+        )}
+      </PanelSection>
+
+      <PanelSection>
+        <p className="flex items-center gap-1.5 text-xs text-vm-ink-2">
+          <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-vm-accent" />
+          Hover a card to preview on the page · click to apply
+        </p>
+      </PanelSection>
+    </PanelCard>
   );
 }

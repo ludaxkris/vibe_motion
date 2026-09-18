@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useEditorStore } from "@/lib/store";
 
-import { ChoosingPanel } from "./choosing";
+import { ALL_CATEGORIES, ChoosingPanel } from "./choosing";
 import { IdlePanel } from "./idle";
 import { PanelCard, PanelSection } from "./panel-card";
 import { SelectedPanel } from "./selected";
@@ -17,6 +19,31 @@ function PlaceholderTab({ children }: { children: string }) {
         <p className="text-sm leading-body text-vm-ink-2">{children}</p>
       </PanelSection>
     </PanelCard>
+  );
+}
+
+/**
+ * The picker's search and category live here rather than in the store: they
+ * are this visit's filter, not editor state, and they reset with the element
+ * (the caller keys this by `vmId`).
+ */
+function ChoosingSection({ vmId }: { vmId: string }) {
+  const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
+  const appliedAnimationId = useEditorStore((state) => state.draftState[vmId]?.animationId);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState<string>(ALL_CATEGORIES);
+
+  return (
+    <ChoosingPanel
+      vmId={vmId}
+      appliedAnimationId={appliedAnimationId}
+      search={search}
+      onSearchChange={setSearch}
+      category={category}
+      onCategoryChange={setCategory}
+      onPick={(animationId) => dispatchPanel({ type: "PICK", animationId })}
+      onBack={() => dispatchPanel({ type: "BACK" })}
+    />
   );
 }
 
@@ -58,7 +85,9 @@ export function ControlPanel() {
                 onChooseCustom={() => dispatchPanel({ type: "CHOOSE_CUSTOM" })}
               />
             )}
-            {panel.status === "choosing" && <ChoosingPanel vmId={panel.vmId} />}
+            {panel.status === "choosing" && (
+              <ChoosingSection key={panel.vmId} vmId={panel.vmId} />
+            )}
             {panel.status === "tuning" && (
               <TuningPanel vmId={panel.vmId} animationId={panel.animationId} />
             )}

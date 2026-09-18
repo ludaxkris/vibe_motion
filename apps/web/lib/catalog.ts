@@ -15,7 +15,7 @@ import {
 } from "animation-catalog";
 
 import type { Catalog, CatalogEntry } from "@/lib/api-client";
-import { resolveParams } from "@/lib/runtime-css";
+import { inlineStyle, resolveParams, runtimeStylesheet } from "@/lib/runtime-css";
 
 /**
  * Mirrors `packages/animation-catalog/current`. The editor authors against this
@@ -55,6 +55,28 @@ export function resolveCatalogParams(
   params?: Readonly<Record<string, string>>,
 ): Record<string, string> {
   return resolveParams(entry as unknown as CatalogPackageEntry, params);
+}
+
+/**
+ * `inlineStyle` (Task 1) across the same type bridge as `resolveCatalogParams`
+ * below: the picker's card demos and the help page's demos hold entries typed
+ * against the OpenAPI schema.
+ */
+export function catalogInlineStyle(
+  entry: CatalogEntry,
+  catalogVersion: string,
+  params?: Readonly<Record<string, string>>,
+): Record<string, string> {
+  return inlineStyle(entry as unknown as CatalogPackageEntry, catalogVersion, params);
+}
+
+/** `runtimeStylesheet` across the same type bridge, for a list of entries to demo. */
+export function catalogKeyframes(
+  pairs: ReadonlyArray<readonly [CatalogEntry, string]>,
+): string {
+  return runtimeStylesheet(
+    pairs.map(([entry, version]) => [entry as unknown as CatalogPackageEntry, version] as const),
+  );
 }
 
 export type { Catalog, CatalogEntry };

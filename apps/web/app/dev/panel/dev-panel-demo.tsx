@@ -90,7 +90,13 @@ export function DevPanelDemo() {
             />
           </StateCard>
           <StateCard title="choosing">
-            <ChoosingPanel vmId={GALLERY_VM_ID} />
+            <ChoosingPanel
+              vmId={GALLERY_VM_ID}
+              search=""
+              category="all"
+              onPick={(animationId) => dispatchPanel({ type: "PICK", animationId })}
+              onBack={() => dispatchPanel({ type: "BACK" })}
+            />
           </StateCard>
           <StateCard title="tuning">
             <TuningPanel vmId={GALLERY_VM_ID} animationId={GALLERY_ANIMATION_ID} />
