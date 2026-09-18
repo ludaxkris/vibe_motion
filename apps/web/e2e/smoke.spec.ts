@@ -7,7 +7,17 @@ test("home page offers a URL input", async ({ page }) => {
     page.getByRole("heading", { name: "Add motion to a page" }),
   ).toBeVisible();
   await expect(page.getByLabel("Page URL")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Clone page" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Clone page" })).toBeEnabled();
+});
+
+test("submitting a URL clones the page and opens the editor", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByLabel("Page URL").fill("https://example.com");
+  await page.getByRole("button", { name: "Clone page" }).click();
+
+  await page.waitForURL(/\/p\/.+/);
+  await expect(page.getByRole("region", { name: "Preview" })).toBeVisible();
 });
 
 test("help page lists catalog entries", async ({ page }) => {

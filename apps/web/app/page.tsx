@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { Button } from "@/components/ui/button";
+import { UrlEntryForm } from "@/components/url-entry-form";
 import {
   Card,
   CardContent,
@@ -8,13 +8,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 
 /**
- * URL entry screen (wireframe).
+ * URL entry screen.
  *
- * Phase 3 wires the form to `POST /projects` and redirects to `/p/[projectId]`.
- * Until then the submit button is disabled on purpose: nothing here calls the API.
+ * Server Component shell; `UrlEntryForm` is the client boundary that submits
+ * `POST /projects` and redirects into the editor at `/p/[projectId]`.
  */
 export default function Home() {
   return (
@@ -31,32 +30,7 @@ export default function Home() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <form className="flex flex-col gap-2">
-            <label
-              htmlFor="source-url"
-              className="text-sm font-medium text-foreground"
-            >
-              Page URL
-            </label>
-            <div className="flex gap-2">
-              <Input
-                id="source-url"
-                name="url"
-                type="url"
-                inputMode="url"
-                autoComplete="off"
-                placeholder="https://example.com"
-                aria-describedby="source-url-hint"
-                className="flex-1"
-              />
-              <Button type="submit" disabled>
-                Clone page
-              </Button>
-            </div>
-            <p id="source-url-hint" className="text-xs text-muted-foreground">
-              Cloning is not wired up yet — it arrives with the API in Phase 2/3.
-            </p>
-          </form>
+          <UrlEntryForm />
           <p className="text-sm text-muted-foreground">
             Curious what you can apply?{" "}
             <Link href="/help" className="underline underline-offset-4">
