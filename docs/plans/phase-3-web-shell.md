@@ -80,23 +80,68 @@ Encode the panel as an explicit, hand-written reducer (no XState dependency).
 
 Tests: exhaustive transition table (every state × every event); store: PICK creates a defaulted pinned assignment, param update flips `unsaved`, removing restores clean; RTL for each state component; `/dev/panel` renders all four. No network request is made in any of these tests (MSW `onUnhandledRequest: "error"` proves it).
 
-## Task 6: Help page live demos
+## Design handoff (applies to Tasks 6–10)
 
-`/help` renders every entry of the current catalog as a live card using Task 1's generator.
+Chris's Claude Design handoff is in `docs/design/` (reference only — never import from it, never copy its JSX verbatim into `apps/web`). Read `docs/design/README.md` fully, then `docs/design/design-system/readme.md` and `docs/design/design-system/tokens/*.css`. Per-component reference: `docs/design/design-system/components/core/<Name>.jsx` + `.prompt.md`. Composed screens: `docs/design/ui_kit/{TopBar,Entry,Editor,Help}.jsx`.
 
-- `app/help/page.tsx` stays a Server Component; it emits one `<style id="vm-runtime">` with `runtimeStylesheet` for all current entries and renders `components/help/animation-card.tsx` (client) per entry.
-- Card: name, category badge, description, a stage with a sample box whose inline style is `assignmentStyle(entry, CURRENT_VERSION)`, a "Replay" button (sets `animation-name: none`, restores on the next animation frame), default params as a definition list, triggers. Entries whose `defaultTrigger` is `hover` play on hover/focus of the stage instead of on mount, with the hint "Hover to play"; `in-view`/`load` play on mount and on Replay.
-- `prefers-reduced-motion: reduce`: animations do not autoplay; Replay still works (explicit user action) and a page-level note says so.
-- Category filter (All + each category present) as a toolbar of toggle buttons with `aria-pressed`; count reflects the filter. Header states the catalog version and total.
+Rule from Chris: **match the handoff pixel-for-pixel; where the handoff and `docs/` conflict, the docs win on behaviour and the handoff wins on visuals**, and every conflict is reported in the task report (the controller logs it in `docs/deferred_tasks.md`). Known rulings:
+
+- Panel is resizable (docs: behaviour) — keep Task 4's split pane; default width renders 320px at 1280 wide (25%); the separator is visually just the panel's 1px `--vm-border` left edge with a wider invisible hit area.
+- Entry: on successful clone the docs redirect straight to `/p/<id>`; the handoff's "Cloned" card + "Open in editor →" step is not built.
+- Cloning progress: the API is one `POST /projects` with no progress events. Render the handoff's cloning card (spinner, "Cloning <host+path> · N s" with a real elapsed counter, the four step rows, 3px bar) but never fake completion: all four steps show as pending/faint with the first marked active, and the bar is indeterminate.
+- Recent projects: there is no list endpoint. Keep the last 8 projects this browser created/opened in `localStorage` key `vm-recent-projects` (`{ id, title, sourceUrl, openedAt }`); meta line shows host + relative time; the whole column is hidden when empty. No "View all".
+- Controls render from the catalog's params (catalog is 1.1.0: every entry has `fillMode`; some have `direction`, `iteration`, `distance`, `scale`, etc.). Handoff rows define the look for Duration/Delay/Distance/Scale (slider + NumberField), Easing (select + curve preview), Repeat = `iteration` (dense segmented 1 / 2 / 3 / ∞). Params the handoff does not mock (`fillMode`, `direction`, other `select` types) use the dense segmented style when ≤4 options, else the easing-style select. Slider ranges come from the catalog's min/max/step, not the handoff's numbers.
+- Tabs are Animate · History · Export (handoff) — replaces the earlier Animation/Versions tabs. History and Export bodies are Phase 6/7: render the tab with a single muted caption ("Saved versions appear here. A version is only created when you click Save." / "Export arrives with Phase 7.").
+- Glyphs are the handoff's unicode set (✦ ↻ ‹ ▾ ⌕ › ✓ ∞ !), `aria-hidden`, with real accessible names on the controls. No emoji, no new icon usage.
+- Light theme only; remove dark-mode token blocks (dark theme is DT-051). No webfonts: remove `next/font` usage, use the token font stacks.
+- Keep every role, label, `data-testid`, store contract and behaviour from Tasks 3–5 unless a bullet here or in the task says otherwise; update tests whose copy changes.
+
+## Task 6: Design tokens and core primitives
+
+- `app/globals.css`: bring in every custom property from `docs/design/design-system/tokens/{colors,typography,spacing,motion}.css` verbatim (names and values), light only. Point the shadcn semantic variables (`--background`, `--foreground`, `--card`, `--primary`, `--muted`, `--border`, `--input`, `--ring`, `--destructive`, `--radius`, …) at them so existing `components/ui/*` inherit the palette, and expose the tokens to Tailwind 4 via `@theme inline` (colours `vm-*`, font families, the type scale 10/11/12/13/15/34/48, radii 4/6/8/10/12/14/pill, shadows sheet/card/raised/popover/modal/accent, `--focus-ring`, durations/easings). Body: `--vm-canvas` background, `--vm-ink`, 13px/1.4 system sans. `app/layout.tsx`: drop `next/font`, drop any Phase 0 header/nav chrome (the TopBar replaces it).
+- Primitives in `components/ui/`, each matching its reference (`docs/design/design-system/components/core/<Name>.jsx` + `.prompt.md`) and built on the existing shadcn/Base UI primitive where one exists: `button.tsx` (variants primary / secondary / ink / bar-primary / bar-outline / danger-link / link; heights 28/30/36/40/44; primary has the accent glow only where the handoff shows it; disabled = 40% opacity; no press scale), `input.tsx` (sizes sm 34 / md / xl 44, optional prefix slot, error state 1.5px danger border + glow), `number-field.tsx` (62×28, mono, unit in faint ink, commits on blur/Enter, clamps to min/max, ArrowUp/Down step), `slider.tsx` (4px track, accent fill, 14px thumb with 1.5px accent ring), `segmented.tsx` (radiogroup semantics; normal + dense), `tabs.tsx` folder-tab variant, `chip.tsx` (toggle, `aria-pressed`), `element-tag.tsx`, `section-label.tsx` (11px/600 uppercase +0.04em), `dialog.tsx` styling (14px radius, modal shadow, scrim), `toast.tsx` (bottom-centre black pill, slides up 8px over 250ms, auto-dismiss ~2s, `role="status"`), and `components/top-bar.tsx` (44px bar; slots: wordmark, optional context (title text + chip), right-side actions) per `ui_kit/TopBar.jsx`.
+- Focus-visible everywhere = `--focus-ring`; transitions use `--dur-fast`/`--dur-base` and respect `prefers-reduced-motion`.
+
+Tests: RTL per primitive for behaviour (NumberField commit/clamp/step, Segmented radio semantics + arrow keys, Chip pressed, Toast auto-dismiss with fake timers, Button renders each variant's token classes, TopBar slots). A `globals.css` test asserts every custom property name in the four token files is present with the same value. Whole existing suite stays green.
+
+## Task 7: Entry screen to the handoff
+
+Re-skin `/` per README "1. Entry" and `ui_kit/Entry.jsx`, keeping Task 3's behaviour (validation, normalisation, pending, error mapping, redirect).
+
+- TopBar variant: wordmark left, "Help ↗" right (opens `/help` in a new tab).
+- Grid `1.35fr 1fr`, gap 56, padding `36px 120px 60px`. Headline two lines; URL row = Input xl with `https://` prefix (the field holds the rest; pasting a full URL strips the scheme into the prefix; `http://` stays possible by typing it) + Clone button (ink, 44px).
+- Cloning state (`3a`) and error state (`3b`) per the handoff and the rulings above; button reads "Retry" after an error; the "other reasons" card lists Unreachable · Too large · Blocked host · Not HTML; map API error codes to the matching bold sentence where the contract has one (read `openapi.yaml` for codes; 413/429 get their own sentences). "Cancel" during cloning aborts the request (AbortController) and returns to the idle form with the URL kept.
+- Recent projects per the ruling: `lib/recent-projects.ts` (pure read/write helpers, tolerant of bad JSON, cap 8, most recent first) written on successful clone and whenever the editor loads a project; column at 50% opacity while cloning.
+
+Tests: existing Task 3 tests adapted; prefix/paste handling; cancel aborts and never navigates; each error code → message; recent-projects helpers + rendering + hidden-when-empty. e2e: smoke flow still lands on `/p/<id>`, and returning to `/` lists the project under Recent projects.
+
+## Task 8: Editor chrome and Control Panel to the handoff
+
+Re-skin `/p/[projectId]` per README "Global chrome", "2. Editor" and `ui_kit/Editor.jsx`.
+
+- TopBar: wordmark · divider · project host+path · version chip (`v<seq>` of the current version, from the project/versions query) · unsaved dot + "Unsaved" when dirty. Right: Help · Cancel · Save (40% opacity and disabled when clean). Cancel reverts the draft to `currentVersionState` (add a store action `revertDraft()`; panel state follows the handoff rule: tuning if the selected element still has an assignment, else selected). Save stays inert in this phase (opens nothing; Phase 6) but is enabled-looking only when dirty.
+- Canvas + sheet: preview padding `16px 16px 0`, white sheet radii `10px 10px 0 0`, `--shadow-sheet`; iframe never tinted. Panel: `--vm-panel`, folder tabs, one white card with 14px-padded sections split by `--vm-divider`, bottom caption.
+- Panel states per the handoff: **idle** (dashed square, copy, Esc kbd chip; WHOLE PAGE section with the prompt textarea and a disabled "✦ Auto-generate for this page" + caption noting it arrives with the mock agent; "ANIMATED · n" rows from `draftState` — clicking a row dispatches SELECT for that vmId — and a disabled "↻ Replay all"), **selected** (ElementTag + text, "No animation yet · Esc to deselect", disabled primary "✦ Auto-generate for this element", secondary "Choose custom animation"), **choosing** (44px header with ‹ back, search Input sm with ⌕, category chips, 2-col AnimationCard grid whose demo block plays the real keyframes on hover/focus via `lib/runtime-css`, applied card highlighted, empty-search copy, footer caption; ↑↓ moves the highlight, Enter applies), **tuning** (tag + name + "Change" link, TRIGGER segmented limited to `entry.triggers`, param rows per the rulings, easing select with the 62px curve preview, "↻ Replay" disabled until the bridge exists, "Remove animation" danger link).
+- Esc dispatches DESELECT when the draft is clean.
+- The element tag text comes from the machine's `vmId` until the bridge supplies tag/text (Phase 4): show the `vmId` in the ElementTag.
+
+Tests: adapt Task 4/5 component tests to the new copy/structure; Cancel reverts and lands in the right state; Esc rule; picker keyboard nav; param rows render the right control per param type for at least one entry with `distance`, one with `scale`, one with `direction`. e2e: editor smoke still passes.
+
+## Task 9: Dialogs, toast wiring and the /dev route
+
+- `components/dialogs/unsaved-guard-dialog.tsx` and `components/dialogs/save-dialog.tsx` per README "3. Dialogs & toast" — presentational, fully controlled by props (`open`, element/animation names, version numbers, change list, callbacks); change rows show sign (+ / ~ / −) with diff colours, ElementTag, name, meta. `lib/diff-summary.ts`: pure `summariseDiff(current, draft, catalogLookup)` → rows + the auto label ("Fade In Up on vm-3, removed Pulse on vm-9"), used by the Save dialog preview. No API calls; Phase 6 wires them.
+- `/dev` (index) replaces `/dev/panel` (redirect the old path): renders every panel state (idle empty, idle with assignments, selected, choosing, choosing with empty search, tuning for an entry with `distance` and one with `scale`), both dialogs (open, inline-rendered rather than portalled over each other), the toast, and the Entry cloning + error states, each in a labelled frame at its real width (panel 320px). Still 404 in production.
+
+Tests: `summariseDiff` table (add / change / remove / no-op / label text); dialogs render their props and fire callbacks; `/dev` renders every frame; production 404.
+
+## Task 10: Help page to the handoff with live demos
+
+`/help` per README "4. Help" and `ui_kit/Help.jsx`, driven by the **current** catalog (version chip and counts are real: 1.1.0, 26 entries — not the handoff's stale numbers).
+
+- TopBar variant: wordmark · divider · "Animations" · `catalog <version>` chip.
+- Toolbar: category chips with counts (All n · each category present), search (240px), "↻ Replay all". Sections per category: title 15/600 + one-line blurb; 4-col grid, gap 14; cards per the handoff (120px demo box, 64×38 accent block, ↻ mini button, name 13/600, defaults line in mono 11 muted from the entry's params, e.g. "600ms · ease-out · distance 24px").
+- `app/help/page.tsx` stays a Server Component and emits one `<style id="vm-runtime">` from `runtimeStylesheet` for all current entries; the client card sets the block's inline style from `assignmentStyle(entry, CURRENT_VERSION)`. Replay sets `animation-name: none` and restores it on the next frame. Entries whose `defaultTrigger` is `hover` play on hover/focus of the demo box (hint "Hover to play"); others play on mount and on replay. Infinite-iteration entries run until replayed/unmounted.
+- `prefers-reduced-motion: reduce`: nothing autoplays; ↻ still plays (explicit action); a one-line note under the toolbar says so.
 - Keep `data-testid="catalog-card"`.
 
-Tests: renders one card per current entry; sample box carries `animation-name` = `keyframesName(...)`; Replay toggles to `none` and back; filter narrows; reduced-motion suppresses autoplay. e2e: `/help` shows 26 cards, the `#vm-runtime` style exists, and a computed `animation-name` on the first sample box starts with `vm-`.
-
-## Task 7: Apply the Claude Design system and mocks
-
-Blocked until Chris's Claude Design export is present in `<primary checkout>/design-handoff/` (gitignored, never committed). Controller writes the detailed brief for this task once the export has been read.
-
-- Map the design system's tokens (colour, type scale, radius, spacing, shadow, motion) onto the CSS custom properties in `app/globals.css` and the shadcn theme; fonts via `next/font`.
-- Re-skin `/`, `/p/[projectId]`, the four Control Panel states, and `/help` to match the mocks. Structure, behaviour, roles, labels and test ids from tasks 3–6 stay; if a mock contradicts a behaviour in this plan, report it rather than deciding.
-- No image files committed; icons via `lucide-react` or inline SVG.
-- All unit and e2e tests still pass; `screenshot-runner` captures each screen for comparison against the mocks.
+Tests: one card per current entry; block carries `animation-name` = `keyframesName(...)`; replay toggles to `none` and back; chips + search filter and counts; reduced-motion suppresses autoplay; defaults line formatting. e2e: `/help` shows 26 cards, `#vm-runtime` exists, first block's computed `animation-name` starts with `vm-`.
