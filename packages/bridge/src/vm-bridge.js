@@ -22,6 +22,8 @@
   var BRIDGE_VERSION = "1.0.0";
   var MESSAGE_SOURCE = "vibe-motion";
   var PROTOCOL_VERSION = 1;
+  /** Kept in sync with IN_VIEW_THRESHOLD in src/protocol.ts; the Phase 7 exporter uses it too. */
+  var IN_VIEW_THRESHOLD = 0.2;
 
   // Kept byte-for-byte in sync with src/protocol.ts (test/render.test.ts asserts it).
   var VM_ID_RE = /^vm-[a-z0-9-]+$/;
@@ -83,6 +85,7 @@
     if (initialised || !document.body) return;
     initialised = true;
     buildElementMap();
+    attachPageListeners();
   }
 
   function announceReady() {
@@ -224,7 +227,8 @@
    *   owned: Set<string>,
    *   applied: import("./protocol").AppliedAssignment | null,
    *   preview: import("./protocol").AppliedAssignment | null,
-   *   armed: boolean
+   *   armed: boolean,
+   *   replaying: boolean
    * }} ElementRecord
    */
 
@@ -247,6 +251,7 @@
       applied: /** @type {import("./protocol").AppliedAssignment | null} */ (null),
       preview: /** @type {import("./protocol").AppliedAssignment | null} */ (null),
       armed: false,
+      replaying: false,
     };
     records.set(vmId, record);
     return record;
@@ -291,6 +296,29 @@
   }
 
   /**
+   * Write one property the bridge takes ownership of, snapshotting whatever the host had there.
+   *
+   * @param {ElementRecord} record
+   * @param {string} prop
+   * @param {string} value
+   * @param {boolean} important
+   */
+  function setOwned(record, prop, value, important) {
+    snapshot(record, prop);
+    record.owned.add(prop);
+    var priority = important ? "important" : "";
+    // Writing a declaration that is already exactly this invalidates style for nothing. On a
+    // slider tick that leaves exactly one property written per frame (spec §6 budget).
+    if (
+      record.el.style.getPropertyValue(prop) === value &&
+      record.el.style.getPropertyPriority(prop) === priority
+    ) {
+      return;
+    }
+    record.el.style.setProperty(prop, value, priority);
+  }
+
+  /**
    * Make the element's inline style say exactly `desired` for the properties the bridge owns,
    * restoring the host's own value for anything it owned before and no longer wants.
    *
@@ -300,11 +328,8 @@
   function writeDesired(record, desired) {
     var wanted = /** @type {Set<string>} */ (new Set());
     for (var i = 0; i < desired.length; i += 1) {
-      var prop = desired[i][0];
-      wanted.add(prop);
-      snapshot(record, prop);
-      record.el.style.setProperty(prop, desired[i][1], desired[i][2] ? "important" : "");
-      record.owned.add(prop);
+      wanted.add(desired[i][0]);
+      setOwned(record, desired[i][0], desired[i][1], desired[i][2]);
     }
     var stale = /** @type {string[]} */ ([]);
     record.owned.forEach(function (prop) {
@@ -313,11 +338,18 @@
     for (var j = 0; j < stale.length; j += 1) restoreProp(record, stale[j]);
   }
 
+  /** A preview is always armed; `replaying` is the one-shot arm that `replay` forces. */
+  /** @param {ElementRecord} record */
+  function isArmed(record) {
+    return record.preview ? true : record.armed || record.replaying;
+  }
+
   /**
    * The one place inline styles are written. `--vm-*` custom properties go on as soon as an
    * assignment exists (they are inert on their own); the whole `animation-*` group goes on
    * `!important` only while the trigger is armed, so our duration and delay never retime an
-   * animation the host page was already running (spec D3).
+   * animation the host page was already running, and a host `prefers-reduced-motion` reset
+   * cannot make the preview look dead (spec D3).
    *
    * @param {ElementRecord} record
    */
@@ -327,7 +359,11 @@
       restoreAll(record);
       return;
     }
-    var armed = record.preview ? true : record.armed;
+    var armed = isArmed(record);
+    // An `in-view` element that has not been scrolled to yet is *held on its first keyframe*
+    // rather than left bare, so an entrance that starts at opacity 0 does not show, snap to
+    // hidden and then fade in (spec D3, owner decision §9.3).
+    var holding = !armed && assignment.trigger === "in-view";
     var desired = /** @type {Array<[string, string, boolean]>} */ ([]);
     var style = assignment.style;
     var key;
@@ -335,21 +371,120 @@
       if (!Object.prototype.hasOwnProperty.call(style, key)) continue;
       if (key.indexOf("--") === 0) desired.push([key, style[key], false]);
     }
-    if (armed) {
+    if (armed || holding) {
       desired.push(["animation-name", assignment.keyframesName, true]);
       for (key in style) {
         if (!Object.prototype.hasOwnProperty.call(style, key)) continue;
         if (key.indexOf("--") !== 0) desired.push([key, style[key], true]);
       }
-      desired.push(["animation-play-state", "running", true]);
+      // Pushed last, so these beat whatever the assignment's own style map said.
+      if (holding) {
+        desired.push(["animation-delay", "0s", true]);
+        desired.push(["animation-fill-mode", "both", true]);
+        desired.push(["animation-play-state", "paused", true]);
+      } else {
+        desired.push(["animation-play-state", "running", true]);
+      }
     }
     writeDesired(record, desired);
+  }
+
+  /** Read by `forceStyleFlush` purely for its side effect on style resolution. */
+  var styleFlushSink = "";
+
+  /** @param {HTMLElement} el */
+  function forceStyleFlush(el) {
+    if (!window.getComputedStyle) return;
+    var computed = window.getComputedStyle(el);
+    // Reading the resolved value is what makes the browser settle style *now*, in this task, so
+    // `none` and the real name are not coalesced into "nothing changed" and the animation
+    // genuinely restarts.
+    if (computed) styleFlushSink = computed.animationName;
+  }
+
+  /**
+   * Restart the animation in one task: name to `none`, force a style flush, name back.
+   *
+   * @param {ElementRecord} record
+   * @param {boolean} force  arm an unarmed trigger for this one play (`replay`)
+   */
+  function restart(record, force) {
+    if (!effective(record)) return;
+    if (!isArmed(record)) {
+      if (!force) return;
+      record.replaying = true;
+    }
+    setOwned(record, "animation-name", "none", true);
+    forceStyleFlush(record.el);
+    render(record);
   }
 
   /** @param {ElementRecord} record */
   function syncBaseRule(record) {
     var assignment = effective(record);
     setBaseRule(record.vmId, assignment ? assignment.baseStyles : "");
+  }
+
+  // ---------------------------------------------------------------------------------------
+  // Triggers (spec D3)
+  //
+  // Triggers are armed by the bridge, never expressed as CSS selectors: a `:hover` rule of ours
+  // would fight the host page's specificity, and writing only `animation-name` late would leave
+  // our duration and delay retiming whatever the page was already animating.
+  // ---------------------------------------------------------------------------------------
+
+  var hoveredVmId = /** @type {string | null} */ (null);
+  var inViewObserver = /** @type {IntersectionObserver | null} */ (null);
+
+  /** One observer for every in-view assignment; created on first use (spec §6). */
+  function getInViewObserver() {
+    if (inViewObserver) return inViewObserver;
+    // Read at call time: the constructor may be missing (old browser, jsdom) or installed late.
+    var Ctor = window.IntersectionObserver;
+    if (!Ctor) return null;
+    inViewObserver = new Ctor(onIntersect, { threshold: IN_VIEW_THRESHOLD });
+    return inViewObserver;
+  }
+
+  /** @param {IntersectionObserverEntry[]} entries */
+  function onIntersect(entries) {
+    for (var i = 0; i < entries.length; i += 1) {
+      var vmId = entries[i].target.getAttribute(ID_ATTR);
+      if (!vmId) continue;
+      var record = records.get(vmId);
+      if (!record || !record.applied || record.applied.trigger !== "in-view") continue;
+      // The editor deliberately re-arms on every entry so the designer can scroll back and see
+      // the animation again; the export plays once (spec §6a, owner decision §9.2).
+      var next = !!entries[i].isIntersecting;
+      if (record.armed === next) continue;
+      record.armed = next;
+      render(record);
+    }
+  }
+
+  /**
+   * @param {ElementRecord} record
+   * @param {import("./protocol").Trigger | null} previousTrigger
+   */
+  function updateArming(record, previousTrigger) {
+    var assignment = record.applied;
+    if (!assignment) return;
+    if (previousTrigger === "in-view" && assignment.trigger !== "in-view" && inViewObserver) {
+      inViewObserver.unobserve(record.el);
+    }
+    if (assignment.trigger === "in-view") {
+      if (previousTrigger !== "in-view") {
+        record.armed = false;
+        var observer = getInViewObserver();
+        if (observer) observer.observe(record.el);
+      }
+      return;
+    }
+    if (assignment.trigger === "hover") {
+      record.armed = hoveredVmId === record.vmId;
+      return;
+    }
+    record.armed = true;
   }
 
   /**
@@ -363,21 +498,132 @@
     acquireKeyframes(assignment.keyframesName, assignment.keyframesCss);
     if (previous) releaseKeyframes(previous.keyframesName);
     record.applied = assignment;
-    record.armed = true;
+    updateArming(record, previous ? previous.trigger : null);
     syncBaseRule(record);
     render(record);
+    // Spec §3: a change of animation, trigger or base styles replays once; a param-only change
+    // must not restart, or every slider tick would stutter.
+    if (
+      previous &&
+      (previous.keyframesName !== assignment.keyframesName ||
+        previous.trigger !== assignment.trigger ||
+        previous.baseStyles !== assignment.baseStyles)
+    ) {
+      restart(record, false);
+    }
   }
 
   /** @param {ElementRecord} record */
   function clearApplied(record) {
-    if (record.applied) releaseKeyframes(record.applied.keyframesName);
+    if (record.applied) {
+      releaseKeyframes(record.applied.keyframesName);
+      if (record.applied.trigger === "in-view" && inViewObserver) inViewObserver.unobserve(record.el);
+    }
     record.applied = null;
     record.armed = false;
+    record.replaying = false;
     syncBaseRule(record);
     render(record);
     // With nothing left on the element, drop the record: the snapshot has been written back, so
     // a future apply re-reads the host's own values rather than trusting a stale layer.
     if (!record.preview) records.delete(record.vmId);
+  }
+
+  // ---------------------------------------------------------------------------------------
+  // Transient preview (spec D4): one slot, never part of the draft, always played once.
+  // ---------------------------------------------------------------------------------------
+
+  var previewVmId = /** @type {string | null} */ (null);
+
+  function dropPreview() {
+    if (!previewVmId) return;
+    var record = records.get(previewVmId);
+    previewVmId = null;
+    if (!record) return;
+    if (record.preview) releaseKeyframes(record.preview.keyframesName);
+    record.preview = null;
+    syncBaseRule(record);
+    render(record);
+    if (!record.applied) records.delete(record.vmId);
+  }
+
+  // ---------------------------------------------------------------------------------------
+  // Page listeners
+  // ---------------------------------------------------------------------------------------
+
+  /**
+   * The nearest ancestor-or-self carrying a vmId we know about. Overlay nodes never match: they
+   * are not tagged, and they are not part of the page the designer is editing.
+   *
+   * @param {EventTarget | null} target
+   * @returns {string | null}
+   */
+  function nearestTaggedId(target) {
+    var node = /** @type {Node | null} */ (/** @type {unknown} */ (target));
+    while (node && node.nodeType !== 1) node = node.parentNode;
+    var el = /** @type {Element | null} */ (node);
+    while (el) {
+      var vmId = el.getAttribute(ID_ATTR);
+      if (vmId && elements.has(vmId)) return vmId;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  /** @param {string | null} vmId */
+  function setHovered(vmId) {
+    if (vmId === hoveredVmId) return;
+    var previous = hoveredVmId;
+    hoveredVmId = vmId;
+    if (previous) armHover(previous, false);
+    if (vmId) armHover(vmId, true);
+  }
+
+  /**
+   * @param {string} vmId
+   * @param {boolean} armed
+   */
+  function armHover(vmId, armed) {
+    var record = records.get(vmId);
+    if (!record || !record.applied || record.applied.trigger !== "hover") return;
+    if (record.armed === armed) return;
+    record.armed = armed;
+    render(record);
+  }
+
+  function attachPageListeners() {
+    // Capture phase and delegated: one pair of handlers drives both hover arming and, from
+    // Task 5, the hover outline, and the host page's own handlers cannot stop them.
+    document.addEventListener(
+      "pointerover",
+      function (event) {
+        setHovered(nearestTaggedId(event.target));
+      },
+      true,
+    );
+    document.addEventListener(
+      "pointerout",
+      function (event) {
+        // `pointerout` fires before `pointerover` when moving between elements, so resolving the
+        // related target here means one state change per move, not two.
+        setHovered(nearestTaggedId(event.relatedTarget));
+      },
+      true,
+    );
+    document.addEventListener(
+      "animationend",
+      function (event) {
+        var vmId = nearestTaggedId(event.target);
+        if (!vmId) return;
+        var record = records.get(vmId);
+        if (!record || !record.replaying) return;
+        // The one play `replay` forced on a hover / in-view element is over: hand the element
+        // back to its trigger's normal arm state.
+        record.replaying = false;
+        render(record);
+      },
+      true,
+    );
   }
 
   // ---------------------------------------------------------------------------------------
@@ -434,6 +680,41 @@
         setApplied(record, list[k]);
       }
       if (missing) return { ok: false, error: "unknown-element" };
+    },
+
+    replay: function (payload) {
+      var vmId = payload ? payload.vmId : null;
+      if (vmId === null || vmId === undefined) {
+        var all = /** @type {ElementRecord[]} */ ([]);
+        records.forEach(function (record) {
+          all.push(record);
+        });
+        for (var i = 0; i < all.length; i += 1) restart(all[i], true);
+        return;
+      }
+      if (typeof vmId !== "string" || !VM_ID_RE.test(vmId)) return { ok: false, error: "invalid-payload" };
+      if (!elements.has(vmId)) return { ok: false, error: "unknown-element" };
+      var record = records.get(vmId);
+      if (record) restart(record, true);
+    },
+
+    preview: function (payload) {
+      if (!validateApplied(payload)) return { ok: false, error: "invalid-payload" };
+      var record = recordFor(payload.vmId);
+      if (!record) return { ok: false, error: "unknown-element" };
+      if (previewVmId && previewVmId !== payload.vmId) dropPreview();
+      var previous = record.preview;
+      acquireKeyframes(payload.keyframesName, payload.keyframesCss);
+      if (previous) releaseKeyframes(previous.keyframesName);
+      record.preview = payload;
+      previewVmId = payload.vmId;
+      syncBaseRule(record);
+      render(record);
+      restart(record, false);
+    },
+
+    "preview:clear": function () {
+      dropPreview();
     },
   };
 
