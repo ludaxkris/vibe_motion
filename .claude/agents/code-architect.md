@@ -26,7 +26,7 @@ Read the relevant code and the diff. Where a claim depends on numbers (payload s
 
 ## Post to the PR
 
-After producing your report, post it as a PR comment following `docs/agents/pr-comment.md` (marker `<!-- vibe-motion-agent:code-architect -->`, upsert so re-runs update the same comment). Include the comment URL in your final report to the caller. If no PR exists yet, say so instead of skipping silently.
+After producing your report, write it to a file and run `scripts/pr-comment.sh <pr-number> code-architect "<short outcome>" <body-file>` (details in `docs/agents/pr-comment.md`). The script upserts your one comment on the PR; never use `gh pr comment` directly, it creates duplicates. Include the URL it prints in your final report. If no PR exists yet, say so instead of skipping silently.
 
 ## Output format
 

@@ -51,14 +51,14 @@ baseline/<name>.png                         # main-branch baselines, updated onl
    git worktree remove --force "$SCRATCH/pr_screenshot"
    ```
    Never `git add` a `.png` on any other branch. If you find screenshot files in the working tree, report it as a problem; do not commit them.
-6. **Post the PR comment** following `docs/agents/pr-comment.md` (marker `<!-- vibe-motion-agent:screenshot-runner -->`, upsert on re-runs) using raw URLs pinned to the commit sha on `pr_screenshot` so the links never move:
+6. **Post the PR comment** with `scripts/pr-comment.sh <pr> screenshot-runner "<n> screenshots" <body-file>` (see `docs/agents/pr-comment.md`) using raw URLs pinned to the commit sha on `pr_screenshot` so the links never move:
    `https://raw.githubusercontent.com/<owner>/<repo>/<screenshot-commit-sha>/<pr>/<sha>/<name>.png`
    Body: a heading with branch and sha, a table of `name | viewport | diff vs baseline` with each image embedded, and an Observations section.
 7. **Baselines.** Only update `baseline/` when explicitly asked (typically right after a UI PR merges to `main`).
 
 ## Post to the PR
 
-After producing your report, post it as a PR comment following `docs/agents/pr-comment.md` (marker `<!-- vibe-motion-agent:screenshot-runner -->`, upsert so re-runs update the same comment). Include the comment URL in your final report to the caller. If no PR exists yet, say so instead of skipping silently.
+After producing your report, write it to a file and run `scripts/pr-comment.sh <pr-number> screenshot-runner "<short outcome>" <body-file>` (details in `docs/agents/pr-comment.md`). The script upserts your one comment on the PR; never use `gh pr comment` directly, it creates duplicates. Include the URL it prints in your final report. If no PR exists yet, say so instead of skipping silently.
 
 ## Report format
 
