@@ -15,10 +15,11 @@ Rules
 | Worktree | Branch | Agent / session | Phase | Task | Status | Started | Touches shared contract? |
 |---|---|---|---|---|---|---|---|
 | (primary) | main | Claude Fable 5.1 (planning session with Chris) | planning | Build plan, architecture, user flow, CLAUDE.md, subagents, render.yaml | done 2026-09-18 | 2026-09-17 | no |
-| `.worktrees/feat/0-foundation` | feat/0-foundation | Claude Fable 5.1 (session with Chris) | 0 | Monorepo scaffold, gates, openapi.yaml, Flyway baseline, Dockerfile, CI | in-progress | 2026-09-18 | yes — creates openapi.yaml + schema.json (Phase 0 freeze) |
+| `.worktrees/feat/0-foundation` | feat/0-foundation | Claude Fable 5.1 (session with Chris) | 0 | Monorepo scaffold, gates, openapi.yaml, Flyway baseline, Dockerfile, CI | PR #1 draft, gates green, in review | 2026-09-18 | yes — creates openapi.yaml + schema.json (Phase 0 freeze) |
 
 ## Notices (newest first)
 
+- 2026-09-18 — Phase 0 PR #1 open (draft). `apps/api/openapi.yaml` and `packages/animation-catalog/schema.json` + `versions/1.0.0.json` are the Phase 0 freeze: additive-only once merged. Stack actuals: Next.js 16.3 / React 19.2 / Tailwind 4 / shadcn on Base UI (not Radix); Ktor 3.6 / Kotlin 2.4 / Exposed 1.5 (packages `org.jetbrains.exposed.v1.*`) / Flyway 13 / Kotest 5.9. Local Postgres via `docker compose up -d db` is on host port **5433**. Phases 1, 2, 3 may start in separate worktrees after #1 merges.
 - 2026-09-18 — Decision from Chris: the animation catalog is **versioned and immutable**. Files under `packages/animation-catalog/versions/` are never edited once on `main`; changes are new files + `current` bump + CHANGELOG. Every saved assignment pins `catalogVersion`. CSS is derived from the pinned entry, never stored. CI gate `check-immutable` enforces it (Phase 1). Adds `catalog_version` column and `GET /catalog/versions`, `GET /catalog/{version}` to the Phase 2 contract.
 - 2026-09-18 — Decision change from Chris: versions store **diffs**, created only on explicit user **Save**; live preview never writes to the API. Build plan Phases 2, 4, 6, 7 and architecture.md updated. Any Phase 2 work must implement `stateAt()` and the 409 stale-parent check.
 - 2026-09-18 — Screenshots go only to the orphan branch `pr_screenshot` via the screenshot-runner subagent (CLAUDE.md rule 8). DT-018 tracks creating/protecting that branch.
