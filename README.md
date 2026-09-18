@@ -12,4 +12,4 @@ Status: planning. No application code yet.
 - [Deferred tasks and bugs](docs/deferred_tasks.md)
 - [Render blueprint](render.yaml)
 
-Stack: Next.js 15 · Kotlin / Ktor 3 · Postgres 16 · Render.
+Stack: Next.js 16 · Kotlin / Ktor 3 · Postgres 16 · Render.

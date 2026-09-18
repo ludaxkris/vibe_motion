@@ -1,0 +1,11 @@
+# Root docker context (render.yaml builds apps/api/Dockerfile with context = repo root)
+node_modules/
+**/node_modules/
+apps/web/
+apps/api/build/
+apps/api/.gradle/
+apps/api/.kotlin/
+.worktrees/
+.git/
+docs/
+**/.next/

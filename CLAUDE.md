@@ -4,7 +4,7 @@ Instructions for every agent (human-driven or autonomous) working in this reposi
 
 ## What this project is
 
-Vibe Motion is a web tool that lets product designers add CSS animations to an existing web page: clone the page, click a component, pick or generate an animation, tune it live, keep version history, export HTML/CSS/JS. Stack: Next.js 15 (`apps/web`), Kotlin/Ktor 3 (`apps/api`), Postgres 16, shared animation catalog (`packages/animation-catalog`). Hosted on Render via `render.yaml`.
+Vibe Motion is a web tool that lets product designers add CSS animations to an existing web page: clone the page, click a component, pick or generate an animation, tune it live, keep version history, export HTML/CSS/JS. Stack: Next.js 16 (`apps/web`), Kotlin/Ktor 3 (`apps/api`), Postgres 16, shared animation catalog (`packages/animation-catalog`). Hosted on Render via `render.yaml`.
 
 ## Non-negotiable rules
 

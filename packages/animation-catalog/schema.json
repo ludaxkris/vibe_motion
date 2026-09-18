@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vibe-motion.dev/schema/animation-catalog.json",
+  "title": "Catalog",
+  "description": "Vibe Motion animation catalog. One published, immutable version of the CSS animation catalog. Files under versions/ must validate against this schema and are never edited once merged to main.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "entries"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Semver of this catalog file. Must equal the file name without .json.",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "category",
+        "description",
+        "keyframes",
+        "params",
+        "triggers"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable kebab-case identifier. Never reused for a different animation across versions.",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "entrance",
+            "exit",
+            "attention",
+            "emphasis",
+            "continuous",
+            "hover"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "keyframes": {
+          "type": "string",
+          "description": "Body of the @keyframes block only (the part inside the outer braces). The generator wraps it as `@keyframes vm-<id>-v<major> { ... }`. Reference animation-specific knobs as var(--vm-<key>).",
+          "minLength": 1
+        },
+        "params": {
+          "type": "array",
+          "description": "Adjustable variables. The five standard keys (duration, delay, easing, iteration, direction) map to animation-* properties; any other key must declare cssVar and is set as a custom property on the element.",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/param"
+              },
+              {
+                "if": {
+                  "properties": {
+                    "key": {
+                      "not": {
+                        "enum": [
+                          "duration",
+                          "delay",
+                          "easing",
+                          "iteration",
+                          "direction"
+                        ]
+                      }
+                    }
+                  },
+                  "type": "object"
+                },
+                "then": {
+                  "required": [
+                    "cssVar"
+                  ],
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        },
+        "triggers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "load",
+              "hover",
+              "in-view"
+            ]
+          }
+        },
+        "defaultTrigger": {
+          "type": "string",
+          "enum": [
+            "load",
+            "hover",
+            "in-view"
+          ]
+        },
+        "baseStyles": {
+          "type": "string",
+          "description": "Optional declarations applied to the element whenever this animation is assigned, e.g. `transform-origin: center; backface-visibility: hidden;`."
+        }
+      },
+      "title": "CatalogEntry"
+    },
+    "param": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "type",
+        "default"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-zA-Z0-9]*$"
+        },
+        "label": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "duration",
+            "easing",
+            "iteration",
+            "direction",
+            "length",
+            "number",
+            "angle",
+            "percentage",
+            "color",
+            "select"
+          ]
+        },
+        "default": {
+          "type": "string"
+        },
+        "min": {
+          "type": "string"
+        },
+        "max": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Allowed values for type=select (and the suggested list for type=easing)."
+        },
+        "cssVar": {
+          "type": "string",
+          "description": "Required for non-standard keys. Custom property name the keyframes reference, e.g. --vm-distance.",
+          "pattern": "^--vm-[a-z][a-z0-9-]*$"
+        }
+      },
+      "title": "CatalogParam"
+    }
+  }
+}

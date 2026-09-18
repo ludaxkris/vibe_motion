@@ -1,0 +1,41 @@
+{
+  "name": "animation-catalog",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Versioned, immutable CSS animation catalog for Vibe Motion. Files under versions/ are never edited once on main.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schema.json": "./schema.json",
+    "./versions/*": "./versions/*"
+  },
+  "files": [
+    "dist",
+    "versions",
+    "current",
+    "schema.json"
+  ],
+  "scripts": {
+    "validate": "node scripts/validate.mjs",
+    "check-immutable": "node scripts/check-immutable.mjs",
+    "gen-types": "node scripts/gen-types.mjs && tsc -p tsconfig.build.json",
+    "build": "pnpm gen-types",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/css-tree": "^2.3.11",
+    "@types/node": "^22.18.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "css-tree": "^3.1.0",
+    "json-schema-to-typescript": "^15.0.4",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
