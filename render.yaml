@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+#
+# Vibe Motion — Render Blueprint
+# Three resources: web (Next.js), api (Kotlin/Ktor in Docker), Postgres.
+# Secrets are `sync: false` and entered in the Render dashboard by the owner.
+# Database fields (name, databaseName, user, region, postgresMajorVersion) are IMMUTABLE after creation.
+
+previews:
+  generation: automatic
+  expireAfterDays: 7
+
+projects:
+  - name: vibe-motion
+    environments:
+      - name: production
+        databases:
+          - name: vibe-motion-db
+            databaseName: vibe_motion
+            user: vibe_motion
+            region: oregon
+            plan: basic-256mb
+            postgresMajorVersion: "16"
+
+        services:
+          # ---------------------------------------------------------------
+          # API — Kotlin / Ktor, built from apps/api/Dockerfile
+          # ---------------------------------------------------------------
+          - type: web
+            name: vibe-motion-api
+            runtime: docker
+            region: oregon
+            plan: starter
+            dockerfilePath: ./apps/api/Dockerfile
+            dockerContext: .
+            healthCheckPath: /health
+            autoDeployTrigger: checksPass
+            buildFilter:
+              paths:
+                - apps/api/**
+                - packages/animation-catalog/**
+                - render.yaml
+            envVars:
+              - key: DATABASE_URL
+                fromDatabase:
+                  name: vibe-motion-db
+                  property: connectionString
+              - key: PORT
+                value: "8080"
+              # Allowed origin for postMessage + CORS: the web service public URL.
+              # NOTE (DT-015): envVarKey pulls a var from the other service; verify on first
+              # deploy that Render exposes the platform var RENDER_EXTERNAL_URL this way.
+              # Fallback: `sync: false` and paste the URL in the dashboard.
+              - key: WEB_ORIGIN
+                fromService:
+                  type: web
+                  name: vibe-motion-web
+                  envVarKey: RENDER_EXTERNAL_URL
+              - key: CLONE_MAX_BYTES
+                value: "10485760"
+              - key: CLONE_TIMEOUT_MS
+                value: "15000"
+              - key: JAVA_TOOL_OPTIONS
+                value: "-XX:MaxRAMPercentage=75 -XX:+UseSerialGC"
+              # Reserved for a future LLM-backed agent; unused by the mock agent.
+              - key: ANTHROPIC_API_KEY
+                sync: false
+
+          # ---------------------------------------------------------------
+          # WEB — Next.js, Node runtime
+          # ---------------------------------------------------------------
+          - type: web
+            name: vibe-motion-web
+            runtime: node
+            region: oregon
+            plan: starter
+            rootDir: .
+            buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter web build
+            startCommand: pnpm --filter web start
+            healthCheckPath: /api/health
+            autoDeployTrigger: checksPass
+            buildFilter:
+              paths:
+                - apps/web/**
+                - packages/animation-catalog/**
+                - pnpm-lock.yaml
+                - package.json
+                - render.yaml
+            envVars:
+              - key: NODE_VERSION
+                value: "22"
+              # Browser-visible API origin; the iframe src and the typed client use it.
+              - key: NEXT_PUBLIC_API_ORIGIN
+                fromService:
+                  type: web
+                  name: vibe-motion-api
+                  envVarKey: RENDER_EXTERNAL_URL
+              - key: NEXT_TELEMETRY_DISABLED
+                value: "1"

@@ -1,33 +1,28 @@
-# Dependencies
-node_modules/
-.pnpm-store/
+# worktrees (one per agent)
+.worktrees/
 
-# Build output
-dist/
-build/
+# env
+.env
+.env.local
+.env.*.local
+
+# node
+node_modules/
 .next/
 out/
-.vercel/
+coverage/
+playwright-report/
+test-results/
 
-# Environment / secrets
-.env
-.env.*
-!.env.example
+# kotlin / gradle
+apps/api/build/
+apps/api/.gradle/
+apps/api/.kotlin/
+*.class
 
-# Logs
-*.log
-npm-debug.log*
-
-# OS / editor
+# os / editor
 .DS_Store
 .idea/
-.vscode/
-*.swp
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-
-# Claude local settings
-.claude/settings.local.json
+*.iml
+.vscode/*
+!.vscode/settings.json
