@@ -32,25 +32,29 @@ test.describe("in-view trigger", () => {
     await h.send("apply", inView);
 
     // Before the first entry: a real animation exists, paused at time zero, showing frame one.
+    // A paused animation at t=0 is still in its active phase, so it counts as one start.
     await expect.poll(() => h.animations("vm-iv")).toHaveLength(1);
     expect((await h.animations("vm-iv"))[0]).toMatchObject({ name: "vm-iv-v1-0-0", time: 0, state: "paused" });
     expect(await h.computed("vm-iv", "opacity")).toBe("0");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(1);
 
-    // Entry plays it.
+    // Entry plays it, as a new animation.
     await scrollTo(ivTop - 200);
     await expect.poll(() => h.computed("vm-iv", "opacity")).toBe("1");
-    expect(await h.starts("vm-iv-v1-0-0")).toBe(1);
+    expect((await h.animations("vm-iv"))[0]).toMatchObject({ state: "finished" });
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
 
-    // Leaving holds it at the FIRST keyframe again, not wherever it finished.
+    // Leaving holds it at the FIRST keyframe again, not wherever it finished. This is the half
+    // that cannot work by toggling play-state: the finished animation has to be replaced.
     await scrollTo(0);
     await expect.poll(() => h.computed("vm-iv", "opacity")).toBe("0");
-    const held = (await h.animations("vm-iv"))[0];
-    expect(held).toMatchObject({ time: 0, state: "paused" });
+    expect((await h.animations("vm-iv"))[0]).toMatchObject({ time: 0, state: "paused" });
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(3);
 
-    // Re-entry starts a genuinely new animation.
+    // Re-entry plays a genuinely new animation, so the designer can scroll back and watch again.
     await scrollTo(ivTop - 200);
-    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
-    expect(await h.computed("vm-iv", "opacity")).toBe("1");
+    await expect.poll(() => h.computed("vm-iv", "opacity")).toBe("1");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(4);
   });
 });
 

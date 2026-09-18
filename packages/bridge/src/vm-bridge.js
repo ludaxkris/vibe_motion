@@ -420,9 +420,29 @@
       if (!force) return;
       record.replaying = true;
     }
-    setOwned(record, "animation-name", "none", true);
-    forceStyleFlush(record.el);
-    render(record);
+    rewind([record]);
+  }
+
+  /**
+   * Give each record a brand new animation: `animation-name: none` for all of them, one style
+   * flush for the batch, then render each.
+   *
+   * Every `in-view` arm-state transition has to go through here (spec D3). Changing anything but
+   * `animation-name` updates a CSS animation *in place*, so an animation that has already
+   * finished stays finished: toggling play-state, delay and fill-mode on it pauses it at its end
+   * rather than rewinding it. That is what made `in-view` hold on its last keyframe and never
+   * replay on re-entry. One flush per batch, not per element, keeps an observer callback with 60
+   * entries to a single style recalculation.
+   *
+   * @param {ElementRecord[]} batch
+   */
+  function rewind(batch) {
+    if (!batch.length) return;
+    for (var i = 0; i < batch.length; i += 1) {
+      if (effective(batch[i])) setOwned(batch[i], "animation-name", "none", true);
+    }
+    forceStyleFlush(batch[0].el);
+    for (var j = 0; j < batch.length; j += 1) render(batch[j]);
   }
 
   /** @param {ElementRecord} record */
@@ -439,7 +459,10 @@
   // our duration and delay retiming whatever the page was already animating.
   // ---------------------------------------------------------------------------------------
 
+  /** The nearest tagged element under the pointer: what the outline and `element:hover` mean. */
   var hoveredVmId = /** @type {string | null} */ (null);
+  /** Its tagged ancestors-or-self, nearest first: what hover *arming* follows (spec D3). */
+  var hoverChain = /** @type {string[]} */ ([]);
   var inViewObserver = /** @type {IntersectionObserver | null} */ (null);
 
   /** One observer for every in-view assignment; created on first use (spec §6). */
@@ -454,6 +477,7 @@
 
   /** @param {IntersectionObserverEntry[]} entries */
   function onIntersect(entries) {
+    var changed = /** @type {ElementRecord[]} */ ([]);
     for (var i = 0; i < entries.length; i += 1) {
       var vmId = entries[i].target.getAttribute(ID_ATTR);
       if (!vmId) continue;
@@ -464,8 +488,11 @@
       var next = !!entries[i].isIntersecting;
       if (record.armed === next) continue;
       record.armed = next;
-      render(record);
+      changed.push(record);
     }
+    // Both directions, in one batch: arming has to start a new animation, and disarming has to
+    // rewind to a new animation paused at t=0 rather than pausing the finished one (spec D3).
+    rewind(changed);
   }
 
   /**
@@ -487,7 +514,7 @@
       return;
     }
     if (assignment.trigger === "hover") {
-      record.armed = hoveredVmId === record.vmId;
+      record.armed = hoverChain.indexOf(record.vmId) >= 0;
       return;
     }
     record.armed = true;
@@ -663,39 +690,68 @@
   // ---------------------------------------------------------------------------------------
 
   /**
-   * The nearest ancestor-or-self carrying a vmId we know about. Overlay nodes never match: they
-   * are not tagged, and they are not part of the page the designer is editing.
+   * Every tagged ancestor-or-self of `target`, nearest first. Overlay nodes never match: they are
+   * not tagged, and they are not part of the page the designer is editing.
    *
    * @param {EventTarget | null} target
-   * @returns {string | null}
+   * @returns {string[]}
    */
-  function nearestTaggedId(target) {
+  function taggedChain(target) {
+    var chain = /** @type {string[]} */ ([]);
     var node = /** @type {Node | null} */ (/** @type {unknown} */ (target));
     while (node && node.nodeType !== 1) node = node.parentNode;
     var el = /** @type {Element | null} */ (node);
     while (el) {
-      if (el === overlayRoot) return null;
+      if (el === overlayRoot) return [];
       var vmId = el.getAttribute(ID_ATTR);
-      if (vmId && elements.has(vmId)) return vmId;
+      if (vmId && elements.has(vmId) && chain.indexOf(vmId) < 0) chain.push(vmId);
       el = el.parentElement;
     }
-    return null;
+    return chain;
   }
 
-  /** @param {string | null} vmId */
-  function setHovered(vmId) {
-    if (vmId === hoveredVmId) return;
-    var previous = hoveredVmId;
-    hoveredVmId = vmId;
-    if (previous) armHover(previous, false);
-    if (vmId) armHover(vmId, true);
+  /**
+   * @param {EventTarget | null} target
+   * @returns {string | null}
+   */
+  function nearestTaggedId(target) {
+    var chain = taggedChain(target);
+    return chain.length ? chain[0] : null;
+  }
+
+  /**
+   * Hover has two different scopes on purpose (spec D3).
+   *
+   * *Arming* follows the whole chain of tagged ancestors, because the page still considers a card
+   * hovered when the pointer is over a button inside it, and a `:hover` rule in the Phase 7 export
+   * would still match. Following only the nearest tagged element disarmed the card the moment the
+   * pointer reached the button, and with a transform keyframe that oscillated at frame rate.
+   *
+   * *The outline and `element:hover`* stay nearest-only: the designer is pointing at one thing.
+   *
+   * @param {EventTarget | null} target
+   */
+  function setHovered(target) {
+    var chain = taggedChain(target);
+    var nearest = chain.length ? chain[0] : null;
+    var i;
+    for (i = 0; i < hoverChain.length; i += 1) {
+      if (chain.indexOf(hoverChain[i]) < 0) armHover(hoverChain[i], false);
+    }
+    for (i = 0; i < chain.length; i += 1) {
+      if (hoverChain.indexOf(chain[i]) < 0) armHover(chain[i], true);
+    }
+    hoverChain = chain;
+
+    if (nearest === hoveredVmId) return;
+    hoveredVmId = nearest;
     if (overlayRoot) {
-      if (vmId) overlayRoot.setAttribute(HOVERED_ATTR, vmId);
+      if (nearest) overlayRoot.setAttribute(HOVERED_ATTR, nearest);
       else overlayRoot.removeAttribute(HOVERED_ATTR);
     }
-    positionBox(hoverBox, vmId ? elements.get(vmId) : undefined);
+    positionBox(hoverBox, nearest ? elements.get(nearest) : undefined);
     // Only on a change: a message per mouse move would flood the channel (spec §6).
-    post("element:hover", vmId ? elementInfo(vmId) : { vmId: null });
+    post("element:hover", nearest ? elementInfo(nearest) : { vmId: null });
   }
 
   /**
@@ -710,13 +766,40 @@
     render(record);
   }
 
+  /**
+   * End a forced `replay`, but only for the element's own animation.
+   *
+   * `animationend` bubbles, so without the target check a host spinner or marquee finishing
+   * anywhere inside a tagged element would strip the whole animation group mid-play; without the
+   * name check, a second animation on the element itself would do the same.
+   *
+   * @param {AnimationEvent} event
+   */
+  function onAnimationBoundary(event) {
+    var el = /** @type {Element | null} */ (/** @type {unknown} */ (event.target));
+    if (!el || !el.getAttribute) return;
+    var vmId = el.getAttribute(ID_ATTR);
+    if (!vmId) return;
+    var record = records.get(vmId);
+    if (!record || record.el !== el) return;
+    if (selectedVmId === vmId && event.type !== "animationiteration") scheduleOverlaySync();
+    if (!record.replaying) return;
+    var assignment = effective(record);
+    if (!assignment || event.animationName !== assignment.keyframesName) return;
+    record.replaying = false;
+    // An in-view element that is still off-screen has to go back to a *new* animation paused at
+    // its first keyframe, not to the one that just finished (spec D3).
+    if (record.applied && record.applied.trigger === "in-view") rewind([record]);
+    else render(record);
+  }
+
   function attachPageListeners() {
     // Capture phase and delegated: one pair of handlers drives hover arming, the hover outline
     // and the `element:hover` message, and the host page's own handlers cannot stop them.
     document.addEventListener(
       "pointerover",
       function (event) {
-        setHovered(nearestTaggedId(event.target));
+        setHovered(event.target);
       },
       true,
     );
@@ -725,24 +808,15 @@
       function (event) {
         // `pointerout` fires before `pointerover` when moving between elements, so resolving the
         // related target here means one state change per move, not two.
-        setHovered(nearestTaggedId(event.relatedTarget));
+        setHovered(event.relatedTarget);
       },
       true,
     );
-    document.addEventListener(
-      "animationend",
-      function (event) {
-        var vmId = nearestTaggedId(event.target);
-        if (!vmId) return;
-        var record = records.get(vmId);
-        if (!record || !record.replaying) return;
-        // The one play `replay` forced on a hover / in-view element is over: hand the element
-        // back to its trigger's normal arm state.
-        record.replaying = false;
-        render(record);
-      },
-      true,
-    );
+    document.addEventListener("animationend", onAnimationBoundary, true);
+    // A looping animation never fires `animationend`, so the first iteration boundary is what
+    // ends a forced replay of one; and an animation we replace mid-flight fires `animationcancel`.
+    document.addEventListener("animationiteration", onAnimationBoundary, true);
+    document.addEventListener("animationcancel", onAnimationBoundary, true);
     // Capture phase and passive: scroll does not bubble out of a nested scroller, and the
     // overlay must never be the reason a scroll janks.
     document.addEventListener("scroll", scheduleOverlaySync, { capture: true, passive: true });

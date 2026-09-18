@@ -53,6 +53,45 @@ describe("hover trigger", () => {
     expect(el.style.getPropertyValue("--vm-distance")).toBe("24px");
   });
 
+  it("keeps a hover-armed ancestor armed while the pointer is over a tagged descendant (B3)", () => {
+    const nested = page(`
+      <div data-vm-id="vm-card"><button data-vm-id="vm-btn"><span class="label">press</span></button></div>`);
+    const h = loadBridge(nested);
+    h.send({ type: "apply", payload: applied({ vmId: "vm-card", trigger: "hover" }), seq: 1 });
+    h.send({ type: "apply", payload: applied({ vmId: "vm-btn", trigger: "hover" }), seq: 2 });
+
+    h.mouse("pointerover", h.el("vm-card"));
+    expect(h.el("vm-card").style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
+
+    // Onto the tagged button: the card is still hovered as far as the page is concerned, and a
+    // CSS `:hover` rule would still match it. The export must agree with the preview.
+    h.mouse("pointerout", h.el("vm-card"), h.document.querySelector(".label") as Node);
+    h.mouse("pointerover", h.document.querySelector(".label") as Node);
+
+    expect(h.el("vm-card").style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
+    expect(h.el("vm-btn").style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
+    // The outline and the message stay nearest-only.
+    expect((h.payloads("element:hover") as Array<{ vmId: string | null }>).map((p) => p.vmId)).toEqual([
+      "vm-card",
+      "vm-btn",
+    ]);
+    expect(h.overlay()?.getAttribute("data-vm-hovered")).toBe("vm-btn");
+
+    h.mouse("pointerout", h.el("vm-btn"), null);
+    expect(h.el("vm-card").style.getPropertyValue("animation-name")).toBe("");
+    expect(h.el("vm-btn").style.getPropertyValue("animation-name")).toBe("");
+  });
+
+  it("arms an ancestor that gains a hover assignment while already hovered", () => {
+    const nested = page(`<div data-vm-id="vm-card"><button data-vm-id="vm-btn">press</button></div>`);
+    const h = loadBridge(nested);
+    h.mouse("pointerover", h.el("vm-btn"));
+
+    h.send({ type: "apply", payload: applied({ vmId: "vm-card", trigger: "hover" }), seq: 1 });
+
+    expect(h.el("vm-card").style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
+  });
+
   it("writes only custom properties for a param-only change while unarmed", () => {
     const h = loadBridge(hostPage);
     h.send({ type: "apply", payload: applied({ trigger: "hover" }), seq: 1 });
@@ -70,6 +109,22 @@ describe("hover trigger", () => {
   });
 });
 
+/**
+ * Record every `animation-name` the bridge writes on an element, in order. Toggling
+ * play-state / delay / fill-mode updates an animation in place; only an `animation-name` change
+ * gives the element a *new* animation, which is the whole of B1.
+ */
+function watchNameWrites(h: ReturnType<typeof loadBridge>, vmId: string): string[] {
+  const el = h.el(vmId);
+  const writes: string[] = [];
+  const write = el.style.setProperty.bind(el.style);
+  vi.spyOn(el.style, "setProperty").mockImplementation((prop: string, value: string | null, priority?: string) => {
+    if (prop === "animation-name") writes.push(value ?? "");
+    write(prop, value, priority);
+  });
+  return writes;
+}
+
 describe("in-view trigger", () => {
   it("arms on entry, disarms on exit and re-arms on the next entry", () => {
     const h = loadBridge(hostPage);
@@ -84,6 +139,64 @@ describe("in-view trigger", () => {
 
     h.intersect("vm-heading", true);
     expect(el.style.getPropertyValue("animation-play-state")).toBe("running");
+  });
+
+  it("gives the element a new animation on every arm-state transition (spec D3)", () => {
+    const h = loadBridge(hostPage);
+    h.send({ type: "apply", payload: applied({ trigger: "in-view" }), seq: 1 });
+    const writes = watchNameWrites(h, "vm-heading");
+
+    h.intersect("vm-heading", true);
+    expect(writes).toEqual(["none", "vm-fade-in-up-v1-1-0"]);
+
+    writes.length = 0;
+    h.intersect("vm-heading", false);
+    expect(writes).toEqual(["none", "vm-fade-in-up-v1-1-0"]);
+
+    writes.length = 0;
+    h.intersect("vm-heading", true);
+    expect(writes).toEqual(["none", "vm-fade-in-up-v1-1-0"]);
+  });
+
+  it("rewinds one batch of transitions with a single style flush", () => {
+    const body = Array.from({ length: 3 }, (_, i) => `<div data-vm-id="vm-box-${i}">box ${i}</div>`).join("");
+    const h = loadBridge(page(body));
+    for (let i = 0; i < 3; i += 1) {
+      h.send({ type: "apply", payload: applied({ vmId: `vm-box-${i}`, trigger: "in-view" }), seq: i + 1 });
+    }
+    let flushes = 0;
+    const real = h.window.getComputedStyle.bind(h.window);
+    vi.spyOn(h.window, "getComputedStyle").mockImplementation(((el: Element) => {
+      flushes += 1;
+      return real(el);
+    }) as typeof h.window.getComputedStyle);
+
+    h.observers()[0].fire([
+      { vmId: "vm-box-0", isIntersecting: true },
+      { vmId: "vm-box-1", isIntersecting: true },
+      { vmId: "vm-box-2", isIntersecting: true },
+    ]);
+
+    expect(flushes).toBe(1);
+    for (let i = 0; i < 3; i += 1) {
+      expect(h.el(`vm-box-${i}`).style.getPropertyValue("animation-play-state")).toBe("running");
+    }
+  });
+
+  it("holds a forced replay's element back at its first keyframe when it ends off-screen", () => {
+    const h = loadBridge(hostPage);
+    h.send({ type: "apply", payload: applied(held), seq: 1 });
+    h.send({ type: "replay", payload: { vmId: "vm-heading" }, seq: 2 });
+    const el = h.el("vm-heading");
+    expect(el.style.getPropertyValue("animation-play-state")).toBe("running");
+    const writes = watchNameWrites(h, "vm-heading");
+
+    h.animationEvent("vm-heading");
+
+    expect(writes).toEqual(["none", "vm-fade-in-up-v1-1-0"]);
+    expect(el.style.getPropertyValue("animation-play-state")).toBe("paused");
+    expect(el.style.getPropertyValue("animation-delay")).toBe("0s");
+    expect(el.style.getPropertyValue("animation-fill-mode")).toBe("both");
   });
 
   it("holds the element on its first keyframe until the trigger fires (spec D3)", () => {
@@ -194,10 +307,60 @@ describe("replay", () => {
     expect(el.style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
     expect(el.style.getPropertyValue("animation-play-state")).toBe("running");
 
-    h.animationEnd("vm-heading");
+    h.animationEvent("vm-heading");
 
     expect(el.style.getPropertyValue("animation-name")).toBe("");
     expect(el.style.getPropertyValue("animation-duration")).toBe("9s");
+  });
+
+  it("is not ended by an animation finishing on a descendant (spec replay row)", () => {
+    const h = loadBridge(hostPage);
+    h.send({ type: "apply", payload: applied({ vmId: "vm-button", trigger: "hover" }), seq: 1 });
+    h.send({ type: "replay", payload: { vmId: "vm-button" }, seq: 2 });
+
+    // What a host spinner, ripple or marquee inside the element does on any real cloned page.
+    h.animationEvent("vm-button", {
+      target: h.document.querySelector(".inner") as Node,
+      animationName: "hostspin",
+    });
+
+    expect(h.el("vm-button").style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
+  });
+
+  it("is not ended by another animation finishing on the element itself", () => {
+    const h = loadBridge(hostPage);
+    h.send({ type: "apply", payload: applied({ trigger: "hover" }), seq: 1 });
+    h.send({ type: "replay", payload: { vmId: "vm-heading" }, seq: 2 });
+
+    h.animationEvent("vm-heading", { animationName: "hostspin" });
+
+    expect(h.el("vm-heading").style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
+  });
+
+  it("ends an infinite forced replay on its first iteration boundary", () => {
+    const h = loadBridge(hostPage);
+    h.send({
+      type: "apply",
+      payload: applied({ trigger: "hover", style: { "animation-iteration-count": "infinite" } }),
+      seq: 1,
+    });
+    h.send({ type: "replay", payload: { vmId: "vm-heading" }, seq: 2 });
+    expect(h.el("vm-heading").style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
+
+    h.animationEvent("vm-heading", { type: "animationiteration" });
+
+    expect(h.el("vm-heading").style.getPropertyValue("animation-name")).toBe("");
+    expect(h.el("vm-heading").style.getPropertyValue("animation-duration")).toBe("9s");
+  });
+
+  it("ends a forced replay whose animation is cancelled", () => {
+    const h = loadBridge(hostPage);
+    h.send({ type: "apply", payload: applied({ trigger: "hover" }), seq: 1 });
+    h.send({ type: "replay", payload: { vmId: "vm-heading" }, seq: 2 });
+
+    h.animationEvent("vm-heading", { type: "animationcancel" });
+
+    expect(h.el("vm-heading").style.getPropertyValue("animation-name")).toBe("");
   });
 
   it("leaves a naturally armed element armed after animationend", () => {
@@ -205,7 +368,7 @@ describe("replay", () => {
     h.send({ type: "apply", payload: applied(), seq: 1 });
     h.send({ type: "replay", payload: { vmId: "vm-heading" }, seq: 2 });
 
-    h.animationEnd("vm-heading");
+    h.animationEvent("vm-heading");
 
     expect(h.el("vm-heading").style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
   });

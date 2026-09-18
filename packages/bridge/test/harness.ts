@@ -53,6 +53,8 @@ export type FakeObserver = {
   targets: Set<Element>;
   options: { threshold?: number | number[] } | undefined;
   disconnected: boolean;
+  /** Deliver several entries in one callback, the way a real observer batches them. */
+  fire(entries: Array<{ vmId: string; isIntersecting: boolean }>): void;
 };
 
 export type Harness = {
@@ -77,7 +79,15 @@ export type Harness = {
   mouse(type: string, target: Node, relatedTarget?: Node | null): void;
   click(target: Node): MouseEvent;
   keydown(key: string): void;
-  animationEnd(vmId: string): void;
+  /**
+   * jsdom has no `AnimationEvent` and never runs an animation, so the event is built by hand.
+   * It carries `animationName` and can be aimed at a descendant, because the bridge has to tell
+   * its own animation ending from a host animation ending somewhere inside the element.
+   */
+  animationEvent(
+    vmId: string,
+    opts?: { type?: "animationend" | "animationiteration" | "animationcancel"; animationName?: string; target?: Node },
+  ): void;
   destroy(): void;
 };
 
@@ -107,6 +117,22 @@ export function loadBridge(html: string, opts: { parentOrigin?: string | null } 
       this.options = options;
       observers.push(this);
       callbacks.set(this, cb);
+    }
+    fire(entries: Array<{ vmId: string; isIntersecting: boolean }>) {
+      const cb = callbacks.get(this);
+      if (!cb) return;
+      cb(
+        entries.map(({ vmId, isIntersecting }) => {
+          const target = el(vmId);
+          return {
+            target,
+            isIntersecting,
+            intersectionRatio: isIntersecting ? 1 : 0,
+            boundingClientRect: target.getBoundingClientRect(),
+          };
+        }),
+        this,
+      );
     }
     observe(el: Element) {
       this.targets.add(el);
@@ -209,20 +235,7 @@ export function loadBridge(html: string, opts: { parentOrigin?: string | null } 
     intersect(vmId, isIntersecting) {
       const target = el(vmId);
       for (const observer of observers) {
-        if (!observer.targets.has(target)) continue;
-        const cb = callbacks.get(observer);
-        if (!cb) continue;
-        cb(
-          [
-            {
-              target,
-              isIntersecting,
-              intersectionRatio: isIntersecting ? 1 : 0,
-              boundingClientRect: target.getBoundingClientRect(),
-            },
-          ],
-          observer,
-        );
+        if (observer.targets.has(target)) observer.fire([{ vmId, isIntersecting }]);
       }
     },
     observers() {
@@ -247,8 +260,13 @@ export function loadBridge(html: string, opts: { parentOrigin?: string | null } 
     keydown(key) {
       document.dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
     },
-    animationEnd(vmId) {
-      el(vmId).dispatchEvent(new window.Event("animationend", { bubbles: true }));
+    animationEvent(vmId, opts = {}) {
+      const event = new window.Event(opts.type ?? "animationend", { bubbles: true });
+      Object.defineProperty(event, "animationName", {
+        value: opts.animationName ?? "vm-fade-in-up-v1-1-0",
+        configurable: true,
+      });
+      (opts.target ?? el(vmId)).dispatchEvent(event);
     },
     destroy() {
       window.close();
