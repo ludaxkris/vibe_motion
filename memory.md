@@ -16,7 +16,7 @@ Rules
 |---|---|---|---|---|---|---|---|
 | (primary) | main | Claude Fable 5.1 (planning session with Chris) | planning + 0 | Planning docs (done), Phase 0 foundation PR #1 (merged), agent PR comments + cleanup PR #2 (merged) | done 2026-09-18 | 2026-09-17 | no |
 | `.worktrees/feat/3-web-shell-help` | feat/3-web-shell-help | Claude Fable 5.1 (session with Chris) | 3 | Web shell: URL entry → POST /projects, resizable split editor, Control Panel state machine + /dev route, live help page via runtime CSS generator, MSW mocks; re-skin from Claude Design mocks | in-progress | 2026-09-18 | no (consumes openapi + catalog read-only) |
-| .worktrees/docs/phase-4-plan | docs/phase-4-plan | Claude Fable 5.1 (session w/ Chris) | 4 (planning only) | Bridge protocol spec + Phase 4 implementation plan under `docs/plans/`. Docs only; no code. Reads the Phase 2/3 worktrees read-only. | PR #8 draft, awaiting Chris's answers to spec §9 | 2026-09-18 | proposes bridge protocol v1 (spec only) |
+| .worktrees/docs/phase-4-plan | docs/phase-4-plan | Claude Fable 5.1 (session w/ Chris) | 4 (planning only) | Bridge protocol spec + Phase 4 implementation plan under `docs/plans/`. Docs only; no code. Reads the Phase 2/3 worktrees read-only. | PR #8 ready for review (owner decisions folded in; gates green on cbaf967) | 2026-09-18 | proposes bridge protocol v1 (spec only) |
 | `.worktrees/chore/render-previews-off` | chore/render-previews-off | Claude Fable 5.1 (session with Chris) | — | `render.yaml` `previews.generation: "off"` + docs aligned (DT-075) | PR #9 ready for review, gates + test-runner green | 2026-09-18 | no |
 
 ## Notices (newest first)
