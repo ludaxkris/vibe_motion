@@ -43,6 +43,8 @@ Status: `open` · `in-progress` · `done` · `wont-do`.
 | DT-031 | test | MSW mock `DELETE /projects/{projectId}` handler has no unit test | P3 | later | 3 | — | open | Two-line handler used only for e2e cleanup (apps/web/mocks). |
 | DT-032 | tech-debt | MSW mock 422 validation checks catalogVersion/animationId/param keys but not param values | P3 | later | 3 | — | open | Real API validates more; tighten if UI work starts relying on the mock to catch malformed params. |
 | DT-033 | tech-debt | MSW mock `/export` output is not golden-matched against the Kotlin exporter | P3 | later | 7 | — | open | Do not assume byte-identical mock/real export CSS; align when Phase 7 lands. |
+| DT-034 | tech-debt | `catalogResources` Gradle task writes `versions.txt` in lexical, not semver, order | P3 | later | 1 | — | open | `apps/api/build.gradle.kts` uses `.sorted()`. Harmless today because `ClasspathCatalogRepository` re-sorts with `SEMVER_ORDER`; would misorder `1.10.0` vs `1.9.0` for anything reading the file order directly. Found in PR #3 review. |
+| DT-035 | feature | Catalog: back-fill `iteration` and `direction` standard params onto every entry (new minor catalog version) | P2 | this-phase | 1 | — | open | build_plan §4 Phase 1 "Common params" says every animation exposes duration, delay, easing, iteration, direction, fill-mode. Catalog 1.1.0 (PR #3) added `fillMode` everywhere but left 12 of 26 entries without `iteration` and all but `spin` without `direction`. Deliberate deviation: one-shot entrance/hover entries gain little. Needs Chris's call: ship a 1.2.0 that back-fills, or amend the plan. Raised in PR #3 description. |
 
 ## Bugs
 
