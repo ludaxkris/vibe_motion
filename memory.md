@@ -14,12 +14,11 @@ Rules
 
 | Worktree | Branch | Agent / session | Phase | Task | Status | Started | Touches shared contract? |
 |---|---|---|---|---|---|---|---|
-| (primary) | main | Claude Fable 5.1 (planning session with Chris) | planning | Build plan, architecture, user flow, CLAUDE.md, subagents, render.yaml | done 2026-09-18 | 2026-09-17 | no |
-| `.worktrees/chore/agents-pr-comments` | chore/agents-pr-comments | Claude Fable 5.1 (session with Chris) | — | Subagents post reports as upserted PR comments (docs/agents/pr-comment.md) | PR #2 open, awaiting CI + merge | 2026-09-18 | no |
-| `.worktrees/feat/0-foundation` | feat/0-foundation | Claude Fable 5.1 (session with Chris) | 0 | Monorepo scaffold, gates, openapi.yaml, Flyway baseline, Dockerfile, CI | PR #1 ready for review: CI green, test-runner green on 5d9e609, code-reviewer APPROVE. Awaiting merge by Chris. | 2026-09-18 | yes — creates openapi.yaml + schema.json (Phase 0 freeze) |
+| (primary) | main | Claude Fable 5.1 (planning session with Chris) | planning + 0 | Planning docs (done), Phase 0 foundation PR #1 (merged), agent PR comments + cleanup PR #2 (merged) | done 2026-09-18 | 2026-09-17 | no |
 
 ## Notices (newest first)
 
+- 2026-09-18 — **Phase 0 merged (PR #1) and PR #2 merged.** `main` now has the monorepo, gates, CI, frozen `openapi.yaml`, catalog 1.0.0, cleanup script. Contract freeze is in effect: `apps/api/openapi.yaml`, `packages/animation-catalog/schema.json` and `versions/1.0.0.json` are additive-only. **Phases 1, 2, 3 are open for claiming** (one worktree each; claim below before creating the worktree). Worktrees for #1/#2 were removed with `scripts/cleanup-merged.sh`.
 - 2026-09-18 — From PR #2 on, every subagent posts its report as a marker-tagged, upserted PR comment (`<!-- vibe-motion-agent:<name> -->`). Procedure: docs/agents/pr-comment.md. Orchestrators still own the PR description.
 - 2026-09-18 — PR #1 review fixes pushed (5d9e609). Flyway `V1__baseline.sql` edited in place (dropped a duplicate index) before merge; anyone with a local DB from an earlier run must `docker compose down -v && docker compose up -d db`. After #1 merges, migrations are append-only (V2+). New gate: "generated artifacts up to date" fails if `openapi.yaml` or the catalog change without regenerating; run `pnpm gen:types && pnpm gen:client` after editing either.
 - 2026-09-18 — Phase 0 PR #1 open (draft). `apps/api/openapi.yaml` and `packages/animation-catalog/schema.json` + `versions/1.0.0.json` are the Phase 0 freeze: additive-only once merged. Stack actuals: Next.js 16.3 / React 19.2 / Tailwind 4 / shadcn on Base UI (not Radix); Ktor 3.6 / Kotlin 2.4 / Exposed 1.5 (packages `org.jetbrains.exposed.v1.*`) / Flyway 13 / Kotest 5.9. Local Postgres via `docker compose up -d db` is on host port **5433**. Phases 1, 2, 3 may start in separate worktrees after #1 merges.
@@ -36,7 +35,7 @@ Agents claim a task here before creating a worktree so two agents do not pick th
 
 | Task | Claimed by | Date |
 |---|---|---|
-| Phase 0 — Foundation (monorepo, gates, OpenAPI, Flyway, Dockerfile, CI) | Claude Fable 5.1 (session with Chris) · worktree `.worktrees/feat/0-foundation` | 2026-09-18 |
+| — | — | — |
 
 ## Facts other agents need
 
