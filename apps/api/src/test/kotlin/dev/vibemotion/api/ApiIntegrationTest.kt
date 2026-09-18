@@ -38,6 +38,7 @@ class ApiIntegrationTest :
         val postgres = PostgreSQLContainer<Nothing>(DockerImageName.parse("postgres:16-alpine"))
         val json = Json { ignoreUnknownKeys = true }
         val catalog = ClasspathCatalogRepository.load()
+        val services = testServices(catalog)
         lateinit var database: AppDatabase
 
         beforeSpec {
@@ -57,7 +58,7 @@ class ApiIntegrationTest :
 
         test("GET /health returns 200 with db ok once Flyway has migrated") {
             testApplication {
-                application { apiModule(config(), catalog, database) }
+                application { apiModule(config(), catalog, database, services) }
 
                 val response = client.get("/health")
 
@@ -71,7 +72,7 @@ class ApiIntegrationTest :
 
         test("GET /catalog returns the current catalog version") {
             testApplication {
-                application { apiModule(config(), catalog, database) }
+                application { apiModule(config(), catalog, database, services) }
 
                 val response = client.get("/catalog")
 
@@ -82,7 +83,7 @@ class ApiIntegrationTest :
 
         test("GET /catalog/9.9.9 returns 404 with an Error body") {
             testApplication {
-                application { apiModule(config(), catalog, database) }
+                application { apiModule(config(), catalog, database, services) }
 
                 val response = client.get("/catalog/9.9.9")
 

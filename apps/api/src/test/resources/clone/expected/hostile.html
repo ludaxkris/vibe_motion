@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8">
+
+
+
+<title>Hostile</title>
+
+
+
+
+
+<link rel="stylesheet" href="https://hostile.example/theme.css">
+</head>
+<body>
+<h1 data-vm-id="vm-1">Hostile page</h1>
+<a href="#" data-vm-id="vm-2">plain</a>
+<a href="#" data-vm-id="vm-3">mixed case</a>
+<a href="#" data-vm-id="vm-4">tab escaped</a>
+<a href="#" data-vm-id="vm-5">data document</a>
+<a href="#" data-vm-id="vm-6">vbscript</a>
+<a href="https://hostile.example/ok" data-vm-id="vm-7">fine</a>
+<img src="https://hostile.example/x.png" alt="broken" data-vm-id="vm-8">
+
+
+
+
+<p class="fallback" data-vm-id="vm-9">JavaScript is off</p>
+<form action="#" method="post" data-vm-id="vm-10">
+  <input name="q" data-vm-id="vm-11">
+  <button type="submit" formaction="#" data-vm-id="vm-12">go</button>
+</form>
+<div style="background: url(&quot;#&quot;)); color: red" data-vm-id="vm-13">styled</div>
+<svg width="8" height="8" data-vm-id="vm-14"><use xlink:href="#"></use></svg>
+<br><wbr>
+<p data-vm-id="vm-15">done</p>
+</body>
+</html>

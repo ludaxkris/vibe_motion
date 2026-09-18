@@ -8,6 +8,7 @@ import dev.vibemotion.api.model.ApiError
 import dev.vibemotion.api.persistence.AppDatabase
 import dev.vibemotion.api.persistence.DatabaseHealth
 import dev.vibemotion.api.testConfig
+import dev.vibemotion.api.testServices
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -29,13 +30,25 @@ class ApiRoutesTest :
     FunSpec({
 
         val catalog = ClasspathCatalogRepository.load()
+        val services = testServices(catalog)
         val json = Json { ignoreUnknownKeys = true }
 
         fun healthOf(reachable: Boolean) = DatabaseHealth { reachable }
 
+        test("GET /bridge/vm-bridge.js serves the bridge script as JavaScript") {
+            testApplication {
+                application { apiModule(testConfig(), catalog, healthOf(true), services) }
+                val response = client.get("/bridge/vm-bridge.js")
+                response.status shouldBe HttpStatusCode.OK
+                response.contentType()?.withoutParameters() shouldBe ContentType.parse("application/javascript")
+                response.headers["X-Content-Type-Options"] shouldBe "nosniff"
+                response.bodyAsText() shouldContain "vibe-motion"
+            }
+        }
+
         test("GET /catalog serves the current version verbatim") {
             testApplication {
-                application { apiModule(testConfig(), catalog, healthOf(true)) }
+                application { apiModule(testConfig(), catalog, healthOf(true), services) }
 
                 val response = client.get("/catalog")
 
@@ -47,7 +60,7 @@ class ApiRoutesTest :
 
         test("GET /catalog/versions lists the published versions and the current pointer") {
             testApplication {
-                application { apiModule(testConfig(), catalog, healthOf(true)) }
+                application { apiModule(testConfig(), catalog, healthOf(true), services) }
 
                 val body = json.decodeFromString<CatalogVersionsResponse>(client.get("/catalog/versions").bodyAsText())
 
@@ -58,7 +71,7 @@ class ApiRoutesTest :
 
         test("GET /catalog/{version} serves a published version") {
             testApplication {
-                application { apiModule(testConfig(), catalog, healthOf(true)) }
+                application { apiModule(testConfig(), catalog, healthOf(true), services) }
 
                 val response = client.get("/catalog/${catalog.currentVersion}")
 
@@ -69,7 +82,7 @@ class ApiRoutesTest :
 
         test("GET /catalog/{version} answers 404 with an Error body for an unknown version") {
             testApplication {
-                application { apiModule(testConfig(), catalog, healthOf(true)) }
+                application { apiModule(testConfig(), catalog, healthOf(true), services) }
 
                 val response = client.get("/catalog/9.9.9")
 
@@ -82,7 +95,7 @@ class ApiRoutesTest :
 
         test("an unknown route answers 404 with an Error body") {
             testApplication {
-                application { apiModule(testConfig(), catalog, healthOf(true)) }
+                application { apiModule(testConfig(), catalog, healthOf(true), services) }
 
                 val response = client.get("/nope")
 
@@ -101,7 +114,7 @@ class ApiRoutesTest :
                 )
             try {
                 testApplication {
-                    application { apiModule(testConfig(), catalog, { AppDatabase.probe(pool) }) }
+                    application { apiModule(testConfig(), catalog, { AppDatabase.probe(pool) }, services) }
 
                     val response = client.get("/health")
 
@@ -117,7 +130,7 @@ class ApiRoutesTest :
 
         test("CORS allows the configured web origin") {
             testApplication {
-                application { apiModule(testConfig(), catalog, healthOf(true)) }
+                application { apiModule(testConfig(), catalog, healthOf(true), services) }
 
                 val response =
                     client.get("/catalog/versions") {
@@ -131,7 +144,7 @@ class ApiRoutesTest :
 
         test("CORS rejects any other origin") {
             testApplication {
-                application { apiModule(testConfig(), catalog, healthOf(true)) }
+                application { apiModule(testConfig(), catalog, healthOf(true), services) }
 
                 val response =
                     client.get("/catalog/versions") {

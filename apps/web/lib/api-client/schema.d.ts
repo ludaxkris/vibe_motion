@@ -131,6 +131,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bridge/vm-bridge.js": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Vibe Motion bridge script loaded by the rendered project page (added in Phase 2, additive)
+         * @description `GET /projects/{projectId}/page` adds `<script src="/bridge/vm-bridge.js">` and a CSP of
+         *     `script-src 'self'` at serve time, so this is the only script a cloned page can run.
+         *     The stored `base_html` never contains it.
+         */
+        get: operations["getBridgeScript"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/versions": {
         parameters: {
             query?: never;
@@ -590,6 +612,26 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    getBridgeScript: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description JavaScript */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/javascript": string;
+                };
+            };
         };
     };
     listVersions: {

@@ -166,6 +166,22 @@ paths:
               schema: { type: string }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /bridge/vm-bridge.js:
+    get:
+      tags: [projects]
+      operationId: getBridgeScript
+      summary: The Vibe Motion bridge script loaded by the rendered project page (added in Phase 2, additive)
+      description: |
+        `GET /projects/{projectId}/page` adds `<script src="/bridge/vm-bridge.js">` and a CSP of
+        `script-src 'self'` at serve time, so this is the only script a cloned page can run.
+        The stored `base_html` never contains it.
+      responses:
+        "200":
+          description: JavaScript
+          content:
+            application/javascript:
+              schema: { type: string }
+
   /projects/{projectId}/versions:
     parameters:
       - $ref: "#/components/parameters/projectId"

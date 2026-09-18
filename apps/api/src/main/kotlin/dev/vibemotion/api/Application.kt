@@ -2,12 +2,21 @@ package dev.vibemotion.api
 
 import dev.vibemotion.api.catalog.CatalogRepository
 import dev.vibemotion.api.catalog.ClasspathCatalogRepository
+import dev.vibemotion.api.clone.CloneException
 import dev.vibemotion.api.config.AppConfig
+import dev.vibemotion.api.domain.EmptyDiffException
+import dev.vibemotion.api.domain.InvalidDiffException
+import dev.vibemotion.api.domain.ResourceNotFoundException
+import dev.vibemotion.api.domain.StaleParentErrorBody
+import dev.vibemotion.api.domain.StaleParentException
 import dev.vibemotion.api.model.ApiError
 import dev.vibemotion.api.persistence.AppDatabase
 import dev.vibemotion.api.persistence.DatabaseHealth
+import dev.vibemotion.api.routes.bridgeRoutes
 import dev.vibemotion.api.routes.catalogRoutes
 import dev.vibemotion.api.routes.healthRoutes
+import dev.vibemotion.api.routes.projectRoutes
+import dev.vibemotion.api.routes.versionRoutes
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -41,12 +50,14 @@ fun main() {
     val config = AppConfig.fromEnv()
     val database = AppDatabase.start(config.database)
     val catalog = ClasspathCatalogRepository.load()
+    val (cloner, renderer) = defaultCloneComponents(config)
+    val services = appServices(catalog, cloner, renderer)
 
     Runtime.getRuntime().addShutdownHook(Thread { database.close() })
 
     log.info("Starting vibe-motion-api on port {} (web origin {})", config.port, config.webOrigin)
     embeddedServer(Netty, port = config.port, host = "0.0.0.0") {
-        apiModule(config, catalog, database)
+        apiModule(config, catalog, database, services)
     }.start(wait = true)
 }
 
@@ -58,6 +69,7 @@ fun Application.apiModule(
     config: AppConfig,
     catalog: CatalogRepository,
     databaseHealth: DatabaseHealth,
+    services: AppServices,
 ) {
     install(DefaultHeaders)
 
@@ -85,6 +97,40 @@ fun Application.apiModule(
     }
 
     install(StatusPages) {
+        // Clone failures carry their own contract code; only the status differs per subtype.
+        exception<CloneException> { call, cause ->
+            val status =
+                when (cause) {
+                    is CloneException.InvalidUrl -> HttpStatusCode.BadRequest
+
+                    is CloneException.TooLarge -> HttpStatusCode.PayloadTooLarge
+
+                    is CloneException.Blocked,
+                    is CloneException.Unreachable,
+                    is CloneException.NotHtml,
+                    -> HttpStatusCode.UnprocessableEntity
+                }
+            call.respond(status, ApiError(cause.code, cause.message ?: "Could not clone that page"))
+        }
+        exception<ResourceNotFoundException> { call, cause ->
+            call.respond(HttpStatusCode.NotFound, ApiError("not_found", cause.message ?: "Not found"))
+        }
+        exception<StaleParentException> { call, cause ->
+            call.respond(
+                HttpStatusCode.Conflict,
+                StaleParentErrorBody(
+                    code = "stale_parent",
+                    message = cause.message ?: "The project has a newer version",
+                    currentVersion = cause.currentVersion,
+                ),
+            )
+        }
+        exception<EmptyDiffException> { call, cause ->
+            call.respond(HttpStatusCode.BadRequest, ApiError("empty_diff", cause.message ?: "Diff is empty"))
+        }
+        exception<InvalidDiffException> { call, cause ->
+            call.respond(HttpStatusCode.UnprocessableEntity, ApiError("invalid_diff", cause.problems.joinToString("; ")))
+        }
         exception<NotFoundException> { call, cause ->
             call.respond(HttpStatusCode.NotFound, ApiError("not_found", cause.message ?: "Not found"))
         }
@@ -114,5 +160,8 @@ fun Application.apiModule(
     routing {
         healthRoutes(databaseHealth, config.appVersion)
         catalogRoutes(catalog)
+        projectRoutes(services.projects)
+        versionRoutes(services.versions)
+        bridgeRoutes()
     }
 }
