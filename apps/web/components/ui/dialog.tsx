@@ -23,6 +23,17 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
 }
 
+/**
+ * The dialog card itself: 14px radius, 22px padding, 13px ink on the modal
+ * shadow (handoff, "3. Dialogs & toast"). Exported so `/dev` can stage an
+ * open dialog inline — no portal, no focus trap — and still be the same card.
+ */
+const DIALOG_CARD =
+  "rounded-2xl bg-vm-surface p-[22px] text-md text-vm-ink shadow-modal"
+
+/** The violet scrim the card sits on. */
+const DIALOG_SCRIM = "bg-vm-scrim"
+
 function DialogOverlay({
   className,
   ...props
@@ -31,7 +42,8 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-vm-scrim duration-(--dur-fast) data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-50 duration-(--dur-fast) data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        DIALOG_SCRIM,
         className
       )}
       {...props}
@@ -55,7 +67,8 @@ function DialogContent({
         className={cn(
           // 380px for the unsaved guard, 420px for Save — the caller sets the
           // width; everything else is the handoff's dialog shell.
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-3 rounded-2xl bg-vm-surface p-[22px] text-md text-vm-ink shadow-modal duration-(--dur-fast) ease-standard outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-3 duration-(--dur-fast) ease-standard outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          DIALOG_CARD,
           className
         )}
         {...props}
@@ -147,6 +160,8 @@ function DialogDescription({
 }
 
 export {
+  DIALOG_CARD,
+  DIALOG_SCRIM,
   Dialog,
   DialogClose,
   DialogContent,
