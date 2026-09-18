@@ -16,6 +16,9 @@ export const metadata: Metadata = {
  * (its context and actions differ per screen), not a shared shell. No
  * `next/font` either — the handoff's type is the system stack from
  * `--font-sans` / `--font-mono`, with no webfont to load.
+ *
+ * The `<main>` landmark belongs to each page for the same reason: the top bar
+ * is a `banner`, and a banner nested inside `main` is not one.
  */
 export default function RootLayout({
   children,
@@ -25,9 +28,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <body className="flex min-h-full flex-col">
-        <Providers>
-          <main className="flex min-h-0 flex-1 flex-col">{children}</main>
-        </Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

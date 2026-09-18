@@ -27,7 +27,9 @@ export default function HelpPage() {
   const entries = getCatalogEntries();
 
   return (
-    <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-10">
+    // Minimal landmark until Task 10 re-skins this page: `app/layout.tsx` no
+    // longer wraps pages in `<main>` (the top bar has to stay a banner).
+    <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">
           Animation catalog
@@ -60,6 +62,6 @@ export default function HelpPage() {
           </li>
         ))}
       </ul>
-    </div>
+    </main>
   );
 }

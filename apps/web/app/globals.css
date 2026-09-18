@@ -335,6 +335,21 @@
   /* No `--duration-*` here on purpose — see the banner. */
   --ease-standard: var(--ease-standard);
   --ease-spring: var(--ease-spring);
+
+  /* The Entry screen's clone bar. `POST /projects` is one request with no
+     progress events, so the bar can only say "working", never "how far": an
+     indeterminate sweep rather than a width. `@theme inline` inlines this at
+     the use site, so the keyframes below have to be top-level. */
+  --animate-vm-indeterminate: vm-indeterminate 1.4s var(--ease-standard) infinite;
+}
+
+@keyframes vm-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
 }
 
 /* The handoff's soft violet focus ring, drawn as an outline rather than the

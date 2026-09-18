@@ -12,5 +12,11 @@ import { DevPanelDemo } from "./dev-panel-demo";
  */
 export default function DevPanelPage() {
   if (env.isProduction) notFound();
-  return <DevPanelDemo />;
+  // Minimal landmark until Task 9 re-skins this route: `app/layout.tsx` no
+  // longer wraps pages in `<main>` (the top bar has to stay a banner).
+  return (
+    <main className="flex min-h-0 flex-1 flex-col">
+      <DevPanelDemo />
+    </main>
+  );
 }

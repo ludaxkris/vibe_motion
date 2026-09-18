@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { apiClient, type Project } from "@/lib/api-client";
 import { env } from "@/lib/env";
+import { readRecentProjects } from "@/lib/recent-projects";
 import { initialEditorState, selectSelectedVmId, useEditorStore } from "@/lib/store";
 import { server } from "@/mocks/server";
 
@@ -31,6 +32,7 @@ async function createProject(): Promise<Project> {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   useEditorStore.setState({ ...initialEditorState });
 });
 
@@ -108,6 +110,31 @@ describe("EditorShell", () => {
     expect(iframe).toHaveAttribute("sandbox", "allow-same-origin");
 
     expect(screen.getByRole("complementary", { name: "Control Panel" })).toBeInTheDocument();
+  });
+
+  it("records the project under Recent projects once it loads", async () => {
+    const project = await createProject();
+
+    renderShell(project.id);
+    await screen.findByText(project.title);
+
+    await waitFor(() => {
+      expect(readRecentProjects()).toEqual([
+        {
+          id: project.id,
+          title: project.title,
+          sourceUrl: project.sourceUrl,
+          openedAt: expect.any(String),
+        },
+      ]);
+    });
+  });
+
+  it("does not record a project it could not load", async () => {
+    renderShell("00000000-0000-0000-0000-000000000000");
+    await screen.findByText(/no project found/i);
+
+    expect(readRecentProjects()).toEqual([]);
   });
 
   it("resets the editor store when the project id changes", async () => {

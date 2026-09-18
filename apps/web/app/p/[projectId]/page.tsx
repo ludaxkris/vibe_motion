@@ -13,5 +13,11 @@ type EditorPageProps = {
 export default async function EditorPage({ params }: EditorPageProps) {
   const { projectId } = await params;
 
-  return <EditorShell projectId={projectId} />;
+  // Minimal landmark until Task 8 re-skins this screen: `app/layout.tsx` no
+  // longer wraps pages in `<main>` (the top bar has to stay a banner).
+  return (
+    <main className="flex min-h-0 flex-1 flex-col">
+      <EditorShell projectId={projectId} />
+    </main>
+  );
 }

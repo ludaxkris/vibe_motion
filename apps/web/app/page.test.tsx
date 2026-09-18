@@ -20,30 +20,31 @@ function renderHome() {
 }
 
 describe("home page", () => {
-  it("renders a heading and the URL input", () => {
+  it("renders the handoff's headline and the URL input", () => {
     renderHome();
 
-    expect(
-      screen.getByRole("heading", { name: "Add motion to a page" }),
-    ).toBeInTheDocument();
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading).toHaveTextContent("Animate any page.");
+    expect(heading).toHaveTextContent("Paste a URL to clone it.");
 
     const input = screen.getByLabelText("Page URL");
     expect(input).toBeInTheDocument();
-    expect(input).toHaveAttribute("type", "url");
-    expect(input).toHaveAttribute("placeholder", "https://example.com");
+    // The scheme is the field's prefix, so the value is scheme-less and
+    // `type="url"` would mark every valid entry invalid.
+    expect(input).toHaveAttribute("type", "text");
+    expect(input).toHaveAttribute("inputmode", "url");
+    expect(input).toHaveAttribute("placeholder", "nimbus.app/pricing");
   });
 
   it("enables the clone button (the form is wired up)", () => {
     renderHome();
 
-    expect(screen.getByRole("button", { name: "Clone page" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Clone" })).toBeEnabled();
   });
 
-  it("links to the animation catalog", () => {
+  it("links to the animation catalog from the top bar", () => {
     renderHome();
 
-    expect(
-      screen.getByRole("link", { name: "Browse the animation catalog" }),
-    ).toHaveAttribute("href", "/help");
+    expect(screen.getByRole("link", { name: "Help" })).toHaveAttribute("href", "/help");
   });
 });

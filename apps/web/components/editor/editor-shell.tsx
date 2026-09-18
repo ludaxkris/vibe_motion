@@ -8,6 +8,7 @@ import { ControlPanel } from "@/components/control-panel";
 import { Button } from "@/components/ui/button";
 import { apiClient, type Project } from "@/lib/api-client";
 import { previewPageUrl } from "@/lib/preview-url";
+import { rememberRecentProject } from "@/lib/recent-projects";
 import { useEditorStore, useUnsaved } from "@/lib/store";
 
 import { SplitPane } from "./split-pane";
@@ -49,6 +50,18 @@ export function EditorShell({ projectId }: { projectId: string }) {
     queryFn: () => fetchProject(projectId),
     retry: false,
   });
+
+  // Opening a project is what makes it recent, so the Entry screen's column
+  // also lists projects reached by link or by Back (`lib/recent-projects.ts`).
+  const loadedProject = query.data;
+  useEffect(() => {
+    if (!loadedProject) return;
+    rememberRecentProject({
+      id: loadedProject.id,
+      title: loadedProject.title,
+      sourceUrl: loadedProject.sourceUrl,
+    });
+  }, [loadedProject]);
 
   if (query.isPending) {
     return (

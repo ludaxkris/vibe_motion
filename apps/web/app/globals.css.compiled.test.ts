@@ -68,6 +68,14 @@ describe("compiled globals.css", () => {
     expect(css).toMatch(/outline:\s*var\(--vm-focus-ring-width\)\s*solid\s*var\(--vm-focus-ring-color\)/);
   });
 
+  it("generates the clone bar's indeterminate sweep, keyframes and all", () => {
+    // `POST /projects` reports no progress, so the bar can only say "working".
+    // A theme animation key is the only form Tailwind will emit the keyframes
+    // for alongside the utility.
+    expect(css).toMatch(/@keyframes vm-indeterminate\b/);
+    expect(css).toMatch(/animate-vm-indeterminate\s*\{[^}]*animation:\s*vm-indeterminate/);
+  });
+
   it("generates the wrapper focus ring the slider thumb, Input and NumberField use", () => {
     expect(css).toContain(String.raw`.has-\[input\:focus-visible\]\:focus-ring`);
   });

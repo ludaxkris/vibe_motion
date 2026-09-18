@@ -4,9 +4,12 @@ import {
   RECENT_PROJECTS_KEY,
   RECENT_PROJECTS_LIMIT,
   formatRelativeTime,
+  getRecentProjectsSnapshot,
+  getServerRecentProjects,
   readRecentProjects,
   rememberRecentProject,
   sourceUrlHost,
+  subscribeRecentProjects,
 } from "./recent-projects";
 
 function write(value: unknown) {
@@ -146,6 +149,56 @@ describe("rememberRecentProject", () => {
       ).not.toThrow();
     } finally {
       setItem.mockRestore();
+    }
+  });
+});
+
+describe("the recent-projects store", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    // The snapshot is cached on the stored JSON, so clearing between tests has
+    // to be visible to it too.
+    getRecentProjectsSnapshot();
+  });
+
+  it("hands `useSyncExternalStore` the same array until something changes", () => {
+    const first = getRecentProjectsSnapshot();
+    expect(getRecentProjectsSnapshot()).toBe(first);
+
+    rememberRecentProject({ id: "proj_1", title: "a", sourceUrl: "https://a.test" });
+
+    const second = getRecentProjectsSnapshot();
+    expect(second).not.toBe(first);
+    expect(second.map((p) => p.id)).toEqual(["proj_1"]);
+    expect(getRecentProjectsSnapshot()).toBe(second);
+  });
+
+  it("reports nothing on the server, where there is no browser to have opened anything", () => {
+    rememberRecentProject({ id: "proj_1", title: "a", sourceUrl: "https://a.test" });
+
+    expect(getServerRecentProjects()).toEqual([]);
+  });
+
+  it("notifies subscribers when a project is remembered, and stops on unsubscribe", () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeRecentProjects(listener);
+
+    rememberRecentProject({ id: "proj_1", title: "a", sourceUrl: "https://a.test" });
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    rememberRecentProject({ id: "proj_2", title: "b", sourceUrl: "https://b.test" });
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes when another tab writes the key", () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeRecentProjects(listener);
+    try {
+      window.dispatchEvent(new StorageEvent("storage", { key: RECENT_PROJECTS_KEY }));
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
     }
   });
 });

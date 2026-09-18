@@ -58,20 +58,18 @@ function storage(): Storage | null {
   }
 }
 
-/**
- * Every well-formed entry in the store, most recent first, capped at
- * {@link RECENT_PROJECTS_LIMIT}. Anything unreadable reads as an empty list.
- */
-export function readRecentProjects(): RecentProject[] {
+/** The stored JSON, or `null` when there is nothing readable. */
+function readRaw(): string | null {
   const store = storage();
-  if (!store) return [];
-
-  let raw: string | null = null;
+  if (!store) return null;
   try {
-    raw = store.getItem(RECENT_PROJECTS_KEY);
+    return store.getItem(RECENT_PROJECTS_KEY);
   } catch {
-    return [];
+    return null;
   }
+}
+
+function parseRaw(raw: string | null): RecentProject[] {
   if (!raw) return [];
 
   let parsed: unknown;
@@ -86,6 +84,14 @@ export function readRecentProjects(): RecentProject[] {
     .filter(isRecentProject)
     .sort((a, b) => openedAtMs(b) - openedAtMs(a))
     .slice(0, RECENT_PROJECTS_LIMIT);
+}
+
+/**
+ * Every well-formed entry in the store, most recent first, capped at
+ * {@link RECENT_PROJECTS_LIMIT}. Anything unreadable reads as an empty list.
+ */
+export function readRecentProjects(): RecentProject[] {
+  return parseRaw(readRaw());
 }
 
 /**
@@ -109,8 +115,47 @@ export function rememberRecentProject(
   } catch {
     // Ignored on purpose — see above.
   }
+  for (const listener of listeners) listener();
 
   return next;
+}
+
+// ---------------------------------------------------------------------------
+// As an external store, so the screen reads it with `useSyncExternalStore`
+// rather than an effect: `localStorage` is not available while the page is
+// rendered on the server, and the snapshot has to stay referentially stable
+// between renders or React re-renders forever.
+// ---------------------------------------------------------------------------
+
+const EMPTY: readonly RecentProject[] = Object.freeze([]);
+const listeners = new Set<() => void>();
+
+/** The raw JSON the cached snapshot was parsed from. */
+let snapshotSource: string | null = null;
+let snapshot: readonly RecentProject[] = EMPTY;
+
+export function subscribeRecentProjects(listener: () => void): () => void {
+  listeners.add(listener);
+  // Another tab cloning a page counts too.
+  if (typeof window !== "undefined") window.addEventListener("storage", listener);
+  return () => {
+    listeners.delete(listener);
+    if (typeof window !== "undefined") window.removeEventListener("storage", listener);
+  };
+}
+
+export function getRecentProjectsSnapshot(): readonly RecentProject[] {
+  const raw = readRaw();
+  if (raw !== snapshotSource) {
+    snapshotSource = raw;
+    snapshot = raw ? parseRaw(raw) : EMPTY;
+  }
+  return snapshot;
+}
+
+/** Nothing is recent on the server: there is no browser to have opened it. */
+export function getServerRecentProjects(): readonly RecentProject[] {
+  return EMPTY;
 }
 
 /** `https://nimbus.app/pricing` → `nimbus.app`. Unparseable input is passed through. */
