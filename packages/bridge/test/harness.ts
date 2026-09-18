@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 
 import { MESSAGE_SOURCE } from "../src/protocol";
+import type { AppliedAssignment } from "../src/protocol";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -253,6 +254,31 @@ export function loadBridge(html: string, opts: { parentOrigin?: string | null } 
       window.close();
     },
   };
+}
+
+/**
+ * A well-formed `AppliedAssignment`, the way the shell builds it from a draft assignment
+ * (`apps/web/lib/bridge/to-applied.ts`, Phase 4 PR B).
+ */
+export function applied(over: Partial<AppliedAssignment> = {}): AppliedAssignment {
+  return {
+    vmId: "vm-heading",
+    trigger: "load",
+    keyframesName: "vm-fade-in-up-v1-1-0",
+    keyframesCss:
+      "@keyframes vm-fade-in-up-v1-1-0 { from { opacity: 0; transform: translateY(var(--vm-distance)); } to { opacity: 1; transform: none; } }",
+    style: { "animation-duration": "600ms", "--vm-distance": "24px" },
+    baseStyles: "",
+    animationId: "fade-in-up",
+    catalogVersion: "1.1.0",
+    params: { duration: "600ms", distance: "24px" },
+    ...over,
+  };
+}
+
+/** A page whose tagged elements carry the inline styles a real cloned page would bring. */
+export function page(body: string): string {
+  return `<!doctype html><html><head><title>clone</title></head><body>${body}</body></html>`;
 }
 
 /** A small page with three tagged elements, one of them wrapping an untagged `<span>`. */

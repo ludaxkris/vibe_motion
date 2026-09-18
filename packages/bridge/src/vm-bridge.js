@@ -30,6 +30,7 @@
 
   var ID_ATTR = "data-vm-id";
   var ID_SELECTOR = "[data-vm-id]";
+  var RUNTIME_STYLE_ID = "vm-runtime";
 
   // ---------------------------------------------------------------------------------------
   // Wiring
@@ -94,6 +95,292 @@
   }
 
   // ---------------------------------------------------------------------------------------
+  // Payload validation (spec D1)
+  //
+  // The bridge interpolates vmId into an attribute selector and keyframesName into a property
+  // value, so both are checked against the same regexes the shell uses, and the style map may
+  // only carry animation longhands (never animation-name, which the bridge owns) and --vm-*.
+  // ---------------------------------------------------------------------------------------
+
+  /**
+   * @param {any} a
+   * @returns {a is import("./protocol").AppliedAssignment}
+   */
+  function validateApplied(a) {
+    if (!a || typeof a !== "object") return false;
+    if (typeof a.vmId !== "string" || !VM_ID_RE.test(a.vmId)) return false;
+    if (typeof a.keyframesName !== "string" || !KEYFRAMES_NAME_RE.test(a.keyframesName)) return false;
+    if (a.trigger !== "load" && a.trigger !== "hover" && a.trigger !== "in-view") return false;
+    if (typeof a.keyframesCss !== "string" || typeof a.baseStyles !== "string") return false;
+    if (!a.style || typeof a.style !== "object") return false;
+    for (var key in a.style) {
+      if (!Object.prototype.hasOwnProperty.call(a.style, key)) continue;
+      if (!STYLE_KEY_RE.test(key) || typeof a.style[key] !== "string") return false;
+    }
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------------------
+  // The <style id="vm-runtime"> block
+  //
+  // Holds every @keyframes body in use (reference-counted, previews included) and one
+  // `[data-vm-id="…"] { … }` rule per assignment with base styles. Written at most once per
+  // message, and never at all when only a param changed (spec §6 budget).
+  // ---------------------------------------------------------------------------------------
+
+  var runtimeStyle = /** @type {HTMLStyleElement | null} */ (null);
+  var runtimeText = "";
+  var runtimeDirty = false;
+  /** keyframesName -> the CSS body and how many assignments reference it. */
+  var keyframeRefs = /** @type {Map<string, { css: string, count: number }>} */ (new Map());
+  /** vmId -> the base-styles declarations of whatever is currently rendered on it. */
+  var baseRules = /** @type {Map<string, string>} */ (new Map());
+
+  function ensureRuntimeStyle() {
+    if (runtimeStyle && runtimeStyle.parentNode) return runtimeStyle;
+    var existing = document.getElementById(RUNTIME_STYLE_ID);
+    if (existing) {
+      runtimeStyle = /** @type {HTMLStyleElement} */ (existing);
+      return runtimeStyle;
+    }
+    var created = document.createElement("style");
+    created.id = RUNTIME_STYLE_ID;
+    (document.head || document.documentElement).appendChild(created);
+    runtimeStyle = created;
+    return created;
+  }
+
+  /**
+   * @param {string} name
+   * @param {string} css
+   */
+  function acquireKeyframes(name, css) {
+    var entry = keyframeRefs.get(name);
+    if (entry) {
+      entry.count += 1;
+      if (entry.css !== css) {
+        entry.css = css;
+        runtimeDirty = true;
+      }
+      return;
+    }
+    keyframeRefs.set(name, { css: css, count: 1 });
+    runtimeDirty = true;
+  }
+
+  /** @param {string | null | undefined} name */
+  function releaseKeyframes(name) {
+    if (!name) return;
+    var entry = keyframeRefs.get(name);
+    if (!entry) return;
+    entry.count -= 1;
+    if (entry.count > 0) return;
+    keyframeRefs.delete(name);
+    runtimeDirty = true;
+  }
+
+  /**
+   * @param {string} vmId
+   * @param {string} css
+   */
+  function setBaseRule(vmId, css) {
+    var current = baseRules.get(vmId) || "";
+    var next = css || "";
+    if (current === next) return;
+    if (next) baseRules.set(vmId, next);
+    else baseRules.delete(vmId);
+    runtimeDirty = true;
+  }
+
+  function flushRuntime() {
+    if (!runtimeDirty) return;
+    runtimeDirty = false;
+    var parts = /** @type {string[]} */ ([]);
+    keyframeRefs.forEach(function (entry) {
+      parts.push(entry.css);
+    });
+    baseRules.forEach(function (css, vmId) {
+      parts.push("[" + ID_ATTR + '="' + vmId + '"] { ' + css + " }");
+    });
+    var text = parts.join("\n");
+    if (text === runtimeText) return;
+    runtimeText = text;
+    ensureRuntimeStyle().textContent = text;
+  }
+
+  // ---------------------------------------------------------------------------------------
+  // Per-element layers: original -> applied -> preview (spec D6)
+  //
+  // `original` is the host page's own inline value and priority for every property the bridge
+  // ever touches on that element, snapshotted once and never while the bridge owns the property,
+  // so a preview can never be mistaken for the page's own styling.
+  // ---------------------------------------------------------------------------------------
+
+  /**
+   * @typedef {{
+   *   vmId: string,
+   *   el: HTMLElement,
+   *   original: Map<string, { value: string, priority: string }>,
+   *   owned: Set<string>,
+   *   applied: import("./protocol").AppliedAssignment | null,
+   *   preview: import("./protocol").AppliedAssignment | null,
+   *   armed: boolean
+   * }} ElementRecord
+   */
+
+  var records = /** @type {Map<string, ElementRecord>} */ (new Map());
+
+  /**
+   * @param {string} vmId
+   * @returns {ElementRecord | null}
+   */
+  function recordFor(vmId) {
+    var existing = records.get(vmId);
+    if (existing) return existing;
+    var el = elements.get(vmId);
+    if (!el) return null;
+    var record = {
+      vmId: vmId,
+      el: /** @type {HTMLElement} */ (el),
+      original: /** @type {Map<string, { value: string, priority: string }>} */ (new Map()),
+      owned: /** @type {Set<string>} */ (new Set()),
+      applied: /** @type {import("./protocol").AppliedAssignment | null} */ (null),
+      preview: /** @type {import("./protocol").AppliedAssignment | null} */ (null),
+      armed: false,
+    };
+    records.set(vmId, record);
+    return record;
+  }
+
+  /** What is rendered right now: a preview wins over the applied assignment (spec D4). */
+  /** @param {ElementRecord} record */
+  function effective(record) {
+    return record.preview || record.applied;
+  }
+
+  /**
+   * @param {ElementRecord} record
+   * @param {string} prop
+   */
+  function snapshot(record, prop) {
+    if (record.original.has(prop) || record.owned.has(prop)) return;
+    record.original.set(prop, {
+      value: record.el.style.getPropertyValue(prop),
+      priority: record.el.style.getPropertyPriority(prop),
+    });
+  }
+
+  /**
+   * @param {ElementRecord} record
+   * @param {string} prop
+   */
+  function restoreProp(record, prop) {
+    var saved = record.original.get(prop);
+    record.owned.delete(prop);
+    if (saved && saved.value) record.el.style.setProperty(prop, saved.value, saved.priority);
+    else record.el.style.removeProperty(prop);
+  }
+
+  /** @param {ElementRecord} record */
+  function restoreAll(record) {
+    var owned = /** @type {string[]} */ ([]);
+    record.owned.forEach(function (prop) {
+      owned.push(prop);
+    });
+    for (var i = 0; i < owned.length; i += 1) restoreProp(record, owned[i]);
+  }
+
+  /**
+   * Make the element's inline style say exactly `desired` for the properties the bridge owns,
+   * restoring the host's own value for anything it owned before and no longer wants.
+   *
+   * @param {ElementRecord} record
+   * @param {Array<[string, string, boolean]>} desired  property, value, !important
+   */
+  function writeDesired(record, desired) {
+    var wanted = /** @type {Set<string>} */ (new Set());
+    for (var i = 0; i < desired.length; i += 1) {
+      var prop = desired[i][0];
+      wanted.add(prop);
+      snapshot(record, prop);
+      record.el.style.setProperty(prop, desired[i][1], desired[i][2] ? "important" : "");
+      record.owned.add(prop);
+    }
+    var stale = /** @type {string[]} */ ([]);
+    record.owned.forEach(function (prop) {
+      if (!wanted.has(prop)) stale.push(prop);
+    });
+    for (var j = 0; j < stale.length; j += 1) restoreProp(record, stale[j]);
+  }
+
+  /**
+   * The one place inline styles are written. `--vm-*` custom properties go on as soon as an
+   * assignment exists (they are inert on their own); the whole `animation-*` group goes on
+   * `!important` only while the trigger is armed, so our duration and delay never retime an
+   * animation the host page was already running (spec D3).
+   *
+   * @param {ElementRecord} record
+   */
+  function render(record) {
+    var assignment = effective(record);
+    if (!assignment) {
+      restoreAll(record);
+      return;
+    }
+    var armed = record.preview ? true : record.armed;
+    var desired = /** @type {Array<[string, string, boolean]>} */ ([]);
+    var style = assignment.style;
+    var key;
+    for (key in style) {
+      if (!Object.prototype.hasOwnProperty.call(style, key)) continue;
+      if (key.indexOf("--") === 0) desired.push([key, style[key], false]);
+    }
+    if (armed) {
+      desired.push(["animation-name", assignment.keyframesName, true]);
+      for (key in style) {
+        if (!Object.prototype.hasOwnProperty.call(style, key)) continue;
+        if (key.indexOf("--") !== 0) desired.push([key, style[key], true]);
+      }
+      desired.push(["animation-play-state", "running", true]);
+    }
+    writeDesired(record, desired);
+  }
+
+  /** @param {ElementRecord} record */
+  function syncBaseRule(record) {
+    var assignment = effective(record);
+    setBaseRule(record.vmId, assignment ? assignment.baseStyles : "");
+  }
+
+  /**
+   * @param {ElementRecord} record
+   * @param {import("./protocol").AppliedAssignment} assignment
+   */
+  function setApplied(record, assignment) {
+    var previous = record.applied;
+    // Acquire before releasing, so a param-only change on the same keyframes name never drops
+    // the reference count to zero and rewrites the stylesheet for nothing.
+    acquireKeyframes(assignment.keyframesName, assignment.keyframesCss);
+    if (previous) releaseKeyframes(previous.keyframesName);
+    record.applied = assignment;
+    record.armed = true;
+    syncBaseRule(record);
+    render(record);
+  }
+
+  /** @param {ElementRecord} record */
+  function clearApplied(record) {
+    if (record.applied) releaseKeyframes(record.applied.keyframesName);
+    record.applied = null;
+    record.armed = false;
+    syncBaseRule(record);
+    render(record);
+    // With nothing left on the element, drop the record: the snapshot has been written back, so
+    // a future apply re-reads the host's own values rather than trusting a stale layer.
+    if (!record.preview) records.delete(record.vmId);
+  }
+
+  // ---------------------------------------------------------------------------------------
   // Message dispatch
   // ---------------------------------------------------------------------------------------
 
@@ -107,6 +394,46 @@
   var HANDLERS = {
     hello: function () {
       announceReady();
+    },
+
+    apply: function (payload) {
+      if (!validateApplied(payload)) return { ok: false, error: "invalid-payload" };
+      var record = recordFor(payload.vmId);
+      if (!record) return { ok: false, error: "unknown-element" };
+      setApplied(record, payload);
+    },
+
+    clear: function (payload) {
+      var vmId = payload && payload.vmId;
+      if (typeof vmId !== "string" || !VM_ID_RE.test(vmId)) return { ok: false, error: "invalid-payload" };
+      if (!elements.has(vmId)) return { ok: false, error: "unknown-element" };
+      var record = records.get(vmId);
+      if (record) clearApplied(record);
+    },
+
+    "state:load": function (payload) {
+      var list = payload && payload.assignments;
+      if (!Array.isArray(list)) return { ok: false, error: "invalid-payload" };
+      // Validate the whole batch before touching the page: a half-loaded state would leave the
+      // frame showing something no version ever contained.
+      for (var i = 0; i < list.length; i += 1) {
+        if (!validateApplied(list[i])) return { ok: false, error: "invalid-payload" };
+      }
+      var open = /** @type {ElementRecord[]} */ ([]);
+      records.forEach(function (record) {
+        open.push(record);
+      });
+      for (var j = 0; j < open.length; j += 1) clearApplied(open[j]);
+      var missing = false;
+      for (var k = 0; k < list.length; k += 1) {
+        var record = recordFor(list[k].vmId);
+        if (!record) {
+          missing = true;
+          continue;
+        }
+        setApplied(record, list[k]);
+      }
+      if (missing) return { ok: false, error: "unknown-element" };
     },
   };
 
@@ -131,6 +458,9 @@
       // A malformed payload must never leave the frame wedged.
       failure = { ok: false, error: "invalid-payload" };
     }
+    // One stylesheet write per message at most, and inside the timed window so `ack.ms` is the
+    // whole cost of the message.
+    flushRuntime();
     if (typeof data.seq === "number") {
       var ack = /** @type {{ seq: number; ms: number; ok: boolean; error?: string }} */ ({
         seq: data.seq,
