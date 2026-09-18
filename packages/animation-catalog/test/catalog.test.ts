@@ -42,6 +42,7 @@ describe("animation catalog", () => {
             if (!entry.baseStyles) return;
             let decl = entry.baseStyles;
             for (const p of entry.params) if (p.cssVar) decl = decl.replaceAll(`var(${p.cssVar})`, p.default);
+            expect(decl).not.toContain("var(--vm-");
             const errors: string[] = [];
             parse(decl, { context: "declarationList", onParseError: (e) => errors.push(e.message) });
             expect(errors).toEqual([]);
@@ -72,8 +73,25 @@ describe("animation catalog", () => {
     expect(getEntry("9.9.9", "fade-in-up")).toBeUndefined();
   });
 
-  it("keyframesName embeds the catalog major version", () => {
-    expect(keyframesName("pulse", "1.4.2")).toBe("vm-pulse-v1");
-    expect(keyframesName("pulse", "2.0.0")).toBe("vm-pulse-v2");
+  it("keyframesName embeds the full catalog version", () => {
+    expect(keyframesName("pulse", "1.4.2")).toBe("vm-pulse-v1-4-2");
+    expect(keyframesName("pulse", "2.0.0")).toBe("vm-pulse-v2-0-0");
+    expect(keyframesName("fade-in-up", "1.1.0")).toBe("vm-fade-in-up-v1-1-0");
+  });
+
+  it("keyframesName throws on a version that is not strict MAJOR.MINOR.PATCH", () => {
+    expect(() => keyframesName("pulse", "1.4")).toThrow();
+    expect(() => keyframesName("pulse", "1.4.2-beta")).toThrow();
+    expect(() => keyframesName("pulse", "v1.4.2")).toThrow();
+    expect(() => keyframesName("pulse", "")).toThrow();
+  });
+
+  it("keyframesName is injective across versions that would collide under major-only naming", () => {
+    const names = new Set([
+      keyframesName("pulse", "1.1.0"),
+      keyframesName("pulse", "11.0.0"),
+      keyframesName("pulse", "1.10.0"),
+    ]);
+    expect(names.size).toBe(3);
   });
 });

@@ -59,6 +59,20 @@ for (const { version, file } of files) {
         }
       }
     }
+    // The cssVar <-> keyframes/baseStyles relationship must hold in both directions: the check
+    // above catches a declared cssVar that's never referenced; this catches the reverse — a
+    // var(--vm-x) referenced in keyframes or baseStyles that no param on this entry declares via
+    // cssVar, which would render as an unset custom property (falling back to nothing) rather
+    // than the intended value.
+    const declaredCssVars = new Set(entry.params.filter((p) => p.cssVar).map((p) => p.cssVar));
+    const usedCssVars = new Set(
+      [...`${entry.keyframes} ${entry.baseStyles ?? ""}`.matchAll(/var\((--vm-[a-zA-Z0-9-]+)/g)].map((m) => m[1]),
+    );
+    for (const usedVar of usedCssVars) {
+      if (!declaredCssVars.has(usedVar)) {
+        problems.push(`${version}/${entry.id}: ${usedVar} is referenced in keyframes or baseStyles but not declared by any param's cssVar`);
+      }
+    }
     if (entry.defaultTrigger && !entry.triggers.includes(entry.defaultTrigger)) {
       problems.push(`${version}/${entry.id}: defaultTrigger ${entry.defaultTrigger} not in triggers`);
     }
@@ -72,32 +86,50 @@ for (const { version, file } of files) {
   }
 }
 
-// keyframesName() (src/index.ts) names the exported @keyframes rule vm-<id>-v<major>, encoding
-// only the MAJOR version. So if two published versions share a major and diverge in keyframes
-// or baseStyles for the same animationId, a page mixing assignments pinned to different versions
-// of that major would collide on one @keyframes rule/base style and get a nondeterministic
-// result. Within a major, keyframes and baseStyles must therefore stay byte-identical across
-// versions for any id both declare (metadata like name/description/params may still change).
-const seenInMajor = new Map(); // `${major}:${id}` -> { version, keyframes, baseStyles }
+// keyframesName() (src/index.ts) now names the exported @keyframes rule by the full catalog
+// version (vm-<id>-v<major>-<minor>-<patch>), so (animationId, catalogVersion) is already the
+// immutable identity of a keyframes template and two versions can never collide by construction
+// — the byte-identical-keyframes freeze this block used to enforce is no longer needed.
+//
+// What CLAUDE.md's semver contract still requires within a shared MAJOR is a superset relation:
+// a MINOR (or PATCH) release must not drop an animation or a param an earlier release in the
+// same major already published — that would be a breaking change disguised as non-major. The
+// relation is transitive (A ⊆ B ⊆ C implies A ⊆ C), so it is enough to check each consecutive
+// pair of versions within a major: every animationId in version N must exist in version N+1, and
+// for every id both declare, every param key in N must exist in N+1 (an id/key may be added going
+// forward, never removed, within a major). This does not check that a minor's new default
+// reproduces the previous rendering — that half of the semver contract is a review responsibility.
+const byMajor = new Map(); // major -> [{ version, catalog }] ascending
 for (const { version } of files) {
   const catalog = catalogsByVersion.get(version);
   if (!catalog) continue; // already reported as invalid above
   const major = version.split(".")[0];
-  for (const entry of catalog.entries) {
-    const key = `${major}:${entry.id}`;
-    const prior = seenInMajor.get(key);
-    if (!prior) {
-      seenInMajor.set(key, { version, keyframes: entry.keyframes, baseStyles: entry.baseStyles ?? "" });
-      continue;
-    }
-    if (prior.keyframes !== entry.keyframes) {
-      problems.push(
-        `${entry.id}: keyframes differ between ${prior.version} and ${version} (both major ${major}); ` +
-          `keyframesName() only encodes the major version, so these would collide`,
-      );
-    }
-    if (prior.baseStyles !== (entry.baseStyles ?? "")) {
-      problems.push(`${entry.id}: baseStyles differ between ${prior.version} and ${version} (both major ${major})`);
+  if (!byMajor.has(major)) byMajor.set(major, []);
+  byMajor.get(major).push({ version, catalog });
+}
+for (const [major, versionsInMajor] of byMajor) {
+  for (let i = 0; i + 1 < versionsInMajor.length; i++) {
+    const earlier = versionsInMajor[i];
+    const later = versionsInMajor[i + 1];
+    const laterEntries = new Map(later.catalog.entries.map((e) => [e.id, e]));
+    for (const entry of earlier.catalog.entries) {
+      const laterEntry = laterEntries.get(entry.id);
+      if (!laterEntry) {
+        problems.push(
+          `${earlier.version}/${entry.id}: missing from ${later.version} (both major ${major}); ` +
+            `a minor/patch release must not drop an animation an earlier release in the same major already published`,
+        );
+        continue;
+      }
+      const laterKeys = new Set(laterEntry.params.map((p) => p.key));
+      for (const p of entry.params) {
+        if (!laterKeys.has(p.key)) {
+          problems.push(
+            `${earlier.version}/${entry.id}: param ${p.key} missing from ${later.version} (both major ${major}); ` +
+              `a minor/patch release must not drop a param an earlier release already published`,
+          );
+        }
+      }
     }
   }
 }
