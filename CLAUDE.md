@@ -25,7 +25,7 @@ Vibe Motion is a web tool that lets product designers add CSS animations to an e
 apps/web/                 Next.js app (editor shell, control panel, help page, bridge client, mock agent)
 apps/api/                 Ktor service (clone, versions, export, catalog endpoint), openapi.yaml, Dockerfile, Flyway migrations
 packages/animation-catalog/  versions/<semver>.json (immutable), current, schema.json, CHANGELOG.md, type generation, check-immutable gate
-docs/                     build_plan.md, architecture.md, user_flow.md, deferred_tasks.md
+docs/                     build_plan.md, architecture.md, user_flow.md, deferred_tasks.md, agents/pr-comment.md
 .claude/agents/           subagent definitions (see below)
 .github/workflows/        gates.yml (CI)
 render.yaml               Render blueprint: web + api + Postgres
@@ -89,6 +89,8 @@ Defined in `.claude/agents/`. Use them; do not re-implement their job inline.
 | `code-architect` | Fable | A change touches the bridge protocol, data model, clone pipeline, or exporter, or you suspect a performance/scalability problem. |
 | `test-runner` | Haiku | Before any merge, and whenever you want the full suite run and summarised. |
 | `screenshot-runner` | Haiku | You need screenshots of the running app (editor states, help page, exported page) for a PR or for visual comparison against the Claude Design mocks. It commits them to the `pr_screenshot` branch and posts a PR comment. |
+
+Every subagent posts its report as an upserted comment on the PR (one comment per agent, updated on re-runs; procedure in `docs/agents/pr-comment.md`), so findings and results live with the code.
 
 Typical PR flow: implement (TDD) → `test-writer` fills gaps → `pnpm gates` → `screenshot-runner` if UI changed → `code-reviewer` → address blocking items → `test-runner` on final commit → mark ready.
 

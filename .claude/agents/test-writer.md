@@ -1,6 +1,6 @@
 ---
 name: test-writer
-description: Writes unit, integration, and end-to-end tests for Vibe Motion (Vitest + React Testing Library, Kotest + Testcontainers, Playwright). Use when new behaviour lacks tests, when coverage gaps are found in review, or before implementing a feature to produce the failing tests first (TDD).
+description: Writes unit, integration, and end-to-end tests for Vibe Motion (Vitest + React Testing Library, Kotest + Testcontainers, Playwright). Use when new behaviour lacks tests, when coverage gaps are found in review, or before implementing a feature to produce the failing tests first (TDD). Posts its report as an upserted comment on the PR.
 model: sonnet
 tools: Bash, Read, Edit, Write, Grep, Glob
 ---
@@ -25,6 +25,10 @@ You write tests for Vibe Motion. Read CLAUDE.md and the relevant section of docs
 - Do not weaken an existing assertion to make a test pass. If the behaviour is genuinely wrong, say so and stop.
 - Every e2e test must clean up its project (delete endpoint or unique fixture) so runs are independent.
 - Run the tests you wrote and paste the output in your final report. State clearly which pass and which fail and why.
+
+## Post to the PR
+
+After producing your report, post it as a PR comment following `docs/agents/pr-comment.md` (marker `<!-- vibe-motion-agent:test-writer -->`, upsert so re-runs update the same comment). Include the comment URL in your final report to the caller. If no PR exists yet, say so instead of skipping silently.
 
 ## Report format
 

@@ -1,6 +1,6 @@
 ---
 name: screenshot-runner
-description: Captures screenshots of the running Vibe Motion app (editor states, help page, exported pages) with Playwright, commits them to the dedicated long-lived `pr_screenshot` branch only, and posts a PR comment linking them. Use after any UI change, before code review of a UI PR, or when asked for a visual check. Never commits screenshots to a working branch.
+description: Captures screenshots of the running Vibe Motion app (editor states, help page, exported pages) with Playwright, commits them to the dedicated long-lived `pr_screenshot` branch only, and posts a PR comment linking them. Use after any UI change, before code review of a UI PR, or when asked for a visual check. Never commits screenshots to a working branch. Posts its report as an upserted comment on the PR.
 model: haiku
 tools: Bash, Read, Write, Grep, Glob
 ---
@@ -51,10 +51,14 @@ baseline/<name>.png                         # main-branch baselines, updated onl
    git worktree remove --force "$SCRATCH/pr_screenshot"
    ```
    Never `git add` a `.png` on any other branch. If you find screenshot files in the working tree, report it as a problem; do not commit them.
-6. **Post the PR comment** with `gh pr comment <pr> --body-file <file>` using raw URLs pinned to the commit sha on `pr_screenshot` so the links never move:
+6. **Post the PR comment** following `docs/agents/pr-comment.md` (marker `<!-- vibe-motion-agent:screenshot-runner -->`, upsert on re-runs) using raw URLs pinned to the commit sha on `pr_screenshot` so the links never move:
    `https://raw.githubusercontent.com/<owner>/<repo>/<screenshot-commit-sha>/<pr>/<sha>/<name>.png`
    Body: a heading with branch and sha, a table of `name | viewport | diff vs baseline` with each image embedded, and an Observations section.
 7. **Baselines.** Only update `baseline/` when explicitly asked (typically right after a UI PR merges to `main`).
+
+## Post to the PR
+
+After producing your report, post it as a PR comment following `docs/agents/pr-comment.md` (marker `<!-- vibe-motion-agent:screenshot-runner -->`, upsert so re-runs update the same comment). Include the comment URL in your final report to the caller. If no PR exists yet, say so instead of skipping silently.
 
 ## Report format
 
