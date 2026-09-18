@@ -27,7 +27,7 @@ Status: `open` · `in-progress` · `done` · `wont-do`.
 | DT-015 | chore | Verify `fromService.envVarKey: RENDER_EXTERNAL_URL` resolves cross-service URLs in render.yaml (web ↔ api) on first Render deploy | P1 | this-phase | 0 | — | open | Render docs confirm envVarKey copies a var from another service; unconfirmed for platform-provided vars. Fallback: `sync: false` and set manually. Affects previews most. |
 | DT-016 | feature | Persist unsaved draft state to localStorage as a crash/tab-close safety net | P2 | this-phase | 6 | — | open | v0 has an unsaved indicator and beforeunload warning only. |
 | DT-017 | perf | Checkpoint snapshots for version history so `stateAt(N)` does not replay every diff on long histories | P3 | later | post-v0 | — | open | Trigger: a project exceeding ~200 versions. Fold cost is negligible at v0 scale. |
-| DT-018 | chore | Create the `pr_screenshot` orphan branch on origin and protect it from deletion | P2 | now | 0 | — | open | Screenshot-Runner creates it on first use if missing; a protection rule keeps PR comment links alive. |
+| DT-018 | chore | Protect the `pr_screenshot` branch from deletion and force-push | P2 | this-phase | 0 | Chris | in-progress | Branch created and pushed 2026-09-18 with a README. Remaining: add a branch protection or ruleset in GitHub settings (needs repo admin; may require a paid plan on private repos). |
 
 ## Bugs
 
