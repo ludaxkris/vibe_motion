@@ -335,7 +335,7 @@ Defined once in Phase 0, run in CI and locally via `pnpm gates`.
 | Types | `tsc --noEmit` | Kotlin compile |
 | Unit | vitest | kotest |
 | Integration | MSW-backed component tests | Testcontainers Postgres |
-| e2e | Playwright against `next dev` + API | same |
+| e2e | Playwright: web-only specs against `next dev`; full-stack specs (`apps/web/e2e/stack/`) against a per-run Docker stack of the production web build + the api image + Postgres (`pnpm e2e:docker`) | same stack |
 | Build | `next build` | Docker image builds |
 | Catalog | JSON Schema validation of every version; `check-immutable` (published files unchanged vs `main`) | Catalog round-trip test for every version |
 

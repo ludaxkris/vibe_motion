@@ -83,9 +83,22 @@ jobs:
           path: apps/web/playwright-report
           retention-days: 7
 
+  e2e-docker:
+    name: e2e full-stack gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/e2e-docker.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-docker
+          path: apps/web/playwright-report-docker
+          retention-days: 7
+
   gate-flag:
     name: Gate Flag
-    needs: [catalog, web, api, e2e]
+    needs: [catalog, web, api, e2e, e2e-docker]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:

@@ -1,0 +1,11 @@
+# Per-Dockerfile ignore (BuildKit): the root .dockerignore drops apps/web for the api image.
+**/node_modules/
+**/.next/
+**/dist/
+**/playwright-report*/
+**/test-results/
+.worktrees/
+.git/
+docs/
+design-handoff/
+apps/api/

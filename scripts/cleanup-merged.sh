@@ -9,6 +9,7 @@
 # For each candidate branch it:
 #   1. verifies the PR for that branch is MERGED on GitHub (never touches open/unmerged work),
 #   2. removes the worktree under .worktrees/<branch> (force: build output there is disposable),
+#      after pruning that worktree's Docker e2e stacks and images (scripts/e2e-docker.sh prune),
 #   3. deletes the local branch and prunes the remote-tracking ref,
 #   4. removes temp files the PR flow leaves behind (/tmp/pr<N>_*),
 #   5. prints memory.md line(s) that still mention the branch so the caller updates them.
@@ -48,6 +49,10 @@ for br in "${candidates[@]:-}"; do
   echo "clean $br  (PR #$num merged $(jq -r '.[0].mergedAt' <<<"$pr_json"))"
 
   wt="$root/.worktrees/$br"
+  # Docker e2e stacks and images are tagged per worktree path; drop them before the path goes away.
+  if [ -x "$wt/scripts/e2e-docker.sh" ] && command -v docker >/dev/null && docker info >/dev/null 2>&1; then
+    run "$wt/scripts/e2e-docker.sh" prune
+  fi
   if git worktree list --porcelain | grep -qx "worktree $wt"; then
     run git worktree remove --force "$wt"
   fi
