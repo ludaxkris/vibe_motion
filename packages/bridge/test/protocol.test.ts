@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { afterEach, describe, expect, it } from "vitest";
+
+import { FIXTURE, applied as appliedFixture, destroyAll, loadBridge } from "./harness";
 
 import {
   BULK_APPLY_LIMIT,
@@ -13,20 +19,9 @@ import {
 } from "../src/protocol";
 import type { AppliedAssignment } from "../src/protocol";
 
-function applied(over: Partial<AppliedAssignment> = {}): AppliedAssignment {
-  return {
-    vmId: "vm-heading",
-    trigger: "load",
-    keyframesName: "vm-fade-in-up-v1-1-0",
-    keyframesCss: "@keyframes vm-fade-in-up-v1-1-0 { from { opacity: 0 } to { opacity: 1 } }",
-    style: { "animation-duration": "600ms", "--vm-distance": "24px" },
-    baseStyles: "",
-    animationId: "fade-in-up",
-    catalogVersion: "1.1.0",
-    params: { duration: "600ms" },
-    ...over,
-  };
-}
+const applied = appliedFixture;
+
+afterEach(destroyAll);
 
 describe("constants", () => {
   it("pins the values the bridge, the shell and the Phase 7 exporter share", () => {
@@ -78,6 +73,73 @@ describe("validateApplied", () => {
 
   it("rejects an unknown trigger", () => {
     expect(validateApplied(applied({ trigger: "click" as unknown as AppliedAssignment["trigger"] }))).toBe(false);
+  });
+});
+
+describe("parity with the bridge script", () => {
+  const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "vm-bridge.js"), "utf8");
+
+  it("duplicates every shared constant verbatim", () => {
+    expect(source).toContain(`var MESSAGE_SOURCE = "${MESSAGE_SOURCE}";`);
+    expect(source).toContain(`var PROTOCOL_VERSION = ${PROTOCOL_VERSION};`);
+    expect(source).toContain(`var IN_VIEW_THRESHOLD = ${IN_VIEW_THRESHOLD};`);
+    expect(source).toContain(`var VM_ID_RE = /${VM_ID_RE.source}/;`);
+    expect(source).toContain(`var KEYFRAMES_NAME_RE = /${KEYFRAMES_NAME_RE.source}/;`);
+    expect(source).toContain(`var STYLE_KEY_RE = /${STYLE_KEY_RE.source}/;`);
+  });
+
+  it("declares BRIDGE_VERSION on one line the API can regex out", () => {
+    // `BridgeAssets.kt` parses this with Regex("""BRIDGE_VERSION\s*=\s*"([^"]+)""""), so the
+    // shape of this line is a contract with the Kotlin side, not a style preference.
+    const matches = source.match(/^ {2}var BRIDGE_VERSION = "(\d+\.\d+\.\d+)";$/m);
+    expect(matches).not.toBeNull();
+    expect(matches?.[1]).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  /**
+   * The shell pre-flights with `protocol.ts` and the bridge decides with its own copy. If the
+   * two ever disagree, the shell either sends something that will be rejected or declines
+   * something that would have worked, so they are checked against the same table.
+   */
+  it("reaches the same verdict as the bridge on every payload, and never throws", () => {
+    const h = loadBridge(FIXTURE);
+    const payloads: unknown[] = [
+      applied(),
+      applied({ trigger: "hover" }),
+      applied({ trigger: "in-view" }),
+      applied({ style: {} }),
+      applied({ baseStyles: "transform-origin: center;" }),
+      applied({ vmId: 'vm-1"]{}' }),
+      applied({ vmId: "VM-Heading" }),
+      applied({ keyframesName: "fade-in" }),
+      applied({ style: { "animation-name": "vm-x" } }),
+      applied({ style: { color: "red" } }),
+      applied({ style: { "--other": "1px" } }),
+      applied({ trigger: "click" as unknown as AppliedAssignment["trigger"] }),
+      { ...applied(), style: { "animation-duration": 600 } },
+      { ...applied(), style: null },
+      { ...applied(), style: undefined },
+      { ...applied(), vmId: 12 },
+      { ...applied(), keyframesCss: null },
+      { ...applied(), baseStyles: 7 },
+      {},
+      null,
+      undefined,
+      "vm-heading",
+      42,
+      [],
+    ];
+
+    for (const payload of payloads) {
+      const fromProtocol = validateApplied(payload);
+      h.send({ type: "apply", payload, seq: 1 });
+      const ack = h.lastAck();
+      // The bridge only reaches `unknown-element` once the payload has passed validation, so
+      // "not invalid-payload" is its verdict on the shape.
+      const fromBridge = ack?.error !== "invalid-payload";
+      expect({ payload, verdict: fromProtocol }).toEqual({ payload, verdict: fromBridge });
+      h.sent.length = 0;
+    }
   });
 });
 

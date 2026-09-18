@@ -14,6 +14,7 @@ It is a shared contract (CLAUDE.md rule 6): additive changes only.
 | `src/vm-bridge.js` | The bridge itself. One IIFE, `"use strict"`, `// @ts-check`, no imports, no exports, **no build step**. |
 | `src/protocol.ts` | Message types, `AppliedAssignment`, `ElementInfo`, the validation regexes, `IN_VIEW_THRESHOLD`, `BULK_APPLY_LIMIT`. |
 | `test/harness.ts` | `loadBridge(html)` — builds a JSDOM, stubs `window.parent`, evaluates the script and hands back a controllable frame (fake `IntersectionObserver`, fake `requestAnimationFrame`, recorded posts). |
+| `e2e/harness.ts` | `mountBridge(page, body)` — the same script in a real browser: the test page is the shell on one origin, the framed page is the clone on another, and a third origin hosts a frame that tries to talk to the bridge. Everything is fulfilled by `page.route`, so there is no app and no API to start. |
 
 `vm-bridge.js` is a **plain classic script**, not a module. It is loaded into someone else's page
 under a CSP of `script-src 'self'; connect-src 'none'`: no `eval`, no injected inline script, no
@@ -28,10 +29,11 @@ Everything it injects into the page is prefixed:
 
 | Injected | What |
 |---|---|
-| `<style id="vm-runtime">` | every `@keyframes` body in use (reference-counted) and one `[data-vm-id="…"] { … }` base-styles rule per assignment |
+| `<style id="vm-runtime">` | every `@keyframes` body in use (reference-counted), one `[data-vm-id="…"] { … }` base-styles rule per assignment, and the crosshair rule. Always the bridge's own element, mutated through CSSOM (`insertRule` / `rule.style.cssText`), never by writing text |
+| `data-vm-mode="edit"` on `<html>` | what the crosshair rule keys on; Phase 6's reserved `mode` message is one attribute flip |
 | `<div data-vm-overlay>` | the fixed, `pointer-events: none` container holding the hover outline and the selection ring |
 | `data-vm-hovered` / `data-vm-selected` on that container | the vmId the outline and the ring are currently drawn around; the bridge's only readable state, which is how the tests and the Phase 4 e2e spec assert that a click did **not** move the ring (spec D10) |
-| `--vm-*` custom properties, `animation-*` longhands | inline on the element, the animation group `!important` and only while the trigger is armed |
+| `--vm-*` custom properties, `animation-*` longhands | inline on the element, the animation group `!important` and only while the trigger is armed. The group is always *whole*: any longhand the payload omits is written at its initial value, so the host's cannot leak in |
 
 The one thing that is **not** `vm-` prefixed is the `postMessage` type names (`apply`, not
 `vm-apply`): the envelope's `source: "vibe-motion"` namespaces them, per spec D9 and the amended
@@ -65,22 +67,41 @@ rebuild. `apps/web` uses `moduleResolution: "bundler"`, which resolves a `.ts` e
 ```bash
 pnpm --filter bridge test        # vitest; each case gets its own JSDOM via test/harness.ts
 pnpm --filter bridge typecheck   # tsc --checkJs over protocol.ts, vm-bridge.js and the tests
-pnpm gates:bridge                # both of the above, the way CI runs them
+pnpm --filter bridge e2e         # playwright, Chromium; needs `playwright install chromium` once
+pnpm gates:bridge                # all three, the way CI runs them
 node --check packages/bridge/src/vm-bridge.js   # it still parses as a classic script
 ```
 
-## Things the tests cannot prove
+## Which suite proves what
 
-jsdom has no layout, no real animations and no `IntersectionObserver`, so these are covered by
-construction and by the Phase 4 e2e specs rather than by unit tests:
+jsdom has no layout, no real animations and no `IntersectionObserver`. Three of the behaviours
+the spec turns on are therefore invisible to it, and the first review of this package found all
+three wrong while every jsdom test passed. So `e2e/` exists for exactly that class:
 
-- `getBoundingClientRect()` returns zeros, so `ElementInfo.rect` / `pageRect` values and
-  `ElementInfo.visible` are exercised but never meaningfully asserted (`visible` is always
-  `false` here).
-- Overlay geometry: which element the outline and the ring are drawn around is asserted through
-  `data-vm-hovered` / `data-vm-selected`, but where the boxes actually land is not.
-- That a restart (`animation-name: none` -> forced style flush -> name back) really replays the
-  animation, and that `animationend` fires after a `replay` on a `hover` / `in-view` element.
-- jsdom's CSSOM does not expand the `animation` shorthand into longhands, so a host page's
-  `style="animation: spin 2s"` is left alone here but is genuinely snapshotted longhand by
-  longhand in a browser.
+| Only provable in `e2e/` | Why jsdom cannot see it |
+|---|---|
+| `in-view` holds at the first keyframe, plays, holds again, plays again | needs a real animation with a real `currentTime` and real `animationstart` events |
+| a forced `replay` ends on its own animation, not a descendant's, and after one iteration when looping | jsdom never fires `animationend` or `animationiteration` |
+| a hover-armed card stays armed over a tagged child | needs real pointer movement over a real layout |
+| the host's `animation` shorthand survives a round trip, and its longhands do not leak in | jsdom's CSSOM does not expand the shorthand at all |
+| the preview plays through a host `prefers-reduced-motion` reset | needs a real cascade |
+| the selection ring tracks a nested scroller | `getBoundingClientRect()` returns zeros |
+| a message from a third origin is never acked | needs three real origins |
+| `baseStyles` and `keyframesCss` cannot escape their rules | needs a real CSS parser |
+
+Still unproven anywhere, and worth knowing:
+
+- `ElementInfo.rect` / `pageRect` / `visible` are exercised but never meaningfully asserted
+  (`visible` is always `false` under jsdom).
+- Where the overlay boxes actually land: which element they are drawn around is asserted through
+  `data-vm-hovered` / `data-vm-selected` and the ring's rect is checked in `e2e/`, but the 6px
+  offset and the label position are not.
+- Only Chromium is in the gate. The review measured the same behaviour in WebKit and Firefox by
+  hand; nothing re-checks them per commit.
+
+## Known limits
+
+- **Duplicate `data-vm-id` in a clone.** The element map keeps the first element with a given
+  vmId, so inline styles land only on that one, but the `[data-vm-id="…"] { … }` base-styles rule
+  matches every copy, and `clear` restores only the first. The clone pipeline is what should
+  guarantee uniqueness; the bridge does not police it.
