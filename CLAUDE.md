@@ -16,7 +16,7 @@ Vibe Motion is a web tool that lets product designers add CSS animations to an e
 6. **Contracts are additive after Phase 0.** You may add endpoints, fields, catalog params, or message types. You may not rename or remove them without a `docs/deferred_tasks.md` entry and a note in `memory.md` that the affected worktrees have been told.
 7. **No secrets in the repo.** Secrets are `sync: false` in `render.yaml` and entered in the Render dashboard. Locally use `.env.local` (gitignored). Never print environment values in logs or PR descriptions.
 8. **Screenshots never touch working branches.** Screenshot files are committed only to the orphan branch `pr_screenshot` by the `screenshot-runner` subagent and linked from PR comments. Never `git add` a `.png`/`.jpg` on any other branch; `.gitignore` blocks common screenshot paths as a backstop. If you see screenshots in a diff, treat it as a blocking review finding.
-9. **Versions are user-initiated diffs.** A version is created only when the user clicks Save. Each version stores a diff from its parent, never full state; full state is materialised by `stateAt()` in the API. Live preview edits are a client-side draft and must not call the API.
+9. **Versions are user-initiated diffs.** A version is created only when the user clicks Save. Each version stores a diff from its parent, never full state; full state is materialised by `stateAt()` in the API. Every assignment in a diff carries `catalogVersion`. Live preview edits are a client-side draft and must not call the API.
 10. **Do not ask the user for permission for reversible work.** Do ask before: force-pushing, deleting branches you did not create, editing `render.yaml` database fields (they are immutable on Render), or changing another agent's in-flight files.
 
 ## Repository map
@@ -24,7 +24,7 @@ Vibe Motion is a web tool that lets product designers add CSS animations to an e
 ```
 apps/web/                 Next.js app (editor shell, control panel, help page, bridge client, mock agent)
 apps/api/                 Ktor service (clone, versions, export, catalog endpoint), openapi.yaml, Dockerfile, Flyway migrations
-packages/animation-catalog/  catalog.json, schema.json, type generation
+packages/animation-catalog/  versions/<semver>.json (immutable), current, schema.json, CHANGELOG.md, type generation, check-immutable gate
 docs/                     build_plan.md, architecture.md, user_flow.md, deferred_tasks.md
 .claude/agents/           subagent definitions (see below)
 .github/workflows/        gates.yml (CI)
@@ -56,7 +56,7 @@ Local Postgres: `docker compose up db` (compose file lands in Phase 0).
 - **Naming prefix.** Every class, keyframe, custom property, data attribute, or message type this tool injects into a cloned page or an export is prefixed `vm-` / `--vm-` / `data-vm-`. No exceptions.
 - **Web.** TypeScript strict. Server Components by default, `"use client"` only where needed (the editor is almost entirely client). State in Zustand (`apps/web/lib/store`), server data via TanStack Query with the generated client in `apps/web/lib/api-client` (regenerate with `pnpm gen:client`, never hand-edit). Tailwind + shadcn/ui. No CSS modules.
 - **API.** Kotlin idiomatic, no `!!`. Routes thin, logic in services, persistence behind repository interfaces. kotlinx.serialization for JSON. Every endpoint exists in `openapi.yaml` before it exists in code.
-- **Catalog.** Editing `catalog.json` requires the schema to still validate and the help page to still render every entry. Add a params entry rather than special-casing an animation in code.
+- **Catalog is versioned and immutable.** Never edit a file under `packages/animation-catalog/versions/` that already exists on `main`, not even for a typo. Any change is a new `versions/<semver>.json` (patch: metadata only; minor: new animations or optional params; major: changed keyframes, removed animations, renamed params), a `current` bump, and a CHANGELOG entry. CI's `check-immutable` gate fails otherwise. Every saved assignment pins `catalogVersion`; the runtime and exporter resolve against that pinned version, and CSS is derived from it, never stored. Add a params entry rather than special-casing an animation in code.
 - **Tests.** TDD is expected: write the failing test, then the code. Unit tests next to source. e2e in `apps/web/e2e`. Golden files for the exporter in `apps/api/src/test/resources/golden`.
 - **Commits.** Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`). Small, reviewable PRs, one phase task each. End commit messages with the attribution line the harness provides.
 - **PR description template.** What / Why / How to test / Gates output / Deferred items logged / memory.md updated (yes/no).

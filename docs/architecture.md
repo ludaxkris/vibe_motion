@@ -16,7 +16,7 @@ flowchart LR
     db[("Postgres 16<br/>projects, versions")]
   end
 
-  catalog[["packages/animation-catalog<br/>catalog.json + schema<br/>(built into both apps)"]]
+  catalog[["packages/animation-catalog<br/>versions/*.json (immutable) + current + schema<br/>(all versions built into both apps)"]]
   source["Source web page<br/>(public URL entered by designer)"]
 
   designer -->|"HTML shell, /help"| web
@@ -32,7 +32,7 @@ Notes
 
 - The browser talks to both services. The shell and control panel come from `web`; the cloned page is served by `api` so the iframe is cross-origin from the shell and all interaction goes through `postMessage` (section 4).
 - `web` never touches the database. The API owns the schema via Flyway.
-- The catalog is a build-time dependency of both apps and is also served by `GET /catalog` so the two can be checked for agreement at runtime.
+- The catalog is a build-time dependency of both apps and is also served by `GET /catalog` so the two can be checked for agreement at runtime. Every published catalog version is bundled; a saved assignment pins the version it was authored under, and CSS is always derived from that pinned entry rather than stored.
 
 ## 2. Monorepo layout
 
@@ -47,7 +47,7 @@ flowchart TB
 
   apps --> web["web/  Next.js<br/>app/ (routes) · components/ · lib/bridge · lib/agent · lib/api-client (generated)"]
   apps --> api["api/  Ktor<br/>openapi.yaml · Dockerfile · src/{routes,clone,export,persistence} · db/migration"]
-  packages --> cat["animation-catalog/<br/>catalog.json · schema.json · scripts/gen-types"]
+  packages --> cat["animation-catalog/<br/>versions/1.0.0.json … · current · schema.json · CHANGELOG.md<br/>scripts/gen-types · scripts/check-immutable"]
 ```
 
 ## 3. Request flows
@@ -214,19 +214,22 @@ erDiagram
     uuid parent_version_id "null for v0"
     int seq "1..n within project"
     text label "user-editable at save time"
-    jsonb diff "delta from parent: {set, remove}"
+    text catalog_version "catalog the editor authored against at save"
+    jsonb diff "delta from parent: {set, remove}; each set entry pins catalogVersion"
     timestamptz created_at
   }
 ```
 
 Versions are created only when the user clicks Save. Each stores a diff against its parent; full state is never stored. `stateAt(N)` folds the diffs from v0 (empty) through N.
 
+**CSS is derived, not stored.** An assignment is a reference `(animationId, catalogVersion)` plus `params`. Catalog files are immutable once published, so that reference always resolves to the same keyframes template, and the same generator (browser runtime and Kotlin exporter) produces the same CSS from it. Nothing in Postgres holds CSS text.
+
 `diff` example (one version):
 
 ```json
 {
   "set": {
-    "vm-17": { "animationId": "fade-in-up", "trigger": "load",
+    "vm-17": { "animationId": "fade-in-up", "catalogVersion": "1.0.0", "trigger": "load",
                "params": { "duration": "600ms", "delay": "0ms", "easing": "ease-out", "iteration": "1", "distance": "24px" } }
   },
   "remove": ["vm-42"]
@@ -237,8 +240,33 @@ Materialised `state` (what the iframe and exporter consume):
 
 ```json
 {
-  "vm-17": { "animationId": "fade-in-up", "trigger": "load", "params": { "duration": "600ms", "delay": "0ms", "easing": "ease-out", "iteration": "1", "distance": "24px" } }
+  "vm-17": { "animationId": "fade-in-up", "catalogVersion": "1.0.0", "trigger": "load",
+             "params": { "duration": "600ms", "delay": "0ms", "easing": "ease-out", "iteration": "1", "distance": "24px" } }
 }
+```
+
+Resolution to CSS:
+
+```mermaid
+flowchart LR
+  a["assignment<br/>fade-in-up · 1.0.0 · params"] --> lookup["CATALOGS['1.0.0'].entries['fade-in-up']<br/>(immutable keyframes template + param defs)"]
+  lookup --> gen["generator (same code in web runtime and api exporter)"]
+  a --> gen
+  gen --> kf["@keyframes vm-fade-in-up-v1 { … }"]
+  gen --> rule[".vm-a1 { animation: vm-fade-in-up-v1 600ms ease-out 0ms 1; --vm-distance: 24px }"]
+```
+
+Catalog lifecycle:
+
+```mermaid
+flowchart LR
+  edit["Need to change an animation"] --> newfile["Add versions/1.1.0.json<br/>(copy of 1.0.0 + change)"]
+  newfile --> bump["Update current → 1.1.0<br/>+ CHANGELOG entry"]
+  bump --> ci{"CI check-immutable:<br/>any existing versions/*.json changed?"}
+  ci -->|"yes"| fail["Gate fails · Gate Flag"]
+  ci -->|"no"| merge["Merge"]
+  merge --> editor["Editor, help page, mock agent<br/>author against 1.1.0"]
+  merge --> old["Saved assignments pinned to 1.0.0<br/>still resolve against 1.0.0 unchanged"]
 ```
 
 ```mermaid
@@ -273,5 +301,6 @@ Secrets (`sync: false`) are entered by Chris in the Render dashboard. Everything
 |---|---|
 | Real LLM agent | Implements `AnimationAgent`; moves from web to an API endpoint. UI unchanged. |
 | Figma / PNG ingestion | New "source adapter" in the clone service producing `base_html`. Everything downstream unchanged. |
-| JS / scroll animations | New `trigger` values and an `engine` field on catalog entries; exporter grows a JS emitter. |
+| JS / scroll animations | New `trigger` values and an `engine` field on catalog entries (a new major catalog version); exporter grows a JS emitter. |
+| Upgrade saved assignments to a newer catalog version | Explicit user action producing a new version whose diff rewrites `catalogVersion` (DT-019). |
 | Auth and teams | `owner_id` on `projects`; middleware in both apps. |

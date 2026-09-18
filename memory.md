@@ -18,6 +18,7 @@ Rules
 
 ## Notices (newest first)
 
+- 2026-09-18 — Decision from Chris: the animation catalog is **versioned and immutable**. Files under `packages/animation-catalog/versions/` are never edited once on `main`; changes are new files + `current` bump + CHANGELOG. Every saved assignment pins `catalogVersion`. CSS is derived from the pinned entry, never stored. CI gate `check-immutable` enforces it (Phase 1). Adds `catalog_version` column and `GET /catalog/versions`, `GET /catalog/{version}` to the Phase 2 contract.
 - 2026-09-18 — Decision change from Chris: versions store **diffs**, created only on explicit user **Save**; live preview never writes to the API. Build plan Phases 2, 4, 6, 7 and architecture.md updated. Any Phase 2 work must implement `stateAt()` and the 409 stale-parent check.
 - 2026-09-18 — Screenshots go only to the orphan branch `pr_screenshot` via the screenshot-runner subagent (CLAUDE.md rule 8). DT-018 tracks creating/protecting that branch.
 - 2026-09-18 — GitHub remote confirmed: `git@github.com:ludaxkris/vibe_motion.git`, default branch `main`.

@@ -58,7 +58,8 @@ The user constraint is Kotlin, Next.js, and Postgres unless there is a strong re
 | Database | Render managed Postgres 16, Flyway migrations owned by the API | Prisma from Next.js | One owner of the schema. The web app never talks to the DB directly. |
 | Storage of cloned pages | Postgres `text` column (single HTML document per project, assets inlined or absolutized) | Render disk, S3 | v0 stores one HTML document per project, typically under a few MB. No object store to provision. Revisit if we start storing binary assets (deferred). |
 | Frontend/API boundary | The web app calls the API over HTTPS with a typed client generated from the API's OpenAPI document | Hand-written fetch wrappers | Contract-first lets Phase 2 and Phase 3 run in parallel against the same spec. |
-| Animation catalog | One JSON file in `packages/animation-catalog`, validated by a JSON Schema, consumed by web (TS types generated) and api (kotlinx.serialization) | TS-only catalog; duplicate lists | Single source of truth for the control panel, help page, mock agent, and exporter. |
+| Animation catalog | Versioned, immutable JSON files in `packages/animation-catalog/versions/<semver>.json` plus a `current` pointer, validated by a JSON Schema, consumed by web (TS types generated) and api (kotlinx.serialization) | Single mutable file; TS-only catalog | Single source of truth for the control panel, help page, mock agent, and exporter. Immutability means a saved animation always re-renders exactly as the designer saw it (see Phase 1). |
+| What a saved animation is | A reference: `{ animationId, catalogVersion, trigger, params }`. CSS is **derived**, never stored. | Store generated CSS per version | Diffs stay tiny and readable; CSS is a pure function of the pinned catalog entry plus params, so it is always reproducible. Pinning the catalog version removes the only way that function could change. |
 | Package manager | pnpm workspaces for JS, Gradle for Kotlin | npm, Turborepo | pnpm is fast and handles the web + catalog workspace. Turborepo is unnecessary at two JS packages. |
 | Tests | Vitest + React Testing Library (web unit), Kotest + Testcontainers (api), Playwright (e2e) | Jest, JUnit only | Standard, fast, and each subagent role maps to one of these. |
 | Hosting | Render blueprint: `web` (Node), `api` (Docker), Postgres | Vercel for web | User requirement. See `render.yaml`. |
@@ -116,7 +117,22 @@ Exit criteria: `pnpm gates` and `./gradlew check` pass in CI on an empty-feature
 
 ### Phase 1 — Animation catalog
 
-Deliverable: `packages/animation-catalog/catalog.json` with 20–30 CSS animations, a JSON Schema, generated TS types, and a Kotlin data class that round-trips the file.
+Deliverable: `packages/animation-catalog/versions/1.0.0.json` with 20–30 CSS animations, a JSON Schema, a `current` pointer, generated TS types, a Kotlin loader that round-trips every published version, and the immutability gate.
+
+Package layout
+
+```
+packages/animation-catalog/
+  schema.json              # JSON Schema for a catalog file
+  versions/1.0.0.json      # immutable once merged to main
+  versions/1.1.0.json      # each change is a new file
+  current                  # text file containing the semver the editor authors against
+  CHANGELOG.md             # one entry per version: added / changed / removed, and why
+  scripts/gen-types.ts     # TS types + a `CATALOGS` map keyed by version
+  scripts/check-immutable.ts  # CI gate, see below
+```
+
+Each catalog file carries `"version": "1.0.0"` at the top and an `entries` array.
 
 Catalog entry shape (draft):
 
@@ -143,9 +159,12 @@ Critical decisions
 
 - **Common params vs animation-specific params.** Every animation gets the standard `animation-*` properties (duration, delay, easing, iteration, direction, fill-mode). Animation-specific knobs (distance, scale, angle) are exposed as CSS custom properties referenced inside the keyframes. Recommended: yes. This is what makes live updates cheap: the preview only sets style properties on the element, never regenerates keyframes.
 - **Triggers in v0.** `load` (runs on page load), `hover`, and `in-view` (IntersectionObserver, requires the exported JS). Recommended: ship all three. `in-view` is the only reason the export includes JS; without it the export would be HTML + CSS only.
-- **Naming.** All generated class names, keyframes, and custom properties are prefixed `vm-` to avoid collisions with the host page.
+- **Naming.** All generated class names, keyframes, and custom properties are prefixed `vm-` to avoid collisions with the host page. Keyframe names include the catalog major version (`vm-fade-in-up-v1`) so two assignments authored under different catalog versions can coexist on one page without colliding.
+- **Catalog files are immutable; every change is a new version.** (Decided by Chris, 2026-09-18.) Once a `versions/<semver>.json` file is merged to `main` it is never edited again, not even for typos. Any change, additive or breaking, is a new file plus a `current` bump plus a CHANGELOG entry. Semver signals intent: patch for metadata-only fixes (name, description, category), minor for new animations or new optional params, major for changed keyframes, removed animations, or renamed params. The rule is enforced by `check-immutable.ts` in CI: it hashes every `versions/*.json` on the PR against `origin/main` and fails if any file that exists on `main` differs. Only new files and `current` may change.
+- **Saved assignments pin the catalog version.** Every assignment written into a version diff carries `catalogVersion`. The preview runtime and the exporter resolve each assignment against exactly that catalog file, so a project saved under 1.0.0 renders identically after the catalog reaches 3.0.0. The API and web bundle every published catalog version (they are small JSON files). Moving an existing assignment to a newer catalog version is an explicit user action ("Upgrade to latest") and is deferred to DT-019.
+- **The editor authors against `current`.** The Custom list, the help page, and the mock agent all read the `current` catalog. Older versions are load-only: they are never shown as choices, only used to render what was already saved.
 
-Exit criteria: schema validates the file in CI; a test renders every catalog entry's keyframes through a CSS parser without error; Kotlin loads the file.
+Exit criteria: schema validates every catalog file in CI; `check-immutable` gate passes and is proven to fail on a fixture edit; a test renders every entry's keyframes in every published version through a CSS parser without error; Kotlin and TS both load all versions and agree on the set of `(version, animationId)` pairs.
 
 ### Phase 2 — API core
 
@@ -163,23 +182,31 @@ Endpoints (draft)
 | GET | `/projects/{id}/versions/{vid}/state` | Materialised full state at `vid` (server replays diffs from v0) |
 | POST | `/projects/{id}/versions/{vid}/restore` | Creates a new version whose diff brings the current state back to `vid`'s state (history is never rewritten) |
 | GET | `/projects/{id}/export?versionId=` | Returns `{ html, css, js }` |
-| GET | `/catalog` | Serves catalog.json (so web and api provably agree) |
+| GET | `/catalog` | Serves the `current` catalog (so web and api provably agree) |
+| GET | `/catalog/versions` | Lists published catalog versions |
+| GET | `/catalog/{version}` | Serves one published catalog version |
 
 Data model
 
 ```
 projects   (id uuid pk, source_url text, base_html text, title text, created_at, current_version_id uuid)
-versions   (id uuid pk, project_id fk, parent_version_id uuid null, seq int, label text, diff jsonb, created_at)
+versions   (id uuid pk, project_id fk, parent_version_id uuid null, seq int, label text,
+            catalog_version text, diff jsonb, created_at)
 ```
 
-A project's *state* is the full animation assignment map for the page: `{ "<vmId>": { animationId, params, trigger } }`. It is never stored directly. Each version stores a `diff` against its parent:
+`catalog_version` on the row records which catalog the editor was authoring against when the user saved. It is informational (history list, debugging). The authoritative pin is inside each assignment.
+
+A project's *state* is the full animation assignment map for the page: `{ "<vmId>": { animationId, catalogVersion, trigger, params } }`. It is never stored directly. Each version stores a `diff` against its parent:
 
 ```json
-{ "set": { "vm-17": { "animationId": "fade-in-up", "trigger": "load", "params": { "duration": "600ms", "distance": "24px" } } },
+{ "set": { "vm-17": { "animationId": "fade-in-up", "catalogVersion": "1.0.0", "trigger": "load",
+                      "params": { "duration": "600ms", "distance": "24px" } } },
   "remove": ["vm-42"] }
 ```
 
 State at version N = fold every diff from v0 (empty state) through N, applying `set` then `remove`. Version 0 is the empty diff.
+
+**Where the CSS is.** Nowhere in the database. `(animationId, catalogVersion)` identifies an immutable keyframes template; `params` fills its knobs. The preview runtime and the exporter both run the same deterministic generator over that pair, so the CSS is reproducible forever without being stored. The API validates on save that every `catalogVersion` in the diff is a published version and every `animationId` exists in it, and rejects with 422 otherwise.
 
 Critical decisions
 
@@ -276,7 +303,7 @@ Output contract
 
 Critical decisions
 
-- **Export executes in the API, not the browser.** The exporter is pure Kotlin over `base_html` + `stateAt(versionId)` + catalog. Export always targets a saved version; if the editor has unsaved changes the Export button prompts to save first. Recommended: API. It keeps export deterministic and testable with golden files, and it means a designer can hit the endpoint directly later.
+- **Export executes in the API, not the browser.** The exporter is pure Kotlin over `base_html` + `stateAt(versionId)` + the catalog version pinned on each assignment. Keyframes are emitted once per `(animationId, catalogVersion)` pair in use, named `vm-<id>-v<major>`. Export always targets a saved version; if the editor has unsaved changes the Export button prompts to save first. Recommended: API. It keeps export deterministic and testable with golden files, and it means a designer can hit the endpoint directly later.
 - **Snippet mode.** In addition to the full page, offer "just the CSS for this element" so a designer can paste into an existing site without replacing their HTML. Recommended: include; it is the same generator scoped to one assignment.
 
 Exit criteria: golden-file tests for three fixture states; Playwright opens the exported HTML in a fresh page and asserts the animation runs.
@@ -304,7 +331,7 @@ Defined once in Phase 0, run in CI and locally via `pnpm gates`.
 | Integration | MSW-backed component tests | Testcontainers Postgres |
 | e2e | Playwright against `next dev` + API | same |
 | Build | `next build` | Docker image builds |
-| Catalog | JSON Schema validation | Catalog round-trip test |
+| Catalog | JSON Schema validation of every version; `check-immutable` (published files unchanged vs `main`) | Catalog round-trip test for every version |
 
 Any red gate: CI applies the `Gate Flag` label and a bot comment; the PR must not be marked ready. The Test-Runner subagent runs the same gates locally before any merge.
 
@@ -323,6 +350,8 @@ Screenshots for UI PRs are produced by the Screenshot-Runner and committed to th
 | Two agents change the OpenAPI contract at once | Integration break in Phase 4 | Additive-only rule after Phase 0; memory.md announces contract edits |
 | User loses unsaved draft (tab close, crash) | Frustration, rework | Unsaved indicator + `beforeunload` warning in v0; localStorage draft (DT-016) |
 | Diff replay gets slow on a long history | Slow version switching | Checkpoint snapshots (DT-017); trigger is >200 versions on one project |
+| Catalog edit changes how a saved animation renders | Designer's saved work silently changes | Immutable catalog versions + per-assignment `catalogVersion` pin + CI immutability gate (Phase 1) |
+| Catalog versions accumulate in both bundles | Bundle growth | Each file is a few KB; 50 versions is under 1 MB. Revisit only if it matters. |
 
 ---
 

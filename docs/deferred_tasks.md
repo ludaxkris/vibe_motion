@@ -28,6 +28,7 @@ Status: `open` · `in-progress` · `done` · `wont-do`.
 | DT-016 | feature | Persist unsaved draft state to localStorage as a crash/tab-close safety net | P2 | this-phase | 6 | — | open | v0 has an unsaved indicator and beforeunload warning only. |
 | DT-017 | perf | Checkpoint snapshots for version history so `stateAt(N)` does not replay every diff on long histories | P3 | later | post-v0 | — | open | Trigger: a project exceeding ~200 versions. Fold cost is negligible at v0 scale. |
 | DT-018 | chore | Protect the `pr_screenshot` branch from deletion and force-push | P2 | this-phase | 0 | Chris | in-progress | Branch created and pushed 2026-09-18 with a README. Remaining: add a branch protection or ruleset in GitHub settings (needs repo admin; may require a paid plan on private repos). |
+| DT-019 | feature | "Upgrade to latest catalog" action for saved assignments pinned to an older catalog version | P3 | later | post-v0 | — | open | Explicit user action producing a new version whose diff rewrites `catalogVersion` and remaps params. v0 never auto-upgrades. |
 
 ## Bugs
 
