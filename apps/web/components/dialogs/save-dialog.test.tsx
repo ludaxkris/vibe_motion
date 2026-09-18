@@ -26,6 +26,9 @@ function props(overrides: Partial<React.ComponentProps<typeof SaveDialogContent>
     changes: CHANGES,
     onCancel: vi.fn(),
     onSave: vi.fn(),
+    // Phase 6 is what turns Save on; every frame that shows a live-looking
+    // primary has to say so.
+    saveDisabled: false,
     ...overrides,
   };
 }
@@ -94,8 +97,17 @@ describe("SaveDialogContent", () => {
     expect(handlers.onSave).toHaveBeenCalledOnce();
   });
 
-  it("can hold Save version closed", () => {
-    render(<SaveDialogContent {...props({ saveDisabled: true })} />);
+  it("leaves Save version closed unless the caller opens it", () => {
+    const { onLabelChange, onCancel } = props();
+    render(
+      <SaveDialogContent
+        nextVersionLabel="v6"
+        label="x"
+        onLabelChange={onLabelChange}
+        changes={CHANGES}
+        onCancel={onCancel}
+      />,
+    );
 
     expect(screen.getByRole("button", { name: "Save version" })).toBeDisabled();
   });

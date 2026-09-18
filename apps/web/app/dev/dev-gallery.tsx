@@ -24,7 +24,7 @@ import {
 import { CloningCard } from "@/components/entry/cloning-card";
 import { Button } from "@/components/ui/button";
 import { ToastPill, useToast } from "@/components/ui/toast";
-import type { Assignment, CatalogEntry, EditorStateMap, Trigger } from "@/lib/api-client";
+import type { Assignment, EditorStateMap, Trigger } from "@/lib/api-client";
 import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
 import { summariseDiff } from "@/lib/diff-summary";
 
@@ -38,18 +38,23 @@ const VM_HEADLINE = "vm-3";
 const VM_CTA = "vm-9";
 const VM_DROPPED = "vm-14";
 
-/** A catalog entry the gallery pins by id; a miss means the catalog moved under it. */
-function requireEntry(animationId: string): CatalogEntry {
-  const entry = getCatalogEntry(animationId);
-  if (!entry) {
-    throw new Error(`/dev: "${animationId}" is not in catalog ${CURRENT_CATALOG_VERSION}`);
-  }
-  return entry;
+/** What a frame says instead of rendering, when its animation has left the catalog. */
+function missingEntryNote(animationId: string): string {
+  return `${animationId} is not in catalog ${CURRENT_CATALOG_VERSION}.`;
 }
 
-/** A draft assignment at the catalog's own defaults, pinned to the current version. */
-function sampleAssignment(animationId: string, trigger?: Trigger): Assignment {
-  const entry = requireEntry(animationId);
+/**
+ * A draft assignment at the catalog's own defaults, or `undefined` when the id
+ * has gone.
+ *
+ * Nothing on this page may throw while resolving an id: `next build` renders
+ * the route to discover it is a 404, so a module-scope throw over a catalog
+ * entry that moved would fail the production build of an app that does not
+ * even serve this page.
+ */
+function sampleAssignment(animationId: string, trigger?: Trigger): Assignment | undefined {
+  const entry = getCatalogEntry(animationId);
+  if (!entry) return undefined;
   return {
     animationId: entry.id,
     catalogVersion: CURRENT_CATALOG_VERSION,
@@ -58,17 +63,27 @@ function sampleAssignment(animationId: string, trigger?: Trigger): Assignment {
   };
 }
 
+/** `vmId -> animationId` pairs, minus any the catalog no longer has. */
+function sampleState(rows: ReadonlyArray<readonly [string, string, Trigger?]>): EditorStateMap {
+  const state: EditorStateMap = {};
+  for (const [vmId, animationId, trigger] of rows) {
+    const assignment = sampleAssignment(animationId, trigger);
+    if (assignment) state[vmId] = assignment;
+  }
+  return state;
+}
+
 /** What the last saved version holds. */
-const SAVED_STATE: EditorStateMap = {
-  [VM_CTA]: sampleAssignment("pulse"),
-  [VM_DROPPED]: sampleAssignment("shake"),
-};
+const SAVED_STATE: EditorStateMap = sampleState([
+  [VM_CTA, "pulse"],
+  [VM_DROPPED, "shake"],
+]);
 
 /** …and where the draft has got to: one added, one retriggered, one dropped. */
-const DRAFT_STATE: EditorStateMap = {
-  [VM_HEADLINE]: sampleAssignment("fade-in-up"),
-  [VM_CTA]: sampleAssignment("pulse", "hover"),
-};
+const DRAFT_STATE: EditorStateMap = sampleState([
+  [VM_HEADLINE, "fade-in-up"],
+  [VM_CTA, "pulse", "hover"],
+]);
 
 const SAMPLE_DIFF = summariseDiff(SAVED_STATE, DRAFT_STATE, getEntry);
 
@@ -125,17 +140,29 @@ function ChoosingFrame({ initialSearch = "" }: { initialSearch?: string }) {
 }
 
 function TuningFrame({ animationId }: { animationId: string }) {
-  const entry = requireEntry(animationId);
-  const [assignment, setAssignment] = useState<Assignment>(() => sampleAssignment(animationId));
+  const entry = getCatalogEntry(animationId);
+  const [assignment, setAssignment] = useState<Assignment | undefined>(() =>
+    sampleAssignment(animationId),
+  );
+
+  if (!entry || !assignment) {
+    return <p className="text-sm text-vm-ink-2">{missingEntryNote(animationId)}</p>;
+  }
 
   return (
     <TuningPanel
       vmId={VM_HEADLINE}
       entry={entry}
       assignment={assignment}
-      onTriggerChange={(trigger) => setAssignment((current) => ({ ...current, trigger }))}
+      // The early return above is what guarantees there is one to update; the
+      // setters still say so, because React may call them at any time.
+      onTriggerChange={(trigger) =>
+        setAssignment((current) => (current ? { ...current, trigger } : current))
+      }
       onParamChange={(key, value) =>
-        setAssignment((current) => ({ ...current, params: { ...current.params, [key]: value } }))
+        setAssignment((current) =>
+          current ? { ...current, params: { ...current.params, [key]: value } } : current,
+        )
       }
     />
   );
@@ -178,6 +205,9 @@ function SaveDialogFrame() {
         onLabelChange={setLabel}
         changes={SAMPLE_DIFF.rows}
         onCancel={() => undefined}
+        // Explicit, not inherited: this frame is a picture of the dialog, and
+        // its primary must not look like it would write a version.
+        saveDisabled
       />
     </StaticDialog>
   );
@@ -282,10 +312,11 @@ export function DevGallery() {
           <StaticDialog className={UNSAVED_GUARD_DIALOG_WIDTH}>
             <UnsavedGuardDialogContent
               elementLabel={VM_HEADLINE}
-              animationName={requireEntry("fade-in-up").name}
+              animationName={getCatalogEntry("fade-in-up")?.name}
               currentVersionLabel="v5"
               onDiscard={() => undefined}
               onKeepEditing={() => undefined}
+              saveDisabled
             />
           </StaticDialog>
         </Frame>

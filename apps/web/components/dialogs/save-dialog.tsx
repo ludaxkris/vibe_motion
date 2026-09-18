@@ -64,6 +64,11 @@ export type SaveDialogContentProps = {
   changes: readonly DiffRow[];
   onCancel: () => void;
   onSave?: () => void;
+  /**
+   * Defaults closed, like the guard's: there is no `POST /versions` before
+   * Phase 6, and a primary that looks live but does nothing is worse than a
+   * disabled one.
+   */
   saveDisabled?: boolean;
   /** The modal wrapper focuses the label field through this (handoff: it opens focused). */
   inputRef?: Ref<HTMLInputElement>;
@@ -84,7 +89,7 @@ export function SaveDialogContent({
   changes,
   onCancel,
   onSave,
-  saveDisabled = false,
+  saveDisabled = true,
   inputRef,
   titleId,
 }: SaveDialogContentProps) {
