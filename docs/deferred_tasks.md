@@ -40,6 +40,9 @@ Status: `open` · `in-progress` · `done` · `wont-do`.
 | DT-028 | chore | Add a Flyway V2 discipline note: V1 baseline was edited in place before merge; local DBs migrated earlier need `docker compose down -v` | P3 | now | 0 | — | done | One-time; after PR #1 merges, migrations are append-only. |
 | DT-029 | bug-risk | `requireWebOrigin` returns WEB_ORIGIN verbatim; a mixed-case host may not match the lowercased browser `Origin` in CORS | P3 | later | 2 | — | open | Normalise scheme + host to lowercase and drop the path. Low confidence Ktor does not already normalise. |
 | DT-030 | chore | `scripts/check-generated.mjs` header says it leaves the tree untouched; on failure it intentionally leaves regenerated files in place | P3 | later | — | — | open | Two-word comment fix; also re-add `**/coverage`, `**/test-results`, `**/playwright-report` to root .dockerignore. |
+| DT-031 | test | MSW mock `DELETE /projects/{projectId}` handler has no unit test | P3 | later | 3 | — | open | Two-line handler used only for e2e cleanup (apps/web/mocks). |
+| DT-032 | tech-debt | MSW mock 422 validation checks catalogVersion/animationId/param keys but not param values | P3 | later | 3 | — | open | Real API validates more; tighten if UI work starts relying on the mock to catch malformed params. |
+| DT-033 | tech-debt | MSW mock `/export` output is not golden-matched against the Kotlin exporter | P3 | later | 7 | — | open | Do not assume byte-identical mock/real export CSS; align when Phase 7 lands. |
 
 ## Bugs
 
