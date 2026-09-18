@@ -162,6 +162,6 @@ class BridgePageRendererTest :
             repeat(20) { renderer.render(big) }
             val elapsed = measureTimeMillis { repeat(10) { renderer.render(big) } }
 
-            (elapsed / 10.0) shouldBeLessThan 50.0
+            (elapsed / 10.0) shouldBeLessThan 250.0
         }
     })

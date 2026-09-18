@@ -418,7 +418,12 @@ class HtmlRewriter(
          * `url(` + 200 000 spaces cost ~160 s before, ~1 ms after. A possessive run never gives
          * characters back, and nothing after it could have used them anyway.
          *
-         * These two measures are what make the patterns linear; they are not what makes the
+         * The bounded classes are possessive too (`{0,N}+`). Each excludes the very character that
+         * must follow it, so if the greedy run did not stop at that character no shorter prefix
+         * can either: giving characters back can never produce a match and is pure waste (it was
+         * 1024 wasted steps per unterminated `@import`).
+         *
+         * These measures are what make the patterns linear; they are not what makes the
          * rewriter safe. Every regex over fetched content reads its input through
          * [GuardedCharSequence], so a pattern shape nobody has spotted yet still stops at the
          * clone's deadline instead of pinning a core.
@@ -430,7 +435,7 @@ class HtmlRewriter(
         private const val CSS_TOKEN_MAX = "4096"
         private const val IMPORT_TAIL_MAX = "1024"
         private const val URL_TOKEN =
-            """(?:"([^"]{0,$CSS_TOKEN_MAX})"|'([^']{0,$CSS_TOKEN_MAX})'|([^()"'\s]{0,$CSS_TOKEN_MAX}))"""
+            """(?:"([^"]{0,$CSS_TOKEN_MAX}+)"|'([^']{0,$CSS_TOKEN_MAX}+)'|([^()"'\s]{0,$CSS_TOKEN_MAX}+))"""
 
         private val CSS_URL = Regex("""url\(\s*+$URL_TOKEN\s*+\)""", RegexOption.IGNORE_CASE)
 
@@ -449,13 +454,13 @@ class HtmlRewriter(
             )
         private val CSS_IMPORT_STRING =
             Regex(
-                """@import\s++(?:"([^"]{0,$CSS_TOKEN_MAX})"|'([^']{0,$CSS_TOKEN_MAX})')""",
+                """@import\s++(?:"([^"]{0,$CSS_TOKEN_MAX}+)"|'([^']{0,$CSS_TOKEN_MAX}+)')""",
                 RegexOption.IGNORE_CASE,
             )
         private val IMPORT_RULE =
             Regex(
-                """@import\s++(?:url\(\s*+$URL_TOKEN\s*+\)|"([^"]{0,$CSS_TOKEN_MAX})"|""" +
-                    """'([^']{0,$CSS_TOKEN_MAX})')([^;{}]{0,$IMPORT_TAIL_MAX});""",
+                """@import\s++(?:url\(\s*+$URL_TOKEN\s*+\)|"([^"]{0,$CSS_TOKEN_MAX}+)"|""" +
+                    """'([^']{0,$CSS_TOKEN_MAX}+)')([^;{}]{0,$IMPORT_TAIL_MAX}+);""",
                 RegexOption.IGNORE_CASE,
             )
         private val STYLE_TERMINATOR = Regex("</style", RegexOption.IGNORE_CASE)

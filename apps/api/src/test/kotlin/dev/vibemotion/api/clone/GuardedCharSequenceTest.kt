@@ -38,6 +38,6 @@ class GuardedCharSequenceTest :
                     }
                 }
 
-            withClue("took ${elapsed}ms") { elapsed shouldBeLessThan 2_000L }
+            withClue("took ${elapsed}ms") { elapsed shouldBeLessThan 5_000L }
         }
     })

@@ -375,9 +375,16 @@ class PageFetcher internal constructor(
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/126.0.0.0 Safari/537.36 VibeMotion/0.1 (+https://github.com/vibe-motion)"
 
-        private val CHARSET_IN_CONTENT_TYPE = Regex("""charset\s*=\s*"?([A-Za-z0-9_:.+-]+)"?""", RegexOption.IGNORE_CASE)
+        private val CHARSET_IN_CONTENT_TYPE = Regex("""charset\s*+=\s*+"?([A-Za-z0-9_:.+-]++)"?""", RegexOption.IGNORE_CASE)
+
+        /**
+         * Possessive whitespace and a bounded attribute run, so this is linear by construction and
+         * not merely because it is only ever applied to the first [SNIFF_CHARACTERS] characters. The
+         * un-possessive form had the same ambiguous-whitespace shape that cost minutes in the CSS
+         * patterns (2 KB: 26 ms, 128 KB: 70 s).
+         */
         private val CHARSET_IN_META =
-            Regex("""<meta[^>]*charset\s*=\s*["']?\s*([A-Za-z0-9_:.+-]+)""", RegexOption.IGNORE_CASE)
+            Regex("""<meta[^>]{0,1024}?charset\s*+=\s*+["']?\s*+([A-Za-z0-9_:.+-]++)""", RegexOption.IGNORE_CASE)
 
         private fun newClient(timeoutMs: Long): HttpClient =
             HttpClient
