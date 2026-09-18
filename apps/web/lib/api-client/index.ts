@@ -22,5 +22,10 @@ export type Catalog = components["schemas"]["Catalog"];
 export type CatalogEntry = components["schemas"]["CatalogEntry"];
 export type CatalogParam = components["schemas"]["CatalogParam"];
 export type Trigger = components["schemas"]["Trigger"];
+export type Error = components["schemas"]["Error"];
+export type StaleParentError = components["schemas"]["StaleParentError"];
+export type ExportBundle = components["schemas"]["ExportBundle"];
+export type CreateVersionRequest = components["schemas"]["CreateVersionRequest"];
+export type Health = components["schemas"]["Health"];
 
 export type { components, paths };

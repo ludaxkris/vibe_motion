@@ -22,5 +22,8 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !isCI,
     timeout: 120_000,
+    // The real Ktor API (apps/api) isn't running in this phase's e2e — serve
+    // it from the MSW mocks instead (mocks/, gated by lib/env.ts#apiMocking).
+    env: { NEXT_PUBLIC_API_MOCKING: "enabled" },
   },
 });
