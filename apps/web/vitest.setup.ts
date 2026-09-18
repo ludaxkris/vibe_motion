@@ -34,6 +34,14 @@ if (jsdomWindow && typeof jsdomWindow.localStorage.getItem === "function") {
 // `vitest.node-globals.mjs` stashes Node's originals before jsdom loads; put
 // them back. (Assigning works: Vitest's `populateGlobal` installs a setter that
 // overrides the jsdom value.)
+//
+// The trade runs the other way too, and this is the half that is left: with
+// Node's classes in place, a component that passes a signal to a DOM listener —
+// `addEventListener(type, fn, { signal })`, the idiomatic way to unsubscribe —
+// fails jsdom's own webidl check with "parameter 3 is not of type
+// 'AbortSignal'". Such a component has to use an explicit
+// `removeEventListener` cleanup, or the test has to build the signal from
+// `jsdom.window.AbortController`.
 const nodeGlobals = (globalThis as { __vmNodeGlobals?: Record<string, unknown> })
   .__vmNodeGlobals;
 if (typeof nodeGlobals?.AbortController === "function") {

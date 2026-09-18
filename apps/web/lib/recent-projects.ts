@@ -38,14 +38,16 @@ function isRecentProject(value: unknown): value is RecentProject {
     typeof candidate.id === "string" &&
     typeof candidate.title === "string" &&
     typeof candidate.sourceUrl === "string" &&
-    typeof candidate.openedAt === "string"
+    // A timestamp that cannot be read is not a timestamp: the row would sort
+    // arbitrarily and its meta line would trail a bare " · ".
+    typeof candidate.openedAt === "string" &&
+    !Number.isNaN(Date.parse(candidate.openedAt))
   );
 }
 
-/** Milliseconds since the epoch, or 0 for anything unparseable. */
+/** Milliseconds since the epoch. Every validated entry has a readable date. */
 function openedAtMs(entry: RecentProject): number {
-  const ms = Date.parse(entry.openedAt);
-  return Number.isNaN(ms) ? 0 : ms;
+  return Date.parse(entry.openedAt);
 }
 
 function storage(): Storage | null {

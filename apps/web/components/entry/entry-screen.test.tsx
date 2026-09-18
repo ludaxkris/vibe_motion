@@ -369,6 +369,30 @@ describe("EntryScreen cancel", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it("abandons an in-flight clone when the screen goes away", async () => {
+    let aborted = false;
+    server.use(
+      http.post(api("/projects"), async ({ request }) => {
+        request.signal.addEventListener("abort", () => {
+          aborted = true;
+        });
+        await delay("infinite");
+        return HttpResponse.json({});
+      }),
+    );
+
+    const { unmount } = renderScreen();
+
+    typeUrl("example.com");
+    clone();
+    await screen.findByRole("region", { name: /cloning/i });
+
+    unmount();
+
+    await waitFor(() => expect(aborted).toBe(true));
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("does not turn a cancel into an error message", async () => {
     hangingClone();
     renderScreen();

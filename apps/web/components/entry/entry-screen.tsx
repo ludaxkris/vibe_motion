@@ -91,6 +91,12 @@ export function EntryScreen() {
 
   const isCloning = mutation.isPending;
 
+  // Leaving the screen with a clone still open — Back, or the redirect a
+  // finished clone triggers — drops the request rather than leaving it running
+  // for a screen that is gone. Aborting a settled request is a no-op, so the
+  // success path is unaffected.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   // The handoff's "· 4 s". A real counter — there is nothing else true to show.
   // It is zeroed when a clone starts, not here, so the effect only ever sets
   // state from its own interval.

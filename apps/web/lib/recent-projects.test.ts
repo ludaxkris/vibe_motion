@@ -51,6 +51,21 @@ describe("readRecentProjects", () => {
     expect(readRecentProjects().map((p) => p.id)).toEqual(["proj_1"]);
   });
 
+  it("drops an entry whose openedAt is not a date, rather than showing a dangling meta line", () => {
+    write([
+      { id: "proj_1", title: "a", sourceUrl: "https://a.test", openedAt: "whenever" },
+      { id: "proj_2", title: "b", sourceUrl: "https://b.test", openedAt: "" },
+      {
+        id: "proj_3",
+        title: "c",
+        sourceUrl: "https://c.test",
+        openedAt: "2026-09-18T10:00:00.000Z",
+      },
+    ]);
+
+    expect(readRecentProjects().map((p) => p.id)).toEqual(["proj_3"]);
+  });
+
   it("orders most recent first regardless of the stored order", () => {
     write([
       { id: "old", title: "a", sourceUrl: "https://a.test", openedAt: "2026-09-01T00:00:00.000Z" },
