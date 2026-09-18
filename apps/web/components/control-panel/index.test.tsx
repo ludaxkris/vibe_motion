@@ -115,6 +115,35 @@ describe("ControlPanel · unsaved guard", () => {
     expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
   });
 
+  it("asks generically when the unsaved work is on some other element", () => {
+    makeDirty();
+    // The selection moves to an element that is exactly as it was saved
+    // (namely: with nothing on it). Naming it would be a lie.
+    useEditorStore.getState().setSelectedVmId("vm-2");
+    render(<ControlPanel currentVersionLabel="v5" />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Save changes?" });
+    expect(within(dialog).getByText(/You have unsaved changes/)).toBeInTheDocument();
+    expect(within(dialog).queryByText("Fade In Up")).not.toBeInTheDocument();
+  });
+
+  it("guards the Export tab too", () => {
+    makeDirty();
+    render(<ControlPanel />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+
+    expect(screen.getByRole("dialog", { name: "Save changes to vm-1?" })).toBeInTheDocument();
+    expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(screen.getByRole("tab", { name: "Export" })).toHaveAttribute("data-active");
+    expect(screen.getByText("Export arrives with Phase 7.")).toBeInTheDocument();
+  });
+
   it("discards the draft and then makes the switch", () => {
     makeDirty();
     render(<ControlPanel />);

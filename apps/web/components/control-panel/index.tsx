@@ -6,7 +6,12 @@ import { UnsavedGuardDialog } from "@/components/dialogs/unsaved-guard-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Trigger } from "@/lib/api-client";
 import { getCatalogEntry } from "@/lib/catalog";
-import { selectSelectedVmId, useEditorStore, useUnsaved } from "@/lib/store";
+import {
+  selectSelectedElementUnsaved,
+  selectSelectedVmId,
+  useEditorStore,
+  useUnsaved,
+} from "@/lib/store";
 
 import { ALL_CATEGORIES, ChoosingPanel } from "./choosing";
 import { IdlePanel } from "./idle";
@@ -140,8 +145,15 @@ export function ControlPanel({ currentVersionLabel }: { currentVersionLabel?: st
 
   // Guard-on-element-click and guard-on-Export/Restore are later phases; this
   // is the tab switch only.
+  //
+  // The dialog names an element only when *that* element is what changed:
+  // with the unsaved work sitting on some other element, "Save changes to
+  // vm-2?" would point at the wrong thing, so the generic question is the
+  // honest one.
   const selectedVmId = useEditorStore(selectSelectedVmId);
-  const guardedAssignment = selectedVmId === null ? undefined : draftState[selectedVmId];
+  const selectedElementUnsaved = useEditorStore(selectSelectedElementUnsaved);
+  const guardedVmId = selectedElementUnsaved ? selectedVmId : null;
+  const guardedAssignment = guardedVmId === null ? undefined : draftState[guardedVmId];
   const guardedAnimationName = guardedAssignment
     ? (getCatalogEntry(guardedAssignment.animationId)?.name ?? guardedAssignment.animationId)
     : undefined;
@@ -214,7 +226,7 @@ export function ControlPanel({ currentVersionLabel }: { currentVersionLabel?: st
 
       <UnsavedGuardDialog
         open={pendingTab !== null}
-        elementLabel={selectedVmId ?? undefined}
+        elementLabel={guardedVmId ?? undefined}
         animationName={guardedAnimationName}
         currentVersionLabel={currentVersionLabel}
         onDiscard={() => {

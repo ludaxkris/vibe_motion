@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
 
-import { initialEditorState, selectSelectedVmId, selectUnsaved, useEditorStore } from "./index";
+import {
+  initialEditorState,
+  selectSelectedElementUnsaved,
+  selectSelectedVmId,
+  selectUnsaved,
+  useEditorStore,
+} from "./index";
 
 beforeEach(() => {
   useEditorStore.setState({ ...initialEditorState });
@@ -229,5 +235,76 @@ describe("useEditorStore panel/draft integration", () => {
     const state = useEditorStore.getState();
     expect(state.panel).toEqual({ status: "choosing", vmId: "vm-1" });
     expect(state.draftState["vm-1"]).toBeDefined();
+  });
+});
+
+describe("selectSelectedElementUnsaved", () => {
+  /** A saved version holding one assignment on `vm-1`. */
+  function withSavedAssignment(vmId: string, animationId: string) {
+    const entry = getCatalogEntry(animationId);
+    if (!entry) throw new Error(`fixture: no catalog entry "${animationId}"`);
+    const assignment = {
+      animationId: entry.id,
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: entry.defaultTrigger ?? entry.triggers[0],
+      params: resolveCatalogParams(entry),
+    };
+    useEditorStore.setState({
+      currentVersionState: { [vmId]: assignment },
+      draftState: { [vmId]: assignment },
+    });
+  }
+
+  it("is false when nothing is selected, however dirty the draft is", () => {
+    useEditorStore.getState().setDraftAssignment("vm-1", {
+      animationId: "fade-in",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: "load",
+      params: {},
+    });
+    const state = useEditorStore.getState();
+
+    expect(selectUnsaved(state)).toBe(true);
+    expect(selectSelectedElementUnsaved(state)).toBe(false);
+  });
+
+  it("is false for a selected element whose own assignment is untouched", () => {
+    withSavedAssignment("vm-1", "fade-in-up");
+    // Another element is what changed.
+    useEditorStore.getState().setDraftAssignment("vm-2", {
+      animationId: "pulse",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: "load",
+      params: {},
+    });
+    useEditorStore.getState().setSelectedVmId("vm-1");
+    const state = useEditorStore.getState();
+
+    expect(selectUnsaved(state)).toBe(true);
+    expect(selectSelectedElementUnsaved(state)).toBe(false);
+  });
+
+  it("is true once the selected element's own params move", () => {
+    withSavedAssignment("vm-1", "fade-in-up");
+    useEditorStore.getState().setSelectedVmId("vm-1");
+    useEditorStore.getState().updateDraftParam("vm-1", "duration", "800ms");
+
+    expect(selectSelectedElementUnsaved(useEditorStore.getState())).toBe(true);
+  });
+
+  it("is true for a selected element that has only just been given an animation", () => {
+    useEditorStore.getState().setSelectedVmId("vm-1");
+    useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in-up" });
+
+    expect(selectSelectedElementUnsaved(useEditorStore.getState())).toBe(true);
+  });
+
+  it("is true for a selected element whose animation was removed from the draft", () => {
+    withSavedAssignment("vm-1", "fade-in-up");
+    useEditorStore.getState().setSelectedVmId("vm-1");
+    useEditorStore.getState().removeDraftAssignment("vm-1");
+
+    expect(selectSelectedElementUnsaved(useEditorStore.getState())).toBe(true);
   });
 });

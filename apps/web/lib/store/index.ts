@@ -114,6 +114,20 @@ export function selectUnsaved(state: EditorState): boolean {
   return !statesEqual(state.draftState, state.currentVersionState);
 }
 
+/**
+ * True when the *selected* element's own assignment differs from the saved
+ * version's — which is a narrower question than `selectUnsaved`.
+ *
+ * The unsaved guard asks it before naming an element: "Save changes to h1?"
+ * is a lie when h1 is exactly as it was saved and the unsaved work is on some
+ * other element (`docs/design/README.md` "3. Dialogs & toast").
+ */
+export function selectSelectedElementUnsaved(state: EditorState): boolean {
+  const vmId = selectSelectedVmId(state);
+  if (vmId === null) return false;
+  return !assignmentsEqual(state.draftState[vmId], state.currentVersionState[vmId]);
+}
+
 export const useEditorStore = create<EditorStore>((set, get) => ({
   ...initialEditorState,
 
