@@ -3,7 +3,7 @@
 # Render runs the web service on its native Node runtime, not from an image, so this file mirrors
 # render.yaml's buildCommand / startCommand line for line. If you change one, change the other.
 #
-#   docker build -f docker/e2e/web.Dockerfile -t vm-e2e-web:dev .
+#   docker build -f apps/e2e/docker/web.Dockerfile -t vm-e2e-web:dev .
 
 FROM node:22-slim
 

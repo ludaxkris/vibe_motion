@@ -13,14 +13,14 @@
 # including twice in one worktree. Images are tagged per worktree, so one branch's build never
 # replaces the image another branch is testing, while a re-run in the same worktree reuses its layers.
 #
-# Exit code is Playwright's. Reports: apps/web/playwright-report-docker/<run>/ (`latest` points at
+# Exit code is Playwright's. Reports: apps/e2e/playwright-report-docker/<run>/ (`latest` points at
 # the newest). Long first build: agents should run this (and `pnpm gates`) in the background.
 
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-compose_file="$root/docker/e2e/compose.yml"
-reports_dir="$root/apps/web/playwright-report-docker"
+compose_file="$root/apps/e2e/docker/compose.yml"
+reports_dir="$root/apps/e2e/playwright-report-docker"
 stale_after_seconds=1800   # a stack this old was orphaned by a killed run (SIGKILL cannot be trapped)
 keep_reports=5
 
@@ -147,7 +147,7 @@ mkdir -p "$out_dir"
 export VM_E2E_OUT="$out_dir"
 export VM_E2E_PROJECT="$project_prefix-$run_id"
 
-# The subnet is drawn from 11.0.0.0/8 (docker/e2e/README.md, "Why the network is on 11.x"). Two
+# The subnet is drawn from 11.0.0.0/8 (apps/e2e/README.md, "Why the network is on 11.x"). Two
 # live stacks landing on the same /24 is a 1-in-65k event and Docker refuses the overlap: redraw.
 started=false
 for attempt in 1 2 3 4 5; do

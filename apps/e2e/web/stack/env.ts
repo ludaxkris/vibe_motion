@@ -1,4 +1,4 @@
-/** Origins inside the Docker e2e stack. Set by docker/e2e/compose.yml on the runner. */
+/** Origins inside the Docker e2e stack. Set by apps/e2e/docker/compose.yml on the runner. */
 function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is not set; stack specs only run via scripts/e2e-docker.sh`);

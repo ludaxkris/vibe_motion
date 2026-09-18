@@ -31,7 +31,8 @@ const gates = [
   { group: "api", name: "api check (ktlint + kotest)", cmd: "./gradlew", args: ["check", "--no-daemon", "--console=plain"], cwd: "apps/api" },
   { group: "api", name: "api docker build", cmd: "docker", args: ["build", "-q", "-f", "apps/api/Dockerfile", "-t", "vibe-motion-api:gate", "."], requires: "docker" },
   // ---- e2e -----------------------------------------------------------------
-  { group: "e2e", name: "web e2e (playwright)", cmd: "pnpm", args: ["--filter", "web", "e2e"] },
+  { group: "e2e", name: "e2e typecheck", cmd: "pnpm", args: ["--filter", "e2e", "typecheck"] },
+  { group: "e2e", name: "web e2e (playwright)", cmd: "pnpm", args: ["--filter", "e2e", "test"] },
   // Full stack (db + api image + production web build) in a throwaway, per-run Docker stack.
   { group: "e2e-docker", name: "full-stack e2e (docker)", cmd: "scripts/e2e-docker.sh", args: [], requires: "docker" },
 ];

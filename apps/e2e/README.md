@@ -1,3 +1,27 @@
+# apps/e2e — end-to-end tests
+
+End-to-end tests for every Vibe Motion client live here, not inside the app they exercise, so a
+second client does not have to borrow another app's folder.
+
+```
+apps/e2e/
+  web/                     Playwright specs for the web app
+    *.spec.ts              web-only: run against `next dev` (`pnpm e2e`) and inside the Docker stack
+    stack/                 need the real api + Postgres: run only inside the Docker stack
+  mobile/                  (future) specs for a mobile client; add a Playwright project or its own runner here
+  fixtures/                static pages the stack serves for cloning; shared by every client's specs
+  docker/                  the full-stack compose file, web + runner images, health waiter
+  playwright.config.ts           local, web-only
+  playwright.docker.config.ts    inside the stack
+```
+
+```bash
+pnpm e2e           # web-only specs; starts `next dev` on :3000 itself (reuses a running one)
+pnpm e2e:docker    # everything, against a brand-new full stack in Docker
+```
+
+First local run on a new machine: `pnpm --filter e2e exec playwright install chromium`.
+
 # Docker e2e stack
 
 `pnpm e2e:docker` (= `scripts/e2e-docker.sh`) runs the Playwright suite against the whole product:
@@ -6,9 +30,9 @@
 |---|---|
 | `db` | `postgres:16-alpine` on tmpfs. Empty at start, gone at the end. |
 | `api` | `apps/api/Dockerfile`, the exact image Render builds, 512 MB like the starter plan. Flyway migrates the empty database on boot. |
-| `web` | `docker/e2e/web.Dockerfile`: render.yaml's `buildCommand` / `startCommand`, i.e. `next build` + `next start`, not `next dev`. |
-| `fixtures` | nginx serving `apps/web/e2e/fixtures/` as `http://fixtures.vm-e2e.test`. The pages e2e clones. |
-| `runner` | The Playwright image matching the lockfile's `@playwright/test`, running `apps/web/playwright.docker.config.ts`. |
+| `web` | `docker/web.Dockerfile`: render.yaml's `buildCommand` / `startCommand`, i.e. `next build` + `next start`, not `next dev`. |
+| `fixtures` | nginx serving `apps/e2e/fixtures/` as `http://fixtures.vm-e2e.test`. The pages e2e clones. |
+| `runner` | The Playwright image matching the lockfile's `@playwright/test`, running `playwright.docker.config.ts`. |
 
 ## One stack per run, any number at once
 
@@ -40,16 +64,16 @@ scripts/e2e-docker.sh prune-all --yes   # every vm-e2e stack and image on the ma
 ```
 
 `scripts/cleanup-merged.sh` runs `prune` for a worktree before deleting it. Reports and traces land
-in `apps/web/playwright-report-docker/<run>/` (gitignored; `latest` is a symlink to the newest, the
+in `apps/e2e/playwright-report-docker/<run>/` (gitignored; `latest` is a symlink to the newest, the
 five newest are kept).
 
 ## Writing specs
 
-- Web-only specs stay in `apps/web/e2e/*.spec.ts`; they run both here and under `pnpm --filter web e2e`.
-- Anything needing the api goes in `apps/web/e2e/stack/` (ignored by the default config). Import
+- Web-only specs go in `web/*.spec.ts`; they run both here and under `pnpm e2e`.
+- Anything needing the api goes in `web/stack/` (ignored by the default config). Import
   origins from `stack/env.ts`; never hardcode them.
 - Clone fixture pages (`${stack.fixtureOrigin}/marketing.html`), never the public internet. Add pages
-  under `apps/web/e2e/fixtures/`.
+  under `fixtures/`.
 - The database is never cleaned within a run and specs run in parallel with retries: scope every
   assertion to the project the test created; never assert on global counts or list order.
 - The api admits 2 concurrent clones and answers 503 + `Retry-After` after a 5 s queue. `workers` is

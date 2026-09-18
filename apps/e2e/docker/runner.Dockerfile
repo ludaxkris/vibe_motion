@@ -17,10 +17,9 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .nvmrc ./
 RUN pnpm fetch --config.engine-strict=false
 
-COPY packages packages
-COPY apps/web apps/web
-RUN pnpm install --offline --frozen-lockfile --config.engine-strict=false
-COPY docker/e2e/wait-for-stack.mjs docker/e2e/wait-for-stack.mjs
+COPY apps/e2e apps/e2e
+# Only the e2e package: the runner drives browsers, it does not build the app.
+RUN pnpm install --offline --frozen-lockfile --config.engine-strict=false --filter e2e
 
-WORKDIR /repo/apps/web
-CMD ["sh", "-c", "node /repo/docker/e2e/wait-for-stack.mjs && pnpm exec playwright test --config playwright.docker.config.ts"]
+WORKDIR /repo/apps/e2e
+CMD ["sh", "-c", "node docker/wait-for-stack.mjs && pnpm exec playwright test --config playwright.docker.config.ts"]

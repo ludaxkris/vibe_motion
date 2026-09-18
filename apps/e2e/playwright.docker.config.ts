@@ -2,10 +2,10 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * Full-stack config, used only inside the Docker e2e stack (`pnpm e2e:docker`, see
- * docker/e2e/README.md). No `webServer`: the stack already runs a production web build, the real
+ * apps/e2e/README.md). No `webServer`: the stack already runs a production web build, the real
  * api image and Postgres, and the runner reaches them by service name.
  *
- * Runs every spec: the web-only ones in `e2e/` and the full-stack ones in `e2e/stack/`.
+ * Runs every web spec: the web-only ones in `web/` and the full-stack ones in `web/stack/`.
  */
 
 const webOrigin = required("E2E_WEB_ORIGIN");
@@ -18,7 +18,7 @@ function required(name: string): string {
 }
 
 export default defineConfig({
-  testDir: "./e2e",
+  testDir: "./web",
   outputDir: "/out/test-results",
   fullyParallel: true,
   // Explicit, not CPU-derived: the api admits 2 concurrent clones and queues the rest for 5 s

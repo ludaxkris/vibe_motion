@@ -8,7 +8,7 @@
 # Origins are fixed *inside* every stack (http://web:3000, http://api:8080), so the web image —
 # which bakes NEXT_PUBLIC_API_ORIGIN in at build time — is identical for every run and caches.
 #
-# The network uses a subnet outside every range SsrfGuard refuses (see README.md, "Why 11.x"):
+# The network uses a subnet outside every range SsrfGuard refuses (see ../README.md, "Why 11.x"):
 # the api under test is the unmodified production image, guard included, and it still has to be
 # able to clone the fixture pages.
 
@@ -32,7 +32,7 @@ services:
   api:
     image: vm-e2e-api:${VM_E2E_TAG:?}
     build:
-      context: ../..
+      context: ../../..
       dockerfile: apps/api/Dockerfile # the image Render builds
     environment:
       DATABASE_URL: postgresql://vibe_motion:vibe_motion@db:5432/vibe_motion
@@ -51,8 +51,8 @@ services:
   web:
     image: vm-e2e-web:${VM_E2E_TAG:?}
     build:
-      context: ../..
-      dockerfile: docker/e2e/web.Dockerfile
+      context: ../../..
+      dockerfile: apps/e2e/docker/web.Dockerfile
       args:
         NEXT_PUBLIC_API_ORIGIN: http://api:8080
     environment:
@@ -63,7 +63,7 @@ services:
   fixtures:
     image: nginx:1.29-alpine
     volumes:
-      - ../../apps/web/e2e/fixtures:/usr/share/nginx/html:ro
+      - ../fixtures:/usr/share/nginx/html:ro
     networks:
       default:
         aliases:
@@ -73,8 +73,8 @@ services:
   runner:
     image: vm-e2e-runner:${VM_E2E_TAG:?}
     build:
-      context: ../..
-      dockerfile: docker/e2e/runner.Dockerfile
+      context: ../../..
+      dockerfile: apps/e2e/docker/runner.Dockerfile
       args:
         PLAYWRIGHT_VERSION: ${VM_E2E_PLAYWRIGHT_VERSION:?}
     environment:
