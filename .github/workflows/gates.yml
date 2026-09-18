@@ -32,6 +32,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm gates:catalog
 
+  bridge:
+    name: bridge gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm gates:bridge
+
   web:
     name: web gates
     runs-on: ubuntu-latest
@@ -85,7 +98,7 @@ jobs:
 
   gate-flag:
     name: Gate Flag
-    needs: [catalog, web, api, e2e]
+    needs: [catalog, bridge, web, api, e2e]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Vibe Motion quality gates. This is what CI runs and what every agent runs
-// before marking a PR ready. Usage: node scripts/gates.mjs [web|api|catalog|e2e|all]
+// before marking a PR ready. Usage: node scripts/gates.mjs [web|api|catalog|bridge|e2e|all]
 //
 // Every gate runs even if an earlier one fails, so a single run reports the
 // full picture. Exit code is non-zero if any gate failed.
@@ -22,6 +22,11 @@ const gates = [
   // Generated artifacts (catalog TS types, web API client) must be committed in sync with
   // their sources, otherwise a contract edit can silently leave another app on a stale client.
   { group: "catalog", name: "generated artifacts up to date", cmd: "node", args: ["scripts/check-generated.mjs"] },
+  // ---- bridge --------------------------------------------------------------
+  // `typecheck` runs tsc with checkJs over src/vm-bridge.js, so the plain browser script is
+  // type-checked against protocol.ts through its JSDoc imports even though it never imports it.
+  { group: "bridge", name: "bridge typecheck", cmd: "pnpm", args: ["--filter", "bridge", "typecheck"] },
+  { group: "bridge", name: "bridge test", cmd: "pnpm", args: ["--filter", "bridge", "test"] },
   // ---- web -----------------------------------------------------------------
   { group: "web", name: "web lint", cmd: "pnpm", args: ["--filter", "web", "lint"] },
   { group: "web", name: "web typecheck", cmd: "pnpm", args: ["--filter", "web", "typecheck"] },
@@ -36,7 +41,7 @@ const gates = [
 
 const selected = gates.filter((g) => group === "all" || g.group === group);
 if (selected.length === 0) {
-  console.error(`Unknown gate group "${group}". Use web | api | catalog | e2e | all.`);
+  console.error(`Unknown gate group "${group}". Use web | api | catalog | bridge | e2e | all.`);
   process.exit(2);
 }
 
