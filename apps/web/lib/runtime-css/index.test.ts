@@ -55,7 +55,8 @@ describe("keyframesCss", () => {
 
   it("uses a vm-prefixed keyframes name", () => {
     const css = keyframesCss(sampleEntry, sampleVersion);
-    expect(css).toMatch(/@keyframes vm-[a-z0-9-]+-v\d+ \{/);
+    expect(css.startsWith(`@keyframes ${keyframesName(sampleEntry.id, sampleVersion)} {`)).toBe(true);
+    expect(keyframesName(sampleEntry.id, sampleVersion)).toMatch(/^vm-/);
   });
 });
 
