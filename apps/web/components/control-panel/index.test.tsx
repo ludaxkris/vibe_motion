@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { initialEditorState, useEditorStore } from "@/lib/store";
@@ -74,5 +74,86 @@ describe("ControlPanel", () => {
     render(<ControlPanel />);
 
     expect(screen.getByText(/Save and Cancel live in the top bar/)).toBeInTheDocument();
+  });
+});
+
+describe("ControlPanel · unsaved guard", () => {
+  /** Puts a draft assignment on `vm-1` that the saved version does not have. */
+  function makeDirty() {
+    const store = useEditorStore.getState();
+    store.dispatchPanel({ type: "SELECT", vmId: "vm-1" });
+    store.dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    store.dispatchPanel({ type: "PICK", animationId: "fade-in-up" });
+  }
+
+  it("keeps the inactive folder tabs faint while there are unsaved changes", () => {
+    makeDirty();
+    render(<ControlPanel />);
+
+    expect(screen.getByRole("tab", { name: "History" })).toHaveClass("text-vm-ink-4");
+    expect(screen.getByRole("tab", { name: "Animate" })).not.toHaveClass("text-vm-ink-4");
+  });
+
+  it("leaves the tabs alone while the draft is clean", () => {
+    render(<ControlPanel />);
+
+    expect(screen.getByRole("tab", { name: "History" })).not.toHaveClass("text-vm-ink-4");
+  });
+
+  it("asks before leaving the tab, naming the element and its animation", () => {
+    makeDirty();
+    render(<ControlPanel currentVersionLabel="v5" />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Save changes to vm-1?" });
+    expect(within(dialog).getByText("Fade In Up")).toBeInTheDocument();
+    expect(within(dialog).getByText(/discard to leave v5 as is/)).toBeInTheDocument();
+    // The switch has not happened: Animate's body is still the one behind the
+    // modal. (By role it is unreachable — the open dialog inerts the page —
+    // so this asks the DOM rather than the accessibility tree.)
+    expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
+  });
+
+  it("discards the draft and then makes the switch", () => {
+    makeDirty();
+    render(<ControlPanel />);
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(useEditorStore.getState().draftState).toEqual({});
+    expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("data-active");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps the edit and the tab on Keep editing", () => {
+    makeDirty();
+    render(<ControlPanel />);
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+
+    expect(useEditorStore.getState().draftState["vm-1"]).toBeDefined();
+    expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("never offers a save it cannot perform", () => {
+    makeDirty();
+    render(<ControlPanel />);
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByText("Saving arrives with version history.")).toBeInTheDocument();
+  });
+
+  it("switches straight away once the draft is clean again", () => {
+    render(<ControlPanel />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Export" })).toHaveAttribute("data-active");
   });
 });

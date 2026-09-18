@@ -241,7 +241,11 @@ export function EditorShell({ projectId }: { projectId: string }) {
         )}
         right={
           <aside aria-label="Control Panel" className="h-full bg-vm-panel">
-            <ControlPanel />
+            {/* The guard's "…or discard to leave v5 as is" needs the version
+                the draft forked from, which only this query knows. */}
+            <ControlPanel
+              currentVersionLabel={currentVersion ? `v${currentVersion.seq}` : undefined}
+            />
           </aside>
         }
       />

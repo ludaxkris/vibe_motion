@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 
+import { UnsavedGuardDialog } from "@/components/dialogs/unsaved-guard-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Trigger } from "@/lib/api-client";
 import { getCatalogEntry } from "@/lib/catalog";
-import { useEditorStore } from "@/lib/store";
+import { selectSelectedVmId, useEditorStore, useUnsaved } from "@/lib/store";
 
 import { ALL_CATEGORIES, ChoosingPanel } from "./choosing";
 import { IdlePanel } from "./idle";
@@ -104,31 +105,76 @@ function TuningSection({ vmId, animationId }: { vmId: string; animationId: strin
   );
 }
 
+const TABS = [
+  { value: "animate", label: "Animate" },
+  { value: "history", label: "History" },
+  { value: "export", label: "Export" },
+] as const;
+
 /**
  * Control Panel: idle -> selected -> choosing -> tuning, driven by the
  * `panel` state machine (`lib/store/panel-machine.ts`), under the handoff's
  * folder tabs (`docs/design/README.md` "2. Editor").
  *
  * This is the store-connected container: every state below is presentational
- * and takes what it needs as props, so `/dev` (Task 9) can render them all
+ * and takes what it needs as props, so `/dev` (Task 9) renders them all
  * without touching the store.
  *
  * Element selection from the preview iframe arrives with the bridge (Phase 4);
- * until then `panel` is only advanced from here, `/dev/panel` and tests.
+ * until then `panel` is only advanced from here, `/dev` and tests.
  */
-export function ControlPanel() {
+export function ControlPanel({ currentVersionLabel }: { currentVersionLabel?: string }) {
   const panel = useEditorStore((state) => state.panel);
   const draftState = useEditorStore((state) => state.draftState);
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
   const setSelectedVmId = useEditorStore((state) => state.setSelectedVmId);
+  const revertDraft = useEditorStore((state) => state.revertDraft);
+  const unsaved = useUnsaved();
+
+  // The tab is controlled so an unsaved draft can hold the switch: the guard
+  // parks the requested tab here and `onValueChange` is simply not honoured
+  // until the user says what to do with the draft (docs/user_flow.md §1,
+  // "unsaved → History/Export → guard").
+  const [tab, setTab] = useState<string>(TABS[0].value);
+  const [pendingTab, setPendingTab] = useState<string | null>(null);
+
+  // Guard-on-element-click and guard-on-Export/Restore are later phases; this
+  // is the tab switch only.
+  const selectedVmId = useEditorStore(selectSelectedVmId);
+  const guardedAssignment = selectedVmId === null ? undefined : draftState[selectedVmId];
+  const guardedAnimationName = guardedAssignment
+    ? (getCatalogEntry(guardedAssignment.animationId)?.name ?? guardedAssignment.animationId)
+    : undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <Tabs defaultValue="animate" className="flex min-h-0 flex-1 flex-col gap-0">
+      <Tabs
+        value={tab}
+        onValueChange={(next) => {
+          const value = String(next);
+          if (value === tab) return;
+          if (unsaved) {
+            setPendingTab(value);
+            return;
+          }
+          setTab(value);
+        }}
+        className="flex min-h-0 flex-1 flex-col gap-0"
+      >
         <TabsList variant="folder">
-          <TabsTrigger value="animate">Animate</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
-          <TabsTrigger value="export">Export</TabsTrigger>
+          {TABS.map(({ value, label }) => (
+            <TabsTrigger
+              key={value}
+              value={value}
+              // "while unsaved the inactive tabs are #cfc9e6 and clicking them
+              // triggers the guard" (handoff, "2. Editor").
+              className={
+                unsaved && value !== tab ? "text-vm-ink-4 hover:text-vm-ink-4" : undefined
+              }
+            >
+              {label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3">
@@ -165,6 +211,19 @@ export function ControlPanel() {
       <p className="px-4 pt-2.5 pb-3 text-xs leading-body text-vm-ink-2">
         Save and Cancel live in the top bar so they’re never scrolled away.
       </p>
+
+      <UnsavedGuardDialog
+        open={pendingTab !== null}
+        elementLabel={selectedVmId ?? undefined}
+        animationName={guardedAnimationName}
+        currentVersionLabel={currentVersionLabel}
+        onDiscard={() => {
+          revertDraft();
+          if (pendingTab !== null) setTab(pendingTab);
+          setPendingTab(null);
+        }}
+        onKeepEditing={() => setPendingTab(null)}
+      />
     </div>
   );
 }
