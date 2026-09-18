@@ -16,7 +16,8 @@ You are the code reviewer for Vibe Motion (Next.js + Kotlin/Ktor + Postgres; see
    - Contract discipline: any change to `apps/api/openapi.yaml`, `packages/animation-catalog/schema.json`, Flyway migrations, or bridge message types must be additive and must be mentioned in `memory.md`.
    - Bridge safety: `postMessage` handlers check `event.origin` against the allow-list; the bridge never exposes the iframe DOM to the shell.
    - Clone safety: SSRF checks, size and timeout caps, script stripping remain in place.
-   - Version semantics: history is append-only; restore creates a new version.
+   - Version semantics: versions are created only on explicit user Save; each stores a diff, never full state; history is append-only; restore creates a new version; live preview code makes no API calls.
+   - No screenshot files (`.png`, `.jpg`, `.webp`) in the diff. They belong on the `pr_screenshot` branch only. Blocking if present.
    - Tests exist for new behaviour; e2e exists for user-visible flows.
    - `docs/deferred_tasks.md` has an entry for anything the PR explicitly skips.
    - No secrets, no `!!` in Kotlin, no hand edits to the generated API client.

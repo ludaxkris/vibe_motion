@@ -1,8 +1,8 @@
 # Vibe Motion — Architecture (v0)
 
-Status: DRAFT for review · Last updated: 2026-09-17
+Status: DRAFT for review · Last updated: 2026-09-18
 
-Four views: system context, request flows, data model, and the preview bridge. Decisions referenced here are explained in [build_plan.md](build_plan.md).
+Four views: system context, request flows, data model, and the preview bridge. Decisions referenced here are explained in [build_plan.md](build_plan.md). The designer's journey is in [user_flow.md](user_flow.md).
 
 ## 1. System context
 
@@ -108,11 +108,18 @@ sequenceDiagram
 
   loop each slider change
     D->>W: adjust param
-    W->>F: postMessage apply (same vmId, new params)   ← immediate
-    W->>W: debounce 750 ms
+    W->>W: update draft state in store, mark unsaved
+    W->>F: postMessage apply (same vmId, new params)   ← immediate, no network
   end
-  W->>A: POST /projects/{id}/versions { parentVersionId, state, label }
-  A-->>W: 201 version
+
+  D->>W: click Save (label prefilled from diff)
+  W->>W: diff = delta(currentVersionState, draftState)
+  W->>A: POST /projects/{id}/versions { parentVersionId, diff, label }
+  alt parent is current
+    A-->>W: 201 version → draft becomes current, unsaved cleared
+  else stale parent (saved elsewhere)
+    A-->>W: 409 → UI offers rebase draft or discard
+  end
 ```
 
 ### 3.3 View and restore a version
@@ -125,13 +132,19 @@ sequenceDiagram
   participant A as api
 
   D->>W: click version v3 in history list
-  W->>A: GET /projects/{id}/versions (cached) → state of v3
+  opt unsaved changes exist
+    W-->>D: save or discard first?
+  end
+  W->>A: GET /projects/{id}/versions/v3/state
+  A->>A: stateAt(v3) = fold diffs v0..v3
+  A-->>W: full state
   W->>F: postMessage state:load { state }
   F->>F: clear all inline vm styles, apply each assignment
   W->>W: editor mode: viewing v3 (read-only)
   D->>W: click Restore
   W->>A: POST /projects/{id}/versions/v3/restore
-  A-->>W: 201 v6 (state copied from v3)
+  A->>A: diff = delta(stateAt(current), stateAt(v3))
+  A-->>W: 201 v6 (diff returns project to v3's state)
   W->>W: editor mode: editing, current = v6
 ```
 
@@ -145,8 +158,12 @@ sequenceDiagram
   participant P as Postgres
 
   D->>W: open Export
+  opt unsaved changes exist
+    W-->>D: save first (export targets a saved version)
+  end
   W->>A: GET /projects/{id}/export?versionId=current
-  A->>P: SELECT base_html, state
+  A->>P: SELECT base_html, diffs v0..current
+  A->>A: state = stateAt(current)
   A->>A: exporter: catalog + state → css,<br/>base_html → vm-* classes replace data-vm-id,<br/>remove bridge, link css/js
   A-->>W: { html, css, js | null }
   W-->>D: tabs + copy buttons + zip download
@@ -157,7 +174,7 @@ sequenceDiagram
 ```mermaid
 flowchart LR
   subgraph shell["web origin · editor shell"]
-    store["Zustand store<br/>selectedVmId · state · mode"]
+    store["Zustand store<br/>selectedVmId · draftState · currentVersionState · unsaved · mode"]
     panel["Control Panel<br/>idle → selected → choosing → tuning"]
     bridgeClient["bridge client<br/>origin-checked postMessage"]
     store <--> panel
@@ -196,21 +213,39 @@ erDiagram
     uuid project_id FK
     uuid parent_version_id "null for v0"
     int seq "1..n within project"
-    text label "auto-generated"
-    jsonb state "vmId -> {animationId, params, trigger}"
+    text label "user-editable at save time"
+    jsonb diff "delta from parent: {set, remove}"
     timestamptz created_at
   }
 ```
 
-`state` example:
+Versions are created only when the user clicks Save. Each stores a diff against its parent; full state is never stored. `stateAt(N)` folds the diffs from v0 (empty) through N.
+
+`diff` example (one version):
 
 ```json
 {
-  "vm-17": { "animationId": "fade-in-up", "trigger": "load",
-             "params": { "duration": "600ms", "delay": "0ms", "easing": "ease-out", "iteration": "1", "distance": "24px" } },
-  "vm-42": { "animationId": "pulse", "trigger": "hover",
-             "params": { "duration": "1200ms", "iteration": "infinite", "scale": "1.05" } }
+  "set": {
+    "vm-17": { "animationId": "fade-in-up", "trigger": "load",
+               "params": { "duration": "600ms", "delay": "0ms", "easing": "ease-out", "iteration": "1", "distance": "24px" } }
+  },
+  "remove": ["vm-42"]
 }
+```
+
+Materialised `state` (what the iframe and exporter consume):
+
+```json
+{
+  "vm-17": { "animationId": "fade-in-up", "trigger": "load", "params": { "duration": "600ms", "delay": "0ms", "easing": "ease-out", "iteration": "1", "distance": "24px" } }
+}
+```
+
+```mermaid
+flowchart LR
+  v0["v0<br/>diff: {}"] --> v1["v1<br/>set vm-17"] --> v2["v2<br/>set vm-42"] --> v3["v3<br/>set vm-17 (new params)<br/>remove vm-42"]
+  v3 -. "stateAt(v3) = fold(v0..v3)" .-> s3["state: { vm-17: fade-in-up (new params) }"]
+  v3 --> v4["v4 · Restore v1<br/>diff = delta(stateAt(v3), stateAt(v1))"]
 ```
 
 ## 6. Deployment (render.yaml)

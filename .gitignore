@@ -26,3 +26,8 @@ apps/api/.kotlin/
 *.iml
 .vscode/*
 !.vscode/settings.json
+
+# screenshots live only on the pr_screenshot branch (see CLAUDE.md rule 8)
+docs/screenshots/
+screenshots/
+*.screenshot.png

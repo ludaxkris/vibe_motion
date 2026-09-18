@@ -15,7 +15,9 @@ Vibe Motion is a web tool that lets product designers add CSS animations to an e
 5. **Update `memory.md` when you start, finish, or change scope**, and whenever you touch a shared contract (`apps/api/openapi.yaml`, `packages/animation-catalog/schema.json`, the bridge message protocol, Flyway migrations).
 6. **Contracts are additive after Phase 0.** You may add endpoints, fields, catalog params, or message types. You may not rename or remove them without a `docs/deferred_tasks.md` entry and a note in `memory.md` that the affected worktrees have been told.
 7. **No secrets in the repo.** Secrets are `sync: false` in `render.yaml` and entered in the Render dashboard. Locally use `.env.local` (gitignored). Never print environment values in logs or PR descriptions.
-8. **Do not ask the user for permission for reversible work.** Do ask before: force-pushing, deleting branches you did not create, editing `render.yaml` database fields (they are immutable on Render), or changing another agent's in-flight files.
+8. **Screenshots never touch working branches.** Screenshot files are committed only to the orphan branch `pr_screenshot` by the `screenshot-runner` subagent and linked from PR comments. Never `git add` a `.png`/`.jpg` on any other branch; `.gitignore` blocks common screenshot paths as a backstop. If you see screenshots in a diff, treat it as a blocking review finding.
+9. **Versions are user-initiated diffs.** A version is created only when the user clicks Save. Each version stores a diff from its parent, never full state; full state is materialised by `stateAt()` in the API. Live preview edits are a client-side draft and must not call the API.
+10. **Do not ask the user for permission for reversible work.** Do ask before: force-pushing, deleting branches you did not create, editing `render.yaml` database fields (they are immutable on Render), or changing another agent's in-flight files.
 
 ## Repository map
 
@@ -23,7 +25,7 @@ Vibe Motion is a web tool that lets product designers add CSS animations to an e
 apps/web/                 Next.js app (editor shell, control panel, help page, bridge client, mock agent)
 apps/api/                 Ktor service (clone, versions, export, catalog endpoint), openapi.yaml, Dockerfile, Flyway migrations
 packages/animation-catalog/  catalog.json, schema.json, type generation
-docs/                     build_plan.md, architecture.md, deferred_tasks.md
+docs/                     build_plan.md, architecture.md, user_flow.md, deferred_tasks.md
 .claude/agents/           subagent definitions (see below)
 .github/workflows/        gates.yml (CI)
 render.yaml               Render blueprint: web + api + Postgres
@@ -86,7 +88,7 @@ Defined in `.claude/agents/`. Use them; do not re-implement their job inline.
 | `test-writer` | Sonnet | You need unit, integration, or e2e tests written for a change or a gap. |
 | `code-architect` | Fable | A change touches the bridge protocol, data model, clone pipeline, or exporter, or you suspect a performance/scalability problem. |
 | `test-runner` | Haiku | Before any merge, and whenever you want the full suite run and summarised. |
-| `screenshot-runner` | Haiku | You need screenshots of the running app (editor states, help page, exported page) for a PR or for visual comparison against the Claude Design mocks. |
+| `screenshot-runner` | Haiku | You need screenshots of the running app (editor states, help page, exported page) for a PR or for visual comparison against the Claude Design mocks. It commits them to the `pr_screenshot` branch and posts a PR comment. |
 
 Typical PR flow: implement (TDD) → `test-writer` fills gaps → `pnpm gates` → `screenshot-runner` if UI changed → `code-reviewer` → address blocking items → `test-runner` on final commit → mark ready.
 

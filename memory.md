@@ -14,9 +14,13 @@ Rules
 
 | Worktree | Branch | Agent / session | Phase | Task | Status | Started | Touches shared contract? |
 |---|---|---|---|---|---|---|---|
-| (primary) | main | Claude Fable 5.1 (planning session with Chris) | planning | Build plan, architecture, CLAUDE.md, subagents, render.yaml | done 2026-09-17 | 2026-09-17 | no |
+| (primary) | main | Claude Fable 5.1 (planning session with Chris) | planning | Build plan, architecture, user flow, CLAUDE.md, subagents, render.yaml | done 2026-09-18 | 2026-09-17 | no |
 
 ## Notices (newest first)
+
+- 2026-09-18 — Decision change from Chris: versions store **diffs**, created only on explicit user **Save**; live preview never writes to the API. Build plan Phases 2, 4, 6, 7 and architecture.md updated. Any Phase 2 work must implement `stateAt()` and the 409 stale-parent check.
+- 2026-09-18 — Screenshots go only to the orphan branch `pr_screenshot` via the screenshot-runner subagent (CLAUDE.md rule 8). DT-018 tracks creating/protecting that branch.
+- 2026-09-18 — GitHub remote confirmed: `git@github.com:ludaxkris/vibe_motion.git`, default branch `main`.
 
 - 2026-09-17 — Planning artifacts created. Phase 0 has not started. First Phase 0 task is the monorepo scaffold + gates; nothing else should start until Phase 0 merges (see build_plan.md §3).
 
@@ -30,7 +34,8 @@ Agents claim a task here before creating a worktree so two agents do not pick th
 
 ## Facts other agents need
 
-- Primary checkout: `/Users/christung/Projects/anthropic/vibe_motion`. Worktrees go under `.worktrees/<branch>` (gitignored).
+- Primary checkout: `/Users/christung/Projects/anthropic/vibe_motion`. Remote `origin` = `ludaxkris/vibe_motion` (private). Worktrees go under `.worktrees/<branch>` (gitignored).
+- Long-lived branches: `main` (code), `pr_screenshot` (orphan, screenshots only).
 - Kotlin toolchain on this machine: JDK 21. Node 25 is installed; the project targets Node 22 LTS on Render, so use `.nvmrc`/`engines` and do not rely on Node 25-only APIs.
 - Render CLI is not installed locally. `render blueprints validate` cannot be run here until it is; validate `render.yaml` against `https://render.com/schema/render.yaml.json` instead.
 - Claude Design mocks from Chris are pending. Phase 3 may start with wireframe-level layout and re-skin when they arrive.

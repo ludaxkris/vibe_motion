@@ -1,6 +1,6 @@
 # Vibe Motion — Build Plan (v0)
 
-Status: DRAFT for review · Owner: Chris Tung · Last updated: 2026-09-17
+Status: DRAFT for review · Owner: Chris Tung · Last updated: 2026-09-18
 
 Vibe Motion lets a product designer load an existing web page, click a component, and attach a CSS animation to it, either by asking a (mock) agent to pick one or by choosing from a catalog and tuning its parameters live. Every change is versioned and can be restored. The result is exported as HTML, CSS, and JS the designer can drop into their site.
 
@@ -9,6 +9,7 @@ This document describes how we get to v0. Each phase lists the deliverable, the 
 Companion documents:
 
 - [Architecture diagram](architecture.md) — mermaid views of the system
+- [User flow](user_flow.md) — designer's journey from URL to export, in mermaid
 - [Deferred tasks and bugs](deferred_tasks.md)
 - [Shared agent memory](../memory.md)
 - [Agent instructions](../CLAUDE.md)
@@ -22,7 +23,7 @@ Companion documents:
 | Requirement | Where it lands |
 |---|---|
 | Enter a URL, clone the page to a local copy we render and modify | Phase 2 (API clone service), Phase 3 (web) |
-| Version history of every change, click a version to reload that state | Phase 6 |
+| Version history: the user clicks Save to create a version; clicking a version reloads that state | Phase 6 |
 | CSS-only animations | Phase 1 (catalog) |
 | Export HTML, JS, CSS the user can copy | Phase 7 |
 | Help page listing every animation with a live demo | Phase 3 |
@@ -158,8 +159,9 @@ Endpoints (draft)
 | GET | `/projects/{id}` | Project metadata and current version pointer |
 | GET | `/projects/{id}/page` | Serves the cloned HTML with the bridge script injected. This is the iframe `src`. |
 | GET | `/projects/{id}/versions` | Version list |
-| POST | `/projects/{id}/versions` | Append a version `{ parentVersionId, state, label }` |
-| POST | `/projects/{id}/versions/{vid}/restore` | Creates a new version whose state is a copy of `vid` (history is never rewritten) |
+| POST | `/projects/{id}/versions` | Save: append a version `{ parentVersionId, diff, label }`. Rejected with 409 if `parentVersionId` is not the project's current version. |
+| GET | `/projects/{id}/versions/{vid}/state` | Materialised full state at `vid` (server replays diffs from v0) |
+| POST | `/projects/{id}/versions/{vid}/restore` | Creates a new version whose diff brings the current state back to `vid`'s state (history is never rewritten) |
 | GET | `/projects/{id}/export?versionId=` | Returns `{ html, css, js }` |
 | GET | `/catalog` | Serves catalog.json (so web and api provably agree) |
 
@@ -167,20 +169,28 @@ Data model
 
 ```
 projects   (id uuid pk, source_url text, base_html text, title text, created_at, current_version_id uuid)
-versions   (id uuid pk, project_id fk, parent_version_id uuid null, seq int, label text, state jsonb, created_at)
+versions   (id uuid pk, project_id fk, parent_version_id uuid null, seq int, label text, diff jsonb, created_at)
 ```
 
-`state` is the full animation assignment map for the page: `{ "<vmId>": { animationId, params, trigger } }`.
+A project's *state* is the full animation assignment map for the page: `{ "<vmId>": { animationId, params, trigger } }`. It is never stored directly. Each version stores a `diff` against its parent:
+
+```json
+{ "set": { "vm-17": { "animationId": "fade-in-up", "trigger": "load", "params": { "duration": "600ms", "distance": "24px" } } },
+  "remove": ["vm-42"] }
+```
+
+State at version N = fold every diff from v0 (empty state) through N, applying `set` then `remove`. Version 0 is the empty diff.
 
 Critical decisions
 
 - **Clone strategy.** Server-side fetch of the URL, parse with jsoup, then: inject `data-vm-id` on every element (deterministic, depth-first counter), rewrite relative `src`/`href`/`srcset`/`url()` to absolute, inline `<link rel=stylesheet>` contents where fetchable, strip `<script>` tags (see next decision), add `<base>`, add a CSP `<meta>` that blocks inline event handlers, inject the Vibe Motion bridge script. Store the result as `base_html`. Recommended: this, with a 10 MB cap and a 15 s fetch timeout. Headless browser rendering (Playwright) would capture JS-rendered pages but is heavier to run on Render and is deferred.
 - **Third-party scripts.** Strip them. The designer is animating a static rendering, and third-party JS competing with our bridge for the DOM is the largest source of flakiness. Logged as deferred: an opt-in "keep scripts" mode.
 - **Element identity.** `data-vm-id` assigned at clone time and stored in `base_html`. Because the base is immutable, IDs are stable across versions and exports. CSS selector generation is not needed.
-- **Versions are snapshots, not diffs.** Each version stores the full `state` JSON. State is small (tens of entries), snapshots make restore trivial and make the exporter stateless. Restore appends a new version rather than moving a pointer backward so history stays linear and auditable.
+- **Versions store diffs, created only on explicit Save.** (Decided by Chris, 2026-09-18.) Each version stores the delta from its parent, so the history stays small and each entry reads as "what changed". Materialising state is a fold over the project's diffs, done in one place (`VersionService.stateAt`) and used by the versions endpoint, restore, and the exporter. Replay cost is negligible at v0 scale (tens of assignments, hundreds of saves at most); a periodic checkpoint snapshot is logged as DT-017 in case a project ever grows past that. Restore appends a new version whose diff is `delta(currentState, stateAt(vid))` rather than moving a pointer backward, so history stays linear and auditable. Saves carry `parentVersionId`; the API rejects a stale parent with 409 so two tabs cannot fork the history silently.
+- **Unsaved work is a client-side draft.** Between saves, the editor holds a working state in the Zustand store and mirrors it into the iframe. Nothing reaches the API until Save. The editor shows an "unsaved changes" indicator and warns on navigation. Draft persistence to localStorage as a safety net is DT-016.
 - **SSRF protection.** Resolve the hostname and reject private, loopback, link-local, and metadata ranges before fetching. Follow at most 3 redirects, re-checking each hop.
 
-Exit criteria: Kotest integration suite against Testcontainers Postgres covers every endpoint; cloning three real public pages (a marketing page, a docs page, a dashboard-style page) produces renderable HTML.
+Exit criteria: Kotest integration suite against Testcontainers Postgres covers every endpoint; property test that `stateAt(N)` equals folding the diffs and that `diff(a, b)` applied to `a` yields `b`; cloning three real public pages (a marketing page, a docs page, a dashboard-style page) produces renderable HTML.
 
 ### Phase 3 — Web shell and help page
 
@@ -223,7 +233,7 @@ Bridge protocol (`postMessage`, both directions carry `{ source: "vibe-motion", 
 Critical decisions
 
 - **How the preview applies an animation.** The bridge script maintains a single `<style id="vm-runtime">` block containing the `@keyframes` for every animation currently in use, and sets per-element inline `style` properties: `animation-name`, `animation-duration`, and the `--vm-*` custom properties. Param changes only touch inline styles, so live updates are cheap and never re-parse keyframes. Recommended: yes. Replay is done by toggling `animation-name` to `none` and back on the next frame.
-- **Debounce persistence, not preview.** Slider moves update the iframe immediately and enqueue a version write debounced to 750 ms of inactivity, so dragging a slider yields one version, not fifty. Recommended: yes. Decision recorded here because it defines what a "change" means in the version history.
+- **Live preview never writes to the API.** Slider moves update the iframe immediately and update the draft state in the store. No network call happens until the user clicks Save (Phase 6). This keeps the preview loop entirely client-side and means what a "version" is stays in the user's hands.
 - **Hover/selection overlay.** Drawn inside the iframe by the bridge script (outline + label) rather than by the shell over the iframe, so it scrolls with the content and needs no coordinate translation.
 - **Click interception.** The bridge captures clicks at the document level in the capture phase, calls `preventDefault`, and never lets links navigate. The clone is a canvas, not a browsable page.
 
@@ -239,19 +249,20 @@ Critical decisions
 - **Auto-generate targets.** Which elements does page-level auto-generate touch? Recommended: only "semantic" elements (headings, paragraphs, images, buttons, links, cards identified as block elements with a bounding box above 40×40 px), staggered by their document order with a 60 ms delay increment. Animating every `<div>` is noise.
 - **Prompt input.** The spec's "agentic prompt" text box is present in v0 and passed into the mock agent's context but ignored by it. This keeps the UI complete and the mock honest about what it does (a tooltip says so).
 
-Exit criteria: e2e covers Generate, Custom → pick → tune, and Auto-generate on the fixture page; every flow produces exactly one version per user action.
+Exit criteria: e2e covers Generate, Custom → pick → tune, and Auto-generate on the fixture page; none of these flows creates a version on its own, and the unsaved indicator appears after each.
 
 ### Phase 6 — Version history and restore
 
-Deliverable: a version list in the Control Panel; clicking a version reloads the preview at that state; restoring creates a new version.
+Deliverable: a Save button and unsaved-changes indicator; a version list in the Control Panel; clicking a version reloads the preview at that state; restoring creates a new version.
 
 Critical decisions
 
-- **Viewing vs restoring.** Clicking a version puts the editor in read-only "viewing v7" mode with the state loaded into the iframe. A "Restore this version" button appends a new version copying that state and returns to editing. Recommended: yes. Silent branching or pointer moves confuse users and complicate export.
-- **Labels.** Auto-generated ("Applied Fade In Up to h1", "Auto-generated 12 animations", "Restored v3"); editable later (deferred).
+- **Save is explicit.** The Save button is enabled only when the draft differs from the current version's state. Save computes `diff(currentVersionState, draftState)` in the client, posts it with `parentVersionId`, and on 201 the draft becomes the new current version. A 409 (stale parent, e.g. another tab saved) shows the newer version and offers to rebase the draft onto it or discard.
+- **Viewing vs restoring.** Clicking a version puts the editor in read-only "viewing v7" mode with that version's materialised state loaded into the iframe. If there are unsaved changes, the user is asked to save or discard first. A "Restore this version" button appends a new version whose diff returns the project to v7's state and re-enters editing. Recommended: yes. Silent branching or pointer moves confuse users and complicate export.
+- **Labels.** The Save dialog offers an auto-generated label summarising the diff ("Fade In Up on h1, removed pulse on .cta") that the user can overwrite before saving. Editing labels after the fact is deferred (DT-006).
 - **Base page is immutable.** Re-cloning a changed source URL is a new project, not a new version. Recorded so nobody adds "refresh source" to versions.
 
-Exit criteria: e2e creates five versions, clicks v2, asserts the iframe state matches, restores, asserts a v6 exists with v2's state.
+Exit criteria: e2e makes changes, asserts no version is created until Save, saves five times, clicks v2, asserts the iframe state matches `stateAt(v2)`, restores, asserts a v6 exists whose materialised state equals v2's; a second-tab save produces a 409 handled in the UI.
 
 ### Phase 7 — Export
 
@@ -265,7 +276,7 @@ Output contract
 
 Critical decisions
 
-- **Export executes in the API, not the browser.** The exporter is pure Kotlin over `base_html` + `state` + catalog. Recommended: API. It keeps export deterministic and testable with golden files, and it means a designer can hit the endpoint directly later.
+- **Export executes in the API, not the browser.** The exporter is pure Kotlin over `base_html` + `stateAt(versionId)` + catalog. Export always targets a saved version; if the editor has unsaved changes the Export button prompts to save first. Recommended: API. It keeps export deterministic and testable with golden files, and it means a designer can hit the endpoint directly later.
 - **Snippet mode.** In addition to the full page, offer "just the CSS for this element" so a designer can paste into an existing site without replacing their HTML. Recommended: include; it is the same generator scoped to one assignment.
 
 Exit criteria: golden-file tests for three fixture states; Playwright opens the exported HTML in a fresh page and asserts the animation runs.
@@ -297,6 +308,8 @@ Defined once in Phase 0, run in CI and locally via `pnpm gates`.
 
 Any red gate: CI applies the `Gate Flag` label and a bot comment; the PR must not be marked ready. The Test-Runner subagent runs the same gates locally before any merge.
 
+Screenshots for UI PRs are produced by the Screenshot-Runner and committed to the long-lived `pr_screenshot` branch only, then linked from a PR comment. They never land on a working branch or on `main` (see CLAUDE.md).
+
 ---
 
 ## 6. Risks
@@ -308,6 +321,8 @@ Any red gate: CI applies the `Gate Flag` label and a bot comment; the PR must no
 | Render starter plan cold starts on API | Slow first clone | Health check keeps it warm; clone timeout messaging in UI |
 | Iframe `postMessage` origin mismatch across environments | Bridge silently fails | Allowed origins come from env vars set in `render.yaml`; e2e runs against preview envs |
 | Two agents change the OpenAPI contract at once | Integration break in Phase 4 | Additive-only rule after Phase 0; memory.md announces contract edits |
+| User loses unsaved draft (tab close, crash) | Frustration, rework | Unsaved indicator + `beforeunload` warning in v0; localStorage draft (DT-016) |
+| Diff replay gets slow on a long history | Slow version switching | Checkpoint snapshots (DT-017); trigger is >200 versions on one project |
 
 ---
 

@@ -25,6 +25,9 @@ Status: `open` · `in-progress` · `done` · `wont-do`.
 | DT-013 | feature | Rate limiting on `POST /projects` | P1 | this-phase | 8 | — | open | Clone is the only expensive endpoint. |
 | DT-014 | chore | Screenshot-Runner: define exact deliverable | P3 | now | 0 | Chris | open | Role description in the brief was truncated ("Take ..."). Assumed: capture screenshots of running app states for PRs and mock comparison. Confirm. |
 | DT-015 | chore | Verify `fromService.envVarKey: RENDER_EXTERNAL_URL` resolves cross-service URLs in render.yaml (web ↔ api) on first Render deploy | P1 | this-phase | 0 | — | open | Render docs confirm envVarKey copies a var from another service; unconfirmed for platform-provided vars. Fallback: `sync: false` and set manually. Affects previews most. |
+| DT-016 | feature | Persist unsaved draft state to localStorage as a crash/tab-close safety net | P2 | this-phase | 6 | — | open | v0 has an unsaved indicator and beforeunload warning only. |
+| DT-017 | perf | Checkpoint snapshots for version history so `stateAt(N)` does not replay every diff on long histories | P3 | later | post-v0 | — | open | Trigger: a project exceeding ~200 versions. Fold cost is negligible at v0 scale. |
+| DT-018 | chore | Create the `pr_screenshot` orphan branch on origin and protect it from deletion | P2 | now | 0 | — | open | Screenshot-Runner creates it on first use if missing; a protection rule keeps PR comment links alive. |
 
 ## Bugs
 
