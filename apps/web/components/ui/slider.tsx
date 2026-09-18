@@ -47,12 +47,14 @@ function Slider({
         {Array.from({ length: _values.length }, (_, index) => (
           // `shadow-thumb` is the handoff's 1.5px accent ring; the focus ring
           // is an outline (globals.css) so it sits outside that rather than
-          // replacing it.
+          // replacing it. It is drawn from `has-[input:focus-visible]` because
+          // what actually takes focus is the 1px clipped `input[type=range]`
+          // this thumb wraps — an outline on that is invisible.
           <SliderPrimitive.Thumb
             data-slot="slider-thumb"
             key={index}
             getAriaLabel={getAriaLabel}
-            className="relative block size-[var(--slider-thumb)] shrink-0 rounded-full bg-vm-surface shadow-thumb transition-shadow duration-fast ease-standard select-none after:absolute after:-inset-2 disabled:pointer-events-none disabled:opacity-40"
+            className="relative block size-[var(--slider-thumb)] shrink-0 rounded-full bg-vm-surface shadow-thumb transition-shadow duration-(--dur-fast) ease-standard select-none after:absolute after:-inset-2 has-[input:focus-visible]:focus-ring disabled:pointer-events-none disabled:opacity-40"
           />
         ))}
       </SliderPrimitive.Control>

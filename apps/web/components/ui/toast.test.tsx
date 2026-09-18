@@ -33,6 +33,8 @@ describe("Toast", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Saved v6");
     const pill = screen.getByText("Saved v6");
     expect(pill).toHaveClass("bg-vm-ink", "text-vm-ink-inverse", "rounded-pill");
+    // One line, however long the message: the handoff's pill never wraps.
+    expect(pill).toHaveClass("whitespace-nowrap");
   });
 
   it("slides up 8px over 250ms", () => {
@@ -43,7 +45,7 @@ describe("Toast", () => {
     expect(screen.getByText("Copied CSS")).toHaveClass(
       "animate-in",
       "slide-in-from-bottom-2",
-      "duration-base",
+      "duration-(--dur-base)",
     );
   });
 

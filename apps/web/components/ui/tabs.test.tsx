@@ -46,6 +46,16 @@ describe("Tabs", () => {
     );
   });
 
+  it("sets folder tabs at 400 and the active one at 600", () => {
+    renderFolderTabs();
+
+    const tab = screen.getByRole("tab", { name: "History" });
+    expect(tab.className).toContain("group-data-[variant=folder]/tabs-list:font-normal");
+    expect(tab.className).toContain(
+      "group-data-[variant=folder]/tabs-list:data-active:font-semibold",
+    );
+  });
+
   it("keeps the default variant working for other tab rows", () => {
     render(
       <Tabs defaultValue="one">

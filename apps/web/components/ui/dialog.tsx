@@ -31,7 +31,7 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-vm-scrim duration-fast data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-50 bg-vm-scrim duration-(--dur-fast) data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -55,7 +55,7 @@ function DialogContent({
         className={cn(
           // 380px for the unsaved guard, 420px for Save — the caller sets the
           // width; everything else is the handoff's dialog shell.
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-3 rounded-2xl bg-vm-surface p-[22px] text-md text-vm-ink shadow-modal duration-fast ease-standard outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-3 rounded-2xl bg-vm-surface p-[22px] text-md text-vm-ink shadow-modal duration-(--dur-fast) ease-standard outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
@@ -122,7 +122,9 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("text-lg leading-tight font-semibold", className)}
+      // --type-title: `600 15px/1.3`. Not `leading-tight`, which the handoff
+      // retargets to 1.1 for the entry headline.
+      className={cn("text-lg leading-[1.3] font-semibold", className)}
       {...props}
     />
   )

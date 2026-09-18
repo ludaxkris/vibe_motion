@@ -47,7 +47,7 @@ export function Segmented({
           value={option.value}
           className={cn(
             "flex-1 rounded-sm text-center text-sm font-normal text-vm-ink-2 select-none",
-            "transition-colors duration-fast ease-standard",
+            "transition-colors duration-(--dur-fast) ease-standard",
             "hover:text-vm-ink",
             "data-checked:bg-vm-surface data-checked:font-medium data-checked:text-vm-accent-strong data-checked:shadow-raised",
             dense ? "py-1" : "py-1.5"

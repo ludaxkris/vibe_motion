@@ -19,7 +19,7 @@ export function Chip({ className, ...props }: Toggle.Props) {
       className={cn(
         "inline-flex shrink-0 items-center rounded-pill border border-vm-border-strong px-2.5 py-1",
         "text-sm font-normal whitespace-nowrap text-vm-ink select-none",
-        "transition-colors duration-fast ease-standard",
+        "transition-colors duration-(--dur-fast) ease-standard",
         "hover:bg-vm-surface-muted",
         "data-pressed:border-vm-ink data-pressed:bg-vm-ink data-pressed:font-medium data-pressed:text-vm-ink-inverse data-pressed:hover:bg-vm-ink",
         "data-disabled:pointer-events-none data-disabled:opacity-40",

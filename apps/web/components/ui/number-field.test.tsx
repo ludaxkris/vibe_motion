@@ -114,6 +114,16 @@ describe("NumberField", () => {
     expect(field).toHaveValue("600");
   });
 
+  it("steps from the committed value when the field has been cleared", () => {
+    const { onCommit, field } = renderField();
+
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.keyDown(field, { key: "ArrowUp" });
+
+    // Not 50: `Number("")` is 0, which would step from the bottom of the range.
+    expect(onCommit).toHaveBeenLastCalledWith(650);
+  });
+
   it("stops stepping at the ends of the range", () => {
     const { onCommit, field } = renderField(3000);
 

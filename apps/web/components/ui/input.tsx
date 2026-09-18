@@ -10,7 +10,7 @@ import { cn } from "cn"
 const inputVariants = cva(
   [
     "flex w-full min-w-0 items-center gap-2 border border-vm-border-strong bg-vm-surface",
-    "text-vm-ink transition-[border-color,box-shadow] duration-fast ease-standard",
+    "text-vm-ink transition-[border-color,box-shadow] duration-(--dur-fast) ease-standard",
     "has-[input:focus-visible]:border-vm-accent has-[input:focus-visible]:focus-ring",
     // Error: 1.5px danger border + a 12% danger glow (handoff, Entry state 3b).
     "has-aria-invalid:border-[1.5px] has-aria-invalid:border-vm-danger",

@@ -11,7 +11,8 @@ export function SectionLabel({ className, ...props }: React.ComponentProps<"span
     <span
       data-slot="section-label"
       className={cn(
-        "text-xs font-semibold tracking-label text-vm-ink-2 uppercase",
+        // --type-label: `600 11px/1` + uppercase + 0.04em tracking.
+        "text-xs leading-none font-semibold tracking-label text-vm-ink-2 uppercase",
         className
       )}
       {...props}

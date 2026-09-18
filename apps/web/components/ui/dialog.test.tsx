@@ -35,7 +35,12 @@ describe("Dialog", () => {
   it("sets the title at 15px semibold and the body in muted ink", () => {
     renderGuard();
 
-    expect(screen.getByText("Save changes to h1?")).toHaveClass("text-lg", "font-semibold");
+    // --type-title is `600 15px/1.3`; `leading-tight` is the handoff's 1.1.
+    expect(screen.getByText("Save changes to h1?")).toHaveClass(
+      "text-lg",
+      "font-semibold",
+      "leading-[1.3]",
+    );
     expect(screen.getByText(/You changed Fade In Up/)).toHaveClass("text-md", "text-vm-ink-2");
   });
 

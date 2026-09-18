@@ -57,9 +57,17 @@ export function NumberField({
     [min, max]
   )
 
+  /** The draft as a number, or `null` when it is empty or not a number. */
+  const parseDraft = (): number | null => {
+    const trimmed = draft.trim()
+    if (trimmed === "") return null
+    const parsed = Number(trimmed)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+
   const commit = () => {
-    const parsed = Number(draft.trim())
-    if (draft.trim() === "" || Number.isNaN(parsed)) {
+    const parsed = parseDraft()
+    if (parsed === null) {
       setDraft(String(value))
       return
     }
@@ -69,8 +77,9 @@ export function NumberField({
   }
 
   const stepBy = (direction: 1 | -1) => {
-    const base = Number(draft.trim())
-    const from = Number.isNaN(base) ? value : base
+    // `Number("")` is 0, so an emptied field has to step from the committed
+    // value rather than from the bottom of the range.
+    const from = parseDraft() ?? value
     // Floating-point steps (scale is 0.01) would otherwise drift to 1.0500000001.
     const next = clamp(Number((from + direction * step).toFixed(10)))
     if (next === value) return
@@ -95,7 +104,7 @@ export function NumberField({
       data-slot="number-field"
       className={cn(
         "flex h-[var(--control-h-xs)] w-[62px] shrink-0 items-center gap-0.5 rounded-sm border border-vm-border-strong bg-vm-surface px-1.5",
-        "transition-[border-color,box-shadow] duration-fast ease-standard",
+        "transition-[border-color,box-shadow] duration-(--dur-fast) ease-standard",
         "has-[input:focus-visible]:border-vm-accent has-[input:focus-visible]:focus-ring",
         disabled && "pointer-events-none opacity-40",
         className

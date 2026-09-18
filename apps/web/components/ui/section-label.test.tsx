@@ -10,6 +10,8 @@ describe("SectionLabel", () => {
     const label = screen.getByText("Trigger");
     expect(label).toHaveClass("text-xs", "font-semibold", "uppercase", "tracking-label");
     expect(label).toHaveClass("text-vm-ink-2");
+    // --type-label is `600 11px/1`.
+    expect(label).toHaveClass("leading-none");
   });
 
   it("takes an id so a section can point its aria-labelledby at it", () => {

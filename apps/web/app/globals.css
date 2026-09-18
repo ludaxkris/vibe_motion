@@ -30,14 +30,24 @@
  *              shadow-focus-ring                         → --focus-ring
  *              (the focus ring itself is drawn by the `focus-ring` utility
  *              further down — see the comment there)
- *   motion     duration-instant|fast|base                → --dur-*
- *              ease-standard|spring (ease-out retargeted)
+ *   motion     ease-standard|spring (ease-out retargeted)
+ *              durations are NOT theme keys: Tailwind 4 has no `--duration-*`
+ *              namespace, so write `duration-(--dur-fast)` / `(--dur-base)`.
+ *              A bare `duration-fast` compiles to nothing at all.
  *   text       leading-ui|body (leading-tight retargeted),
  *              tracking-snug|label (tracking-tight retargeted)
  *
  * Spacing tokens (`--space-*`, `--control-h-*`, `--panel-width`, `--topbar-h`,
  * …) are used as `var()` in arbitrary values (`h-[var(--control-h-md)]`) rather
  * than mapped, so a control's height reads as the token it came from.
+ *
+ * Two traps the retargeting leaves behind:
+ *   - Tailwind's own `--text-base` (16px) and `--text-2xl`+ are NOT on the
+ *     handoff scale, and because `text-xl` is now 34px the scale is no longer
+ *     monotonic (`text-base` 16 sits above `text-lg` 15). Use only
+ *     2xs/xs/sm/md/lg/xl/display.
+ *   - `rounded-xl` is 12px and `rounded-2xl` 14px — the handoff's dialog
+ *     radius, not Tailwind's 12/16px.
  * ------------------------------------------------------------------------- */
 
 /* docs/design/design-system/tokens/colors.css */
@@ -223,6 +233,15 @@
   --input: var(--vm-border-strong);
   --ring: var(--vm-accent);
   --radius: var(--radius-lg);
+
+  /* The focus ring in outline form, kept deliberately next to the token it is
+     derived from: `--focus-ring` is `0 0 0 3px var(--vm-accent-soft)`, so the
+     width is its 3px spread and the colour is its colour. These two are the
+     only place the ring is described — the `focus-ring` utility and the
+     `:focus-visible` rule below both read them — so retuning `--focus-ring`
+     means retuning these, and nothing else. */
+  --vm-focus-ring-width: 3px;
+  --vm-focus-ring-color: var(--vm-accent-soft);
 }
 
 /* Chrome motion only. The tokens the editor's own transitions read collapse to
@@ -313,9 +332,7 @@
   --shadow-accent: var(--shadow-accent);
   --shadow-focus-ring: var(--focus-ring);
 
-  --duration-instant: var(--dur-instant);
-  --duration-fast: var(--dur-fast);
-  --duration-base: var(--dur-base);
+  /* No `--duration-*` here on purpose — see the banner. */
   --ease-standard: var(--ease-standard);
   --ease-spring: var(--ease-spring);
 }
@@ -328,7 +345,7 @@
    Only controls whose focus shows on a wrapper — Input, NumberField — apply it
    by hand; everything else inherits it from the `:focus-visible` rule below. */
 @utility focus-ring {
-  outline: 3px solid var(--vm-accent-soft);
+  outline: var(--vm-focus-ring-width) solid var(--vm-focus-ring-color);
   outline-offset: 0;
 }
 
@@ -344,7 +361,6 @@
     line-height: var(--leading-ui);
   }
   :focus-visible {
-    outline: 3px solid var(--vm-accent-soft);
-    outline-offset: 0;
+    @apply focus-ring;
   }
 }

@@ -14,8 +14,11 @@ const elementTagVariants = cva(
         muted: "bg-vm-surface-muted text-vm-ink",
       },
       size: {
-        sm: "rounded-[5px] px-1.5 py-0.5 text-xs",
-        md: "rounded-sm px-2 py-[3px] text-sm",
+        // `leading-none` follows `text-*`: tailwind-merge treats a font-size
+        // utility as resetting line-height (Tailwind 4 pairs them), so it
+        // would drop an earlier `leading-*`. --type-mono is `500 12px/1`.
+        sm: "rounded-[5px] px-1.5 py-0.5 text-xs leading-none",
+        md: "rounded-sm px-2 py-[3px] text-sm leading-none",
       },
     },
     defaultVariants: {

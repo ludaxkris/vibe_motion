@@ -56,7 +56,7 @@ export function Toaster() {
         <span
           key={current.id}
           data-slot="toast"
-          className="rounded-pill bg-vm-ink px-3.5 py-2 text-sm font-medium text-vm-ink-inverse shadow-popover animate-in fade-in slide-in-from-bottom-2 duration-base ease-standard"
+          className="rounded-pill bg-vm-ink px-3.5 py-2 text-sm font-medium whitespace-nowrap text-vm-ink-inverse shadow-popover animate-in fade-in slide-in-from-bottom-2 duration-(--dur-base) ease-standard"
         >
           {current.message}
         </span>

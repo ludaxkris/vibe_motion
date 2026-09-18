@@ -7,7 +7,8 @@ describe("ElementTag", () => {
   it("sets the identifier in mono", () => {
     render(<ElementTag>h1</ElementTag>);
 
-    expect(screen.getByText("h1")).toHaveClass("font-mono");
+    // --type-mono is `500 12px/1`.
+    expect(screen.getByText("h1")).toHaveClass("font-mono", "leading-none");
   });
 
   it("fills with the accent for the current selection", () => {

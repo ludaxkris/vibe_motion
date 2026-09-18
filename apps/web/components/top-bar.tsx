@@ -45,7 +45,7 @@ export function TopBar({
             aria-hidden="true"
             className="h-4 w-px shrink-0 bg-vm-bar-border"
           />
-          <span data-slot="top-bar-context" className="flex min-w-0 items-center gap-2">
+          <span data-slot="top-bar-context" className="flex min-w-0 items-center gap-3.5">
             {title == null ? null : (
               <span className="truncate text-md font-medium text-vm-bar-ink-muted">{title}</span>
             )}
@@ -61,7 +61,7 @@ export function TopBar({
       {children}
 
       {actions == null ? null : (
-        <span data-slot="top-bar-actions" className="ms-auto flex items-center gap-2">
+        <span data-slot="top-bar-actions" className="ms-auto flex items-center gap-3.5">
           {actions}
         </span>
       )}

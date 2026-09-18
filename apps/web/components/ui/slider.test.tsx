@@ -21,6 +21,17 @@ describe("Slider", () => {
     expect(container.querySelector("[data-slot='slider-range']")).toHaveClass("bg-vm-accent");
   });
 
+  it("shows a focus ring on the thumb when its hidden input takes focus", () => {
+    const { container } = render(<Slider aria-label="Duration" value={[600]} max={3000} />);
+
+    // Base UI's focusable element is a 1px clipped `input[type=range]` inside
+    // the thumb, so the global :focus-visible outline lands somewhere invisible
+    // — the thumb has to draw the ring on the input's behalf.
+    const thumb = container.querySelector("[data-slot='slider-thumb']");
+    expect(thumb).toContainElement(screen.getByLabelText("Duration"));
+    expect(thumb?.className).toContain("has-[input:focus-visible]:focus-ring");
+  });
+
   it("has a 14px white thumb ringed in the accent", () => {
     const { container } = render(<Slider aria-label="Duration" value={[600]} max={3000} />);
 

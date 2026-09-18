@@ -18,7 +18,7 @@ const buttonVariants = cva(
     "group/button inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-transparent bg-clip-padding px-3.5",
     "text-md font-semibold whitespace-nowrap select-none",
     // Chrome motion: 150ms, and nothing moves on press (handoff, "States").
-    "transition-colors duration-fast ease-standard",
+    "transition-colors duration-(--dur-fast) ease-standard",
     "disabled:pointer-events-none disabled:opacity-40",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   ],
@@ -40,23 +40,30 @@ const buttonVariants = cva(
         destructive: DANGER_LINK,
       },
       size: {
-        xs: "h-[var(--control-h-xs)] rounded-[7px] px-3 text-sm font-medium",
-        sm: "h-[var(--control-h-sm)] px-3 text-sm",
+        xs: "h-[var(--control-h-xs)] text-sm font-medium",
+        sm: "h-[var(--control-h-sm)] text-sm",
         md: "h-[var(--control-h-md)]",
         lg: "h-[var(--control-h-lg)]",
-        xl: "h-[var(--control-h-xl)] rounded-lg px-4 text-[14px]",
+        // ui_kit/Entry.jsx: the 44px Clone button is `0 18px`, not `0 14px`.
+        xl: "h-[var(--control-h-xl)] rounded-lg px-[18px] text-[14px]",
         icon: "size-[var(--control-h-md)] px-0",
         "icon-xs": "size-[var(--control-h-xs)] px-0",
         "icon-sm": "size-[var(--control-h-sm)] px-0",
         "icon-lg": "size-[var(--control-h-lg)] px-0",
       },
-      /** The violet glow under the primary action (handoff shows it on Save and "Open in editor →"). */
+      /**
+       * The violet glow under the primary action (handoff shows it on Save
+       * and "Open in editor →"). Only the accent fill carries it — see the
+       * compound variants; on any other variant `glow` is ignored.
+       */
       glow: {
-        true: "shadow-accent",
+        true: "",
         false: "",
       },
     },
     compoundVariants: [
+      { glow: true, variant: "primary", class: "shadow-accent" },
+      { glow: true, variant: "default", class: "shadow-accent" },
       // Bar buttons are 28px with a 7px radius wherever they are used.
       { variant: "bar-primary", class: "h-[var(--control-h-xs)] rounded-[7px] px-3 text-sm" },
       { variant: "bar-outline", class: "h-[var(--control-h-xs)] rounded-[7px] px-3 text-sm" },

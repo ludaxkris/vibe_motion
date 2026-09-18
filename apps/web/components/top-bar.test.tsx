@@ -27,6 +27,16 @@ describe("TopBar", () => {
     expect(container.querySelector("[data-slot='top-bar-divider']")).toBeInTheDocument();
   });
 
+  it("keeps one 14px gap across the whole bar", () => {
+    const { container } = render(
+      <TopBar title="nimbus.app/pricing" chip="v5" actions={<Button>Save</Button>} />,
+    );
+
+    expect(container.querySelector("[data-slot='top-bar']")).toHaveClass("gap-3.5");
+    expect(container.querySelector("[data-slot='top-bar-context']")).toHaveClass("gap-3.5");
+    expect(container.querySelector("[data-slot='top-bar-actions']")).toHaveClass("gap-3.5");
+  });
+
   it("omits the divider and context when there is none", () => {
     const { container } = render(<TopBar />);
 
