@@ -16,6 +16,7 @@ Rules
 |---|---|---|---|---|---|---|---|
 | (primary) | main | Claude Fable 5.1 (planning session with Chris) | planning + 0 | Planning docs (done), Phase 0 foundation PR #1 (merged), agent PR comments + cleanup PR #2 (merged) | done 2026-09-18 | 2026-09-17 | no |
 | `.worktrees/feat/3-web-shell-help` | feat/3-web-shell-help | Claude Fable 5.1 (session with Chris) | 3 | Web shell: URL entry → POST /projects, resizable split editor, Control Panel state machine + /dev route, live help page via runtime CSS generator, MSW mocks; re-skin from Claude Design mocks | in-progress | 2026-09-18 | no (consumes openapi + catalog read-only) |
+| .worktrees/feat/4-bridge-package | feat/4-bridge-package | Claude Fable 5.1 (orchestrator + subagents) | 4 | Plan Tasks 1–5: new `packages/bridge` (protocol types, `vm-bridge.js`, vitest+jsdom tests, `bridge` gate group + CI job). Does NOT touch `apps/api` or `apps/web`. | in progress | 2026-09-18 | implements bridge protocol v1 as specified; no contract change |
 
 ## Notices (newest first)
 
@@ -49,6 +50,7 @@ Agents claim a task here before creating a worktree so two agents do not pick th
 
 | Task | Claimed by | Date |
 |---|---|---|
+| Phase 4 PR A — `packages/bridge` (plan Tasks 1–5). Tasks 6–10 unclaimed until Phase 3 merges; Task 8 (API serves the package script) to follow as its own PR | Claude Fable 5.1 (session w/ Chris) · worktree `.worktrees/feat/4-bridge-package` | 2026-09-18 |
 | Phase 3 — Web shell + help page | Claude Fable 5.1 (session with Chris) · worktree `.worktrees/feat/3-web-shell-help` | 2026-09-18 |
 
 ## Facts other agents need
