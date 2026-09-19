@@ -1,12 +1,18 @@
 /**
- * Build-time access to the animation catalog.
+ * Build-time access to the animation catalog, bridged onto the OpenAPI types.
  *
- * Phase 0 read the published catalog file directly. Phase 3 switches to the
- * `animation-catalog` package (`CATALOGS`/`CURRENT_VERSION`/`getCatalog`) so
- * every consumer — this module, the runtime CSS generator, the bridge — agrees
- * on the same immutable versions. Phase 4+ swaps this for `GET /catalog` where
- * a live catalog is needed; assignments always resolve against the version
- * they pinned.
+ * Everything comes from the `animation-catalog` package, so this module, the
+ * runtime CSS generator and the bridge all agree on the same immutable
+ * versions. What this file adds is the type bridge: the package types entries
+ * against `schema.json` while `apps/web` types them against the generated
+ * OpenAPI schema, and this is the one place the two are reconciled.
+ *
+ * Two lookups, and the difference matters: `getCurrentCatalog` /
+ * `getCatalogEntries` / `getCatalogEntry` are the catalog the editor *authors*
+ * against, and `getCatalogEntryAt` resolves an existing assignment against the
+ * version it pinned (CLAUDE.md rule 9). Phase 4+ swaps the source for
+ * `GET /catalog` where a live catalog is needed; the pinning rule is unchanged
+ * by that.
  */
 import {
   CURRENT_VERSION,
@@ -26,8 +32,11 @@ export const CURRENT_CATALOG_VERSION: string = CURRENT_VERSION;
 
 const catalog = getCatalogByVersion(CURRENT_VERSION) as unknown as Catalog;
 
-/** The catalog the editor currently authors against. */
-export function getCatalog(): Catalog {
+/**
+ * The catalog the editor currently authors against. Named for the version it
+ * returns, so it does not read as the package's own `getCatalog(version)`.
+ */
+export function getCurrentCatalog(): Catalog {
   return catalog;
 }
 
@@ -92,9 +101,9 @@ export function catalogCategories(entries: readonly CatalogEntry[]): string[] {
  * non-empty tuple, since the catalog schema requires `minItems: 1`), while
  * this module types entries against the OpenAPI-generated `CatalogEntry`
  * (a plain `triggers: Trigger[]`). Both describe the same runtime object —
- * this is the one place that bridges them (the same way `getCatalog()`
- * above already bridges the catalog file itself), so no other call site
- * needs its own cast.
+ * this is the one place that bridges them (the same way
+ * `getCurrentCatalog()` above already bridges the catalog file itself), so no
+ * other call site needs its own cast.
  */
 export function resolveCatalogParams(
   entry: CatalogEntry,
@@ -105,7 +114,7 @@ export function resolveCatalogParams(
 
 /**
  * `inlineStyle` (Task 1) across the same type bridge as `resolveCatalogParams`
- * below: the picker's card demos and the help page's demos hold entries typed
+ * above: the picker's card demos and the help page's demos hold entries typed
  * against the OpenAPI schema.
  */
 export function catalogInlineStyle(

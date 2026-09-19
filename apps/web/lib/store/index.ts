@@ -12,9 +12,10 @@
  * would require every action that can change either input to remember to
  * recompute them — `currentVersionState` will get its own writers in Phase 6
  * (save/load/restore) that have no reason to know about `unsaved` — so
- * instead they're plain selectors (`selectSelectedVmId`, `selectUnsaved`)
- * plus hook wrappers (`useSelectedVmId`, `useUnsaved`) that can never drift
- * out of sync with the state they're computed from.
+ * instead they're plain selectors (`selectSelectedVmId`, `selectUnsaved`) —
+ * read through `useEditorStore(selector)`, or through the `useUnsaved` hook
+ * wrapper — that can never drift out of sync with the state they're computed
+ * from.
  *
  * Live preview edits stay in `draftState` and never hit the API;
  * `currentVersionState` only changes when a version is saved, loaded or
@@ -227,11 +228,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   reset: () => set({ ...initialEditorState }),
 }));
-
-/** `useEditorStore(selectSelectedVmId)`, as a named hook. */
-export function useSelectedVmId(): string | null {
-  return useEditorStore(selectSelectedVmId);
-}
 
 /** `useEditorStore(selectUnsaved)`, as a named hook. */
 export function useUnsaved(): boolean {

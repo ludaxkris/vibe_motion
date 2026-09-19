@@ -8,10 +8,10 @@ import {
   CURRENT_CATALOG_VERSION,
   catalogInlineStyle,
   catalogKeyframes,
-  getCatalog,
   getCatalogEntries,
   getCatalogEntry,
   getCatalogEntryAt,
+  getCurrentCatalog,
 } from "@/lib/catalog";
 
 describe("catalog", () => {
@@ -22,7 +22,7 @@ describe("catalog", () => {
       "utf8",
     ).trim();
     expect(CURRENT_CATALOG_VERSION).toBe(current);
-    expect(getCatalog().version).toBe(CURRENT_CATALOG_VERSION);
+    expect(getCurrentCatalog().version).toBe(CURRENT_CATALOG_VERSION);
   });
 
   it("loads all 26 entries of catalog 1.1.0", () => {

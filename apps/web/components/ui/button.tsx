@@ -2,16 +2,11 @@ import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
-// The handoff's seven variants (docs/design/design-system/components/core/
-// Button.jsx + .prompt.md). Shared so the shadcn variant keys Tasks 3–5
-// already call — `default`, `outline`, `secondary`, `destructive` — can alias
-// them rather than drift into a second palette.
-const PRIMARY =
-  "bg-vm-accent text-vm-ink-inverse hover:bg-vm-accent-hover active:bg-vm-accent-pressed"
+// The handoff's variants (docs/design/design-system/components/core/
+// Button.jsx + .prompt.md). `outline` stays as an alias of `secondary`
+// because shadcn's own `components/ui/*` ask for it by that name.
 const SECONDARY =
   "border-vm-border-strong bg-vm-surface font-medium text-vm-ink hover:bg-vm-surface-muted"
-const DANGER_LINK =
-  "h-auto px-0 text-sm font-medium text-vm-danger hover:text-vm-danger hover:underline"
 
 const buttonVariants = cva(
   [
@@ -25,19 +20,19 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: PRIMARY,
+        primary:
+          "bg-vm-accent text-vm-ink-inverse hover:bg-vm-accent-hover active:bg-vm-accent-pressed",
         secondary: SECONDARY,
         ink: "bg-vm-ink text-vm-ink-inverse hover:bg-vm-ink/90",
         "bar-primary": "bg-vm-bar-accent text-vm-bar-ink hover:bg-vm-bar-accent/90",
         "bar-outline":
           "border-vm-bar-border font-medium text-vm-bar-ink hover:bg-vm-bar-ink/10",
-        "danger-link": DANGER_LINK,
+        "danger-link":
+          "h-auto px-0 text-sm font-medium text-vm-danger hover:text-vm-danger hover:underline",
         link: "h-auto px-0 text-sm font-medium text-vm-accent hover:underline",
         ghost: "text-vm-ink-2 hover:bg-vm-surface-muted hover:text-vm-ink",
-        // Back-compat aliases for the shadcn keys already in use.
-        default: PRIMARY,
+        // The one shadcn key still in use, by `components/ui/dialog.tsx`.
         outline: SECONDARY,
-        destructive: DANGER_LINK,
       },
       size: {
         xs: "h-[var(--control-h-xs)] text-sm font-medium",
@@ -63,17 +58,15 @@ const buttonVariants = cva(
     },
     compoundVariants: [
       { glow: true, variant: "primary", class: "shadow-accent" },
-      { glow: true, variant: "default", class: "shadow-accent" },
       // Bar buttons are 28px with a 7px radius wherever they are used.
       { variant: "bar-primary", class: "h-[var(--control-h-xs)] rounded-[7px] px-3 text-sm" },
       { variant: "bar-outline", class: "h-[var(--control-h-xs)] rounded-[7px] px-3 text-sm" },
       // Text links have no box, so a control height would only add dead space.
       { variant: "danger-link", class: "h-auto px-0" },
       { variant: "link", class: "h-auto px-0" },
-      { variant: "destructive", class: "h-auto px-0" },
     ],
     defaultVariants: {
-      variant: "default",
+      variant: "primary",
       size: "md",
       glow: false,
     },
@@ -82,7 +75,7 @@ const buttonVariants = cva(
 
 function Button({
   className,
-  variant = "default",
+  variant = "primary",
   size = "md",
   glow = false,
   glyph,

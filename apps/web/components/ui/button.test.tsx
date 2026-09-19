@@ -16,6 +16,12 @@ describe("Button", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
   });
 
+  it("is the handoff's primary action by default", () => {
+    render(<Button>Save</Button>);
+
+    expect(screen.getByRole("button", { name: "Save" })).toHaveClass("bg-vm-accent");
+  });
+
   it("calls onClick", () => {
     const onClick = vi.fn();
     render(<Button onClick={onClick}>Save</Button>);
