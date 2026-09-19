@@ -138,6 +138,40 @@ test.describe("when the reader asks for less motion", () => {
     await expect(demo).toHaveCSS("animation-name", /^vm-/);
     await expect(demo).toHaveCSS("animation-iteration-count", "1");
   });
+
+  test("a held demo shows none of the paint its keyframes were going to move", async ({
+    page,
+  }) => {
+    await page.goto("/help");
+
+    // `underline-sweep`'s baseStyles paint a full-bleed gradient and leave the
+    // `background-size` that turns it into a 2px underline to its keyframes.
+    // Held still, that gradient would flood the whole block in currentColor.
+    await page.getByRole("searchbox", { name: "Search animations" }).fill("underline");
+    await expect(page.getByTestId("catalog-card")).toHaveCount(1);
+
+    const demo = page.getByTestId("catalog-card-demo").first();
+    await expect(demo).toHaveCSS("animation-name", "none");
+    await expect(demo).toHaveCSS("background-image", "none");
+
+    // Asking for it brings the whole animation back, gradient included.
+    await page.getByRole("button", { name: "Replay Underline Sweep" }).click();
+
+    // The run is only 500ms, and its `animationend` takes `data-vm-replayed`
+    // off again — which would put the block straight back under the rule. Pause
+    // the run so the assertions below are not racing it. (A replay mounts a
+    // fresh block, so this locator resolves to the new one.)
+    const running = page.getByTestId("catalog-card-demo").first();
+    await running.evaluate((element) => {
+      const pause = () => element.getAnimations().forEach((animation) => animation.pause());
+      pause();
+      // A freshly started CSS animation is still pending until the next frame.
+      requestAnimationFrame(pause);
+    });
+
+    await expect(running).toHaveCSS("animation-name", /^vm-/);
+    await expect(running).not.toHaveCSS("background-image", "none");
+  });
 });
 
 test("the /dev gallery renders every state at the handoff's widths", async ({ page }) => {

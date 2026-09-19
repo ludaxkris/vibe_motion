@@ -38,6 +38,9 @@ describe("help page", () => {
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
     expect(css).toContain("[data-vm-demo]:not([data-vm-replayed])");
     expect(css).toContain("animation-name: none !important");
+    // …and the baseStyles paint that only reads as itself mid-animation; see
+    // components/help/reduced-motion.ts.
+    expect(css).toContain("background-image: none !important");
   });
 
   it("carries nothing through <style> that React would have to escape", () => {

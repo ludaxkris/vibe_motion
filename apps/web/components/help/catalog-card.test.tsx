@@ -21,6 +21,8 @@ const hoverLift = entry("hover-lift");
 const pulse = entry("pulse");
 /** Ends where the element is no longer there: `category: "exit"`. */
 const fadeOut = entry("fade-out");
+/** An exit entry that also carries `baseStyles`. */
+const scaleOut = entry("scale-out");
 /** Also fills forwards, but its end state is the whole point. */
 const highlight = entry("highlight");
 
@@ -212,6 +214,22 @@ describe("CatalogCard", () => {
 
       act(() => vi.advanceTimersByTime(1));
       expect(styleOf(demo())).not.toContain("animation-name");
+    });
+
+    it("hands back a bare block — no baseStyles left without an animation to use them", () => {
+      // `baseStyles` set up the surface the keyframes animate; with no
+      // animation on the block they are paint with nothing to do, and for an
+      // entry like `underline-sweep` a full-bleed gradient with no
+      // `background-size` floods the whole box. Handing the stage back means
+      // handing back a plain block.
+      const { demo } = renderCard({ entry: scaleOut });
+      expect(scaleOut.baseStyles).toBeTruthy();
+      expect(styleOf(demo())).toContain("transform-origin");
+
+      endAnimation(demo());
+      act(() => vi.advanceTimersByTime(EXIT_HOLD_MS));
+
+      expect(styleOf(demo())).toBe("");
     });
 
     it("leaves what another category's animation marked in place", () => {
