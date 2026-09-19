@@ -86,13 +86,25 @@ function Button({
   size = "md",
   glow = false,
   glyph,
+  glyphTone = "accent",
   children,
   ...props
 }: ButtonPrimitive.Props &
   VariantProps<typeof buttonVariants> & {
     /** Leading unicode glyph (✦ ↻ ‹ …). Decorative: the label carries the meaning. */
     glyph?: React.ReactNode
+    /**
+     * Whether the glyph reads as an icon or as part of the label. The handoff
+     * tints the *icon* slot, which is ✦ ("✦ Auto-generate"); ↻ is written into
+     * the label itself ("↻ Replay all", "↻ Replay"), so it stays in the
+     * button's own ink (`docs/design/design-system/components/core/Button.jsx`
+     * next to `ui_kit/Help.jsx` and `ui_kit/Editor.jsx`).
+     */
+    glyphTone?: "accent" | "ink"
   }) {
+  const tintGlyph =
+    glyphTone === "accent" && (variant === "secondary" || variant === "outline")
+
   return (
     <ButtonPrimitive
       data-slot="button"
@@ -100,10 +112,7 @@ function Button({
       {...props}
     >
       {glyph == null ? null : (
-        <span
-          aria-hidden="true"
-          className={variant === "secondary" || variant === "outline" ? "text-vm-accent" : ""}
-        >
+        <span aria-hidden="true" className={tintGlyph ? "text-vm-accent" : ""}>
           {glyph}
         </span>
       )}

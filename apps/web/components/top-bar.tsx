@@ -12,6 +12,7 @@ import { cn } from "cn"
  */
 export function TopBar({
   title,
+  titleTone = "muted",
   chip,
   actions,
   className,
@@ -20,6 +21,12 @@ export function TopBar({
 }: React.ComponentProps<"header"> & {
   /** Project host+path, catalog section name — plain text next to the wordmark. */
   title?: React.ReactNode
+  /**
+   * How loud the title is. README "Global chrome" scopes white-85% to the
+   * editor's project host+path, which is the default; `ui_kit/Help.jsx` writes
+   * its "Animations" in the bar's own white.
+   */
+  titleTone?: "muted" | "full"
   /** Mono pill beside the title ("v5", "catalog 1.0.0"). */
   chip?: React.ReactNode
   /** Right-hand controls (Help · Cancel · Save). */
@@ -47,7 +54,14 @@ export function TopBar({
           />
           <span data-slot="top-bar-context" className="flex min-w-0 items-center gap-3.5">
             {title == null ? null : (
-              <span className="truncate text-md font-medium text-vm-bar-ink-muted">{title}</span>
+              <span
+                className={cn(
+                  "truncate text-md font-medium",
+                  titleTone === "full" ? "text-vm-bar-ink" : "text-vm-bar-ink-muted"
+                )}
+              >
+                {title}
+              </span>
             )}
             {chip == null ? null : (
               <span className="shrink-0 rounded-xs bg-vm-bar-chip px-1.5 py-0.5 font-mono text-xs font-medium">

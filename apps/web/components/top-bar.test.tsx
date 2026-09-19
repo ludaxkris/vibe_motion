@@ -44,6 +44,20 @@ describe("TopBar", () => {
     expect(container.querySelector("[data-slot='top-bar-context']")).toBeNull();
   });
 
+  it("writes the context title in muted bar ink by default", () => {
+    // README "Global chrome" scopes white-85% to the project's host+path.
+    render(<TopBar title="nimbus.app/pricing" />);
+
+    expect(screen.getByText("nimbus.app/pricing")).toHaveClass("text-vm-bar-ink-muted");
+  });
+
+  it("writes it in full white when the screen asks for that tone", () => {
+    // ui_kit/Help.jsx draws "Animations" in the bar's own ink.
+    render(<TopBar title="Animations" titleTone="full" />);
+
+    expect(screen.getByText("Animations")).toHaveClass("text-vm-bar-ink");
+  });
+
   it("takes a chip without a title", () => {
     render(<TopBar chip="catalog 1.0.0" />);
 

@@ -111,7 +111,14 @@ export function IdlePanel({
           </ul>
           {/* Replaying needs the bridge to re-trigger the animation in the
               iframe (Phase 4); there is nothing honest for it to do yet. */}
-          <Button variant="secondary" size="sm" glyph="↻" disabled className="self-start">
+          <Button
+            variant="secondary"
+            size="sm"
+            glyph="↻"
+            glyphTone="ink"
+            disabled
+            className="self-start"
+          >
             Replay all
           </Button>
         </PanelSection>

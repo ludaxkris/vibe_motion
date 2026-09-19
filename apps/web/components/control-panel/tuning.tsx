@@ -273,7 +273,7 @@ export function TuningPanel({
 
       <PanelSection className="flex-row items-center gap-2">
         {/* Re-triggering the animation in the preview needs the bridge (Phase 4). */}
-        <Button variant="secondary" size="sm" glyph="↻" disabled>
+        <Button variant="secondary" size="sm" glyph="↻" glyphTone="ink" disabled>
           Replay
         </Button>
         <Button variant="danger-link" className="ml-auto" onClick={onRemove}>

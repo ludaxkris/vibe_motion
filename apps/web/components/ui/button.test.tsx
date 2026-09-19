@@ -93,4 +93,26 @@ describe("Button", () => {
     const glyph = button.querySelector("[aria-hidden='true']");
     expect(glyph).toHaveTextContent("✦");
   });
+
+  it("tints ✦ with the accent on a secondary button", () => {
+    // The handoff tints the icon slot, which is ✦ (Button.jsx, idle panel).
+    const { container } = render(
+      <Button variant="secondary" glyph="✦">
+        Auto-generate for this page
+      </Button>,
+    );
+
+    expect(container.querySelector("[aria-hidden='true']")).toHaveClass("text-vm-accent");
+  });
+
+  it("leaves an ink-toned glyph in the label's own colour", () => {
+    // ↻ is part of the label in the handoff ("↻ Replay all"), not an icon.
+    const { container } = render(
+      <Button variant="secondary" glyph="↻" glyphTone="ink">
+        Replay all
+      </Button>,
+    );
+
+    expect(container.querySelector("[aria-hidden='true']")).not.toHaveClass("text-vm-accent");
+  });
 });
