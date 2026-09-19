@@ -27,9 +27,9 @@ export type VersionRowProps = {
 /** "Current · 2h ago", or "Mon · 42 elements" for v0 (`docs/design/README.md` "History tab"). */
 function meta(version: Version, isCurrent: boolean, now: Date, elementCount?: number): string {
   const when = relativeTime(version.createdAt, now);
-  if (isCurrent) return `Current · ${when}`;
-  if (version.seq === 0 && elementCount !== undefined) return `${when} · ${elementCount} elements`;
-  return when;
+  const base = isCurrent ? `Current · ${when}` : when;
+  if (version.seq === 0 && elementCount !== undefined) return `${base} · ${elementCount} elements`;
+  return base;
 }
 
 /**

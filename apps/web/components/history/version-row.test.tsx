@@ -148,6 +148,22 @@ describe("VersionRow", () => {
     expect(screen.getByText(/42 elements/)).toBeInTheDocument();
   });
 
+  it("keeps the cloned element count for v0 when it is also the current version", () => {
+    render(
+      <VersionRow
+        version={version({ id: "v0-id", seq: 0, parentVersionId: null, label: "Cloned" })}
+        rows={[]}
+        isCurrent
+        isViewing={false}
+        now={NOW}
+        elementCount={42}
+        {...callbacks()}
+      />,
+    );
+
+    expect(screen.getByText("Current · 2h ago · 42 elements")).toBeInTheDocument();
+  });
+
   it("disables Restore while restoring", () => {
     render(
       <VersionRow
