@@ -43,15 +43,7 @@ describe("help page", () => {
     expect(css).toContain("background-image: none !important");
   });
 
-  it("carries nothing through <style> that React would have to escape", () => {
-    // `<style>` is raw text: React escapes `<`, `>` and `&` in a text child,
-    // so a catalog string containing one would land in the CSS as `&lt;` and
-    // break the rule. Nothing in the catalog does — keep it that way.
-    for (const entry of entries) {
-      expect(entry.keyframes, `${entry.id} keyframes`).not.toMatch(/[<>&]/);
-      for (const param of entry.params) {
-        expect(param.default, `${entry.id}.${param.key} default`).not.toMatch(/[<>&]/);
-      }
-    }
-  });
+  // The "<style> carries nothing React would escape" invariant is asserted in
+  // `lib/runtime-css/index.test.ts`, where both this page and the picker take
+  // their CSS from, across every published catalog version.
 });

@@ -234,6 +234,39 @@ describe("runtimeStylesheet", () => {
   });
 });
 
+/**
+ * `<style>` is raw text, and React escapes `<`, `>` and `&` in a text child —
+ * so a catalog string carrying one would land in the CSS as `&lt;` and break
+ * the rule it belongs to. Both places that inject one (`/help`'s
+ * `<style id="vm-runtime">` and the picker's `<style>{keyframes}</style>`)
+ * take their text from this module, so the invariant lives here rather than
+ * beside either screen.
+ */
+describe("catalog text a <style> element can carry verbatim", () => {
+  it("covers every published catalog version", () => {
+    expect(new Set(allEntries.map(({ version }) => version))).toEqual(new Set(CATALOG_VERSIONS));
+  });
+
+  it.each(allEntries)(
+    "$entry.id ($version) carries nothing React would have to escape",
+    ({ version, entry }) => {
+      expect(keyframesCss(entry, version), `${entry.id} keyframes`).not.toMatch(/[<>&]/);
+      expect(entry.baseStyles ?? "", `${entry.id} baseStyles`).not.toMatch(/[<>&]/);
+      for (const param of entry.params) {
+        expect(param.default, `${entry.id}.${param.key} default`).not.toMatch(/[<>&]/);
+      }
+    },
+  );
+
+  it("emits a whole stylesheet with none of the three characters in it", () => {
+    const css = runtimeStylesheet(
+      allEntries.map(({ entry, version }) => [entry, version] as const),
+    );
+
+    expect(css).not.toMatch(/[<>&]/);
+  });
+});
+
 describe("inlineStyle", () => {
   it("camel-cases the standard animation-* properties, for a React style object", () => {
     const entry = CATALOGS[CURRENT_VERSION].entries.find((e) => e.id === "fade-in-up")!;
