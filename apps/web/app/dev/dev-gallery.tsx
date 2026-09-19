@@ -305,6 +305,15 @@ export function DevGallery() {
         >
           <TuningFrame animationId="pulse" />
         </Frame>
+
+        <Frame
+          slug="panel-tuning-selects"
+          title="Tuning · an entry with direction"
+          note="Direction and Fill mode take the easing row's select: their CSS keywords are too long to read in a quarter of the panel."
+          bodyClassName={PANEL_FRAME}
+        >
+          <TuningFrame animationId="spin" />
+        </Frame>
       </Group>
 
       <Group title="Dialogs and toast">

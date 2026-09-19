@@ -145,34 +145,53 @@ describe("TuningPanel", () => {
     expect(screen.getByText("×")).toBeInTheDocument();
   });
 
-  it("renders repeat as the dense 1 / 2 / 3 / ∞ segmented", () => {
+  it("renders repeat as the dense 1 / 2 / 3 / ∞ segmented, with ∞ named out loud", () => {
     const { onParamChange } = renderTuning("pulse");
 
     const repeat = screen.getByRole("radiogroup", { name: "Repeat" });
-    expect(within(repeat).getByRole("radio", { name: "∞" })).toBeChecked();
+    const infinite = within(repeat).getByRole("radio", { name: "Infinite" });
+    expect(infinite).toBeChecked();
+    expect(infinite).toHaveTextContent("∞");
 
     fireEvent.click(within(repeat).getByRole("radio", { name: "2" }));
     expect(onParamChange).toHaveBeenCalledWith("iteration", "2");
   });
 
-  it("renders direction as a segmented of the standard CSS values", () => {
+  it("renders direction as a select — its keywords do not fit a segment", async () => {
+    // Inline, four segments share ~198px and both "alternate" and
+    // "alternate-reverse" come out as the same clipped word.
     const { onParamChange } = renderTuning("spin");
 
-    const direction = screen.getByRole("radiogroup", { name: "Direction" });
-    expect(within(direction).getByRole("radio", { name: "normal" })).toBeChecked();
+    const direction = screen.getByRole("combobox", { name: "Direction" });
+    expect(direction).toHaveTextContent("normal");
+    expect(screen.queryByRole("radiogroup", { name: "Direction" })).not.toBeInTheDocument();
 
-    fireEvent.click(within(direction).getByRole("radio", { name: "reverse" }));
-    expect(onParamChange).toHaveBeenCalledWith("direction", "reverse");
+    fireEvent.click(direction);
+    const listbox = await screen.findByRole("listbox");
+    selectOption(within(listbox).getByRole("option", { name: "alternate-reverse" }));
+
+    await waitFor(() =>
+      expect(onParamChange).toHaveBeenCalledWith("direction", "alternate-reverse"),
+    );
   });
 
-  it("renders fill mode as a segmented too", () => {
+  it("renders fill mode as a select too — 'backwards' is nine characters", () => {
     renderTuning("fade-in");
 
+    expect(screen.getByRole("combobox", { name: "Fill mode" })).toHaveTextContent("both");
+    expect(screen.queryByRole("radiogroup", { name: "Fill mode" })).not.toBeInTheDocument();
+  });
+
+  it("gives the select row the same shape as the easing row, minus the curve", () => {
+    const { container } = renderTuning("spin");
+
+    const row = container.querySelector("[data-param='direction']");
+    expect(row?.className).toContain("items-center");
+    expect(row?.querySelector("[data-testid='easing-curve']")).toBeNull();
+    // …while easing keeps its preview.
     expect(
-      within(screen.getByRole("radiogroup", { name: "Fill mode" })).getByRole("radio", {
-        name: "both",
-      }),
-    ).toBeChecked();
+      container.querySelector("[data-param='easing'] [data-testid='easing-curve']"),
+    ).not.toBeNull();
   });
 
   it("renders easing as a select with the curve drawn beside it", async () => {
@@ -226,15 +245,19 @@ describe("TuningPanel", () => {
     expect(onRemove).toHaveBeenCalledOnce();
   });
 
-  it("gives a segmented of long CSS keywords the row's full width", () => {
-    const { container } = renderTuning("spin");
-
-    // Inline, four "alternate-reverse"-sized segments across ~198px clip to
-    // the same visible text; stacked they stay distinguishable.
-    expect(container.querySelector("[data-param='direction']")?.className).toContain("flex-col");
-    expect(container.querySelector("[data-param='duration']")?.className).not.toContain(
-      "flex-col",
+  it("shows a value the catalog never listed, rather than nothing at all", () => {
+    // Reachable from the API, not from this UI: the control still has to
+    // render as the value the draft holds.
+    const entry = entryFor("pulse");
+    render(
+      <TuningPanel
+        vmId="vm-1"
+        entry={entry}
+        assignment={assignmentFor(entry, { iteration: "5" })}
+      />,
     );
+
+    expect(screen.getByRole("combobox", { name: "Repeat" })).toHaveTextContent("5");
   });
 
   it("renders a row for every param the entry declares", () => {

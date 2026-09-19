@@ -163,6 +163,7 @@ test("the /dev gallery renders every state at the handoff's widths", async ({ pa
     "dev-frame-panel-choosing",
     "dev-frame-panel-choosing-empty-search",
     "dev-frame-panel-tuning-scale",
+    "dev-frame-panel-tuning-selects",
     "dev-frame-toast",
     "dev-frame-entry-cloning",
     "dev-frame-entry-error",

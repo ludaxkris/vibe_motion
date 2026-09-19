@@ -83,10 +83,12 @@ describe("paramControl", () => {
     });
   });
 
-  it("gives easing its own control, with the fallback option list", () => {
+  it("gives easing its own control, with the handoff's option order", () => {
+    // docs/design/README.md, "tuning": ease, ease-out, ease-in, ease-in-out,
+    // linear — most-reached-for first, not alphabetical.
     expect(paramControl(param("fade-in", "easing"))).toEqual({
       kind: "easing",
-      options: ["linear", "ease", "ease-in", "ease-out", "ease-in-out"],
+      options: ["ease", "ease-out", "ease-in", "ease-in-out", "linear"],
     });
   });
 
@@ -109,31 +111,36 @@ describe("paramControl", () => {
         { value: "1", label: "1" },
         { value: "2", label: "2" },
         { value: "3", label: "3" },
-        { value: "infinite", label: "∞" },
+        // ∞ is a picture; a screen reader needs the word.
+        { value: "infinite", label: "∞", ariaLabel: "Infinite" },
       ],
     });
   });
 
-  it("renders a four-option select param as a dense segmented", () => {
+  it("sends fill mode to a select — 'backwards' does not fit a quarter of the panel", () => {
     expect(paramControl(param("fade-in", "fillMode"))).toEqual({
-      kind: "segmented",
-      options: [
-        { value: "none", label: "none" },
-        { value: "forwards", label: "forwards" },
-        { value: "backwards", label: "backwards" },
-        { value: "both", label: "both" },
-      ],
+      kind: "select",
+      options: ["none", "forwards", "backwards", "both"],
     });
   });
 
-  it("renders direction as a dense segmented, from the standard CSS values", () => {
+  it("sends direction to a select too — two options would read 'alternate…'", () => {
     expect(paramControl(param("spin", "direction"))).toEqual({
+      kind: "select",
+      options: ["normal", "reverse", "alternate", "alternate-reverse"],
+    });
+  });
+
+  it("keeps the segmented for four options that are all short enough", () => {
+    expect(
+      paramControl({ key: "mood", type: "select", default: "a", options: ["a", "b", "c", "d"] }),
+    ).toEqual({
       kind: "segmented",
       options: [
-        { value: "normal", label: "normal" },
-        { value: "reverse", label: "reverse" },
-        { value: "alternate", label: "alternate" },
-        { value: "alternate-reverse", label: "alternate-reverse" },
+        { value: "a", label: "a" },
+        { value: "b", label: "b" },
+        { value: "c", label: "c" },
+        { value: "d", label: "d" },
       ],
     });
   });
@@ -149,6 +156,12 @@ describe("paramControl", () => {
     ).toEqual({ kind: "select", options: ["a", "b", "c", "d", "e"] });
   });
 
+  it("switches to the select as soon as one label is longer than eight characters", () => {
+    expect(
+      paramControl({ key: "mood", type: "select", default: "a", options: ["a", "regrettable"] }),
+    ).toEqual({ kind: "select", options: ["a", "regrettable"] });
+  });
+
   it("keeps the param's own default selectable even when the option list omits it", () => {
     expect(
       paramControl({ key: "mood", type: "select", default: "z", options: ["a", "b"] }),
@@ -162,6 +175,45 @@ describe("paramControl", () => {
     });
   });
 
+  it("keeps the current value selectable even when neither list has it", () => {
+    // Without this the control renders with nothing checked — silently
+    // disagreeing with the draft it is bound to.
+    expect(
+      paramControl({ key: "mood", type: "select", default: "a", options: ["a", "b"] }, "c"),
+    ).toEqual({
+      kind: "segmented",
+      options: [
+        { value: "a", label: "a" },
+        { value: "b", label: "b" },
+        { value: "c", label: "c" },
+      ],
+    });
+  });
+
+  it("offers a current value the segmented has no room for, as a select", () => {
+    // A saved `iteration: "5"` is not reachable from this UI but is from the
+    // API. It still has to render as the value it is; the fifth option takes
+    // the row past the segmented's cap, so the select row carries it.
+    expect(paramControl(param("pulse", "iteration"), "5")).toEqual({
+      kind: "select",
+      options: ["1", "2", "3", "infinite", "5"],
+    });
+  });
+
+  it("does not duplicate a current value the list already has", () => {
+    expect(paramControl(param("spin", "direction"), "reverse")).toEqual({
+      kind: "select",
+      options: ["normal", "reverse", "alternate", "alternate-reverse"],
+    });
+  });
+
+  it("keeps a tuned easing the fallback list has never heard of", () => {
+    const control = paramControl(param("fade-in", "easing"), "cubic-bezier(.34,1.56,.64,1)");
+    expect(control.kind === "easing" && control.options).toContain(
+      "cubic-bezier(.34,1.56,.64,1)",
+    );
+  });
+
   it("gives color params a text field — catalog colours are rgba()/currentColor", () => {
     expect(paramControl(param("glow", "color"))).toEqual({ kind: "color" });
   });
@@ -171,6 +223,19 @@ describe("paramControl", () => {
       for (const p of entry.params) {
         expect(paramControl(p).kind).toBeTruthy();
         expect(paramLabel(p)).not.toBe("");
+      }
+    }
+  });
+
+  it("never offers a segment label that would clip in the 320px panel", () => {
+    for (const entry of getCatalogEntries()) {
+      for (const p of entry.params) {
+        const control = paramControl(p);
+        if (control.kind !== "segmented") continue;
+        expect(control.options.length).toBeLessThanOrEqual(4);
+        for (const option of control.options) {
+          expect(option.label.length).toBeLessThanOrEqual(8);
+        }
       }
     }
   });

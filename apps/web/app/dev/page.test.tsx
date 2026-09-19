@@ -16,6 +16,7 @@ const FRAMES = [
   "dev-frame-panel-choosing-empty-search",
   "dev-frame-panel-tuning-distance",
   "dev-frame-panel-tuning-scale",
+  "dev-frame-panel-tuning-selects",
   "dev-frame-dialog-unsaved-guard",
   "dev-frame-dialog-save",
   "dev-frame-toast",
@@ -68,6 +69,7 @@ describe("/dev", () => {
       ["dev-frame-panel-choosing-empty-search", "panel-choosing"],
       ["dev-frame-panel-tuning-distance", "panel-tuning"],
       ["dev-frame-panel-tuning-scale", "panel-tuning"],
+      ["dev-frame-panel-tuning-selects", "panel-tuning"],
     ];
 
     for (const [frameId, panelId] of panels) {
@@ -101,6 +103,21 @@ describe("/dev", () => {
     const scale = screen.getByTestId("dev-frame-panel-tuning-scale");
     expect(within(scale).getByText("Pulse")).toBeInTheDocument();
     expect(scale.querySelector("[data-param='scale']")).not.toBeNull();
+  });
+
+  it("shows the select rows a long CSS keyword forces, on an entry with direction", async () => {
+    await renderGallery();
+
+    const selects = screen.getByTestId("dev-frame-panel-tuning-selects");
+    expect(within(selects).getByText("Spin")).toBeInTheDocument();
+    expect(within(selects).getByRole("combobox", { name: "Direction" })).toHaveTextContent(
+      "normal",
+    );
+    expect(within(selects).getByRole("combobox", { name: "Fill mode" })).toHaveTextContent(
+      "none",
+    );
+    // Nothing on this row is clipped to fit any more.
+    expect(selects.querySelector("[data-param='direction'] .truncate")).toBeNull();
   });
 
   it("shows the picker's empty-search copy in its own frame", async () => {

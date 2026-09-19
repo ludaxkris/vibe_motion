@@ -1,6 +1,5 @@
 "use client";
 
-import { cn } from "cn";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -62,45 +61,17 @@ function EasingCurve({ value }: { value: string }) {
 }
 
 /**
- * Label (56px) · control, the shape every param row takes.
- *
- * `stacked` puts the label on its own line, giving the control the row's full
- * width. The handoff only shows the inline form, because the rows it mocks all
- * have short values; a segmented of CSS keywords does not, and at four
- * segments across 198px "alternate" and "alternate-reverse" truncate to the
- * same text. The extra 66px the stacked form buys keeps them apart.
+ * Label (56px) · control, the shape every param row takes — the handoff's, and
+ * the only one: a param whose values are too long to sit in a segmented row
+ * takes the easing-style select instead (`param-control.ts`), which fits this
+ * shape, rather than a layout of its own.
  */
-function ParamRow({
-  param,
-  stacked = false,
-  children,
-}: {
-  param: CatalogParam;
-  stacked?: boolean;
-  children: ReactNode;
-}) {
+function ParamRow({ param, children }: { param: CatalogParam; children: ReactNode }) {
   return (
-    <div
-      data-param={param.key}
-      className={stacked ? "flex flex-col gap-1.5" : "flex items-center gap-2.5"}
-    >
-      <span className={cn("text-sm text-vm-ink-2", !stacked && "w-14 shrink-0")}>
-        {paramLabel(param)}
-      </span>
+    <div data-param={param.key} className="flex items-center gap-2.5">
+      <span className="w-14 shrink-0 text-sm text-vm-ink-2">{paramLabel(param)}</span>
       {children}
     </div>
-  );
-}
-
-/** The longest option a dense segmented can show inline before it clips. */
-const MAX_INLINE_SEGMENT_LABEL = 8;
-
-/** True when this param's control needs the row's full width to stay readable. */
-function needsFullWidth(param: CatalogParam): boolean {
-  const control = paramControl(param);
-  return (
-    control.kind === "segmented" &&
-    control.options.some((option) => option.label.length > MAX_INLINE_SEGMENT_LABEL)
   );
 }
 
@@ -113,7 +84,9 @@ function ParamControlFor({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const control = paramControl(param);
+  // `value` goes in so the option list is guaranteed to contain it: a control
+  // that cannot show what it is bound to would render with nothing selected.
+  const control = paramControl(param, value);
   const label = paramLabel(param);
 
   if (control.kind === "slider") {
@@ -157,9 +130,9 @@ function ParamControlFor({
         options={control.options}
         value={value}
         onValueChange={onChange}
-        // Four CSS keywords ("alternate-reverse") in a 320px panel: let the
-        // segments share what space there is rather than overflow the card.
-        className="min-w-0 flex-1 [&>*]:min-w-0 [&>*]:truncate [&>*]:px-1"
+        // Only short labels reach a segmented, so the segments share the row
+        // evenly and nothing has to be clipped to fit.
+        className="min-w-0 flex-1 [&>*]:min-w-0 [&>*]:px-1"
       />
     );
   }
@@ -261,7 +234,7 @@ export function TuningPanel({
 
       <PanelSection className="gap-3.5">
         {entry.params.map((param) => (
-          <ParamRow key={param.key} param={param} stacked={needsFullWidth(param)}>
+          <ParamRow key={param.key} param={param}>
             <ParamControlFor
               param={param}
               value={assignment.params[param.key] ?? param.default}
