@@ -55,7 +55,11 @@ test("the Control Panel separator resizes with the keyboard", async ({ page }) =
   const separator = page.getByRole("separator", { name: "Resize Control Panel" });
   await expect(separator).toHaveAttribute("aria-valuenow", "75");
 
-  await separator.focus();
+  // Clicking is enough to focus it: the drag must not preventDefault() the
+  // focus a click gives every other focusable control.
+  await separator.click();
+  await expect(separator).toBeFocused();
+
   await page.keyboard.press("End");
   await expect(separator).toHaveAttribute("aria-valuenow", "80");
 

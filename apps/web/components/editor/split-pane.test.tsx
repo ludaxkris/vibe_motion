@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createEvent, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SplitPane } from "./split-pane";
 
@@ -19,7 +19,27 @@ beforeEach(() => {
 
 afterEach(() => {
   window.localStorage.clear();
+  vi.restoreAllMocks();
 });
+
+/**
+ * jsdom has no layout, so a drag needs a container box to measure against:
+ * 1000px wide, right edge at 1000, which makes `clientX` read straight off as
+ * "100 − panel %".
+ */
+function stubContainerBox() {
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+    x: 0,
+    y: 0,
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 1000,
+    width: 1000,
+    height: 100,
+    toJSON: () => ({}),
+  });
+}
 
 describe("SplitPane", () => {
   it("renders both panes", () => {
@@ -85,10 +105,12 @@ describe("SplitPane", () => {
     const handle = separator();
 
     fireEvent.keyDown(handle, { key: "Home" });
+    fireEvent.keyUp(handle, { key: "Home" });
     expect(handle).toHaveAttribute("aria-valuenow", "70");
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe("30");
 
     fireEvent.keyDown(handle, { key: "End" });
+    fireEvent.keyUp(handle, { key: "End" });
     expect(handle).toHaveAttribute("aria-valuenow", "80");
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe("20");
   });
@@ -98,8 +120,73 @@ describe("SplitPane", () => {
     const handle = separator();
 
     fireEvent.keyDown(handle, { key: "Home" });
+    fireEvent.keyUp(handle, { key: "Home" });
 
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe("30");
+  });
+
+  it("writes once the key comes back up, not on every auto-repeat", () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    renderSplitPane();
+    const handle = separator();
+
+    for (let i = 0; i < 3; i += 1) {
+      fireEvent.keyDown(handle, { key: "ArrowLeft" });
+    }
+    expect(setItem).not.toHaveBeenCalled();
+
+    fireEvent.keyUp(handle, { key: "ArrowLeft" });
+
+    expect(setItem).toHaveBeenCalledOnce();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("28");
+  });
+
+  it("writes once at the end of a drag, not on every pointermove", () => {
+    stubContainerBox();
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    renderSplitPane();
+    const handle = separator();
+
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1 });
+    for (const clientX of [740, 750, 760]) {
+      fireEvent.pointerMove(handle, { clientX, pointerId: 1 });
+    }
+
+    // The panel follows the pointer live…
+    expect(handle).toHaveAttribute("aria-valuenow", "76");
+    expect(setItem).not.toHaveBeenCalled();
+
+    fireEvent.pointerUp(handle, { pointerId: 1 });
+
+    // …and the browser is only told about it once the drag is over.
+    expect(setItem).toHaveBeenCalledOnce();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("24");
+  });
+
+  it("starts a drag on the primary button only", () => {
+    stubContainerBox();
+    renderSplitPane();
+    const handle = separator();
+
+    // A right-click opens a context menu; it must not also begin a resize that
+    // only ends on the next pointerup.
+    fireEvent.pointerDown(handle, { button: 2, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 760, pointerId: 1 });
+
+    expect(handle).toHaveAttribute("aria-valuenow", "75");
+    expect(handle).not.toHaveClass("bg-vm-accent");
+  });
+
+  it("lets a click focus the separator, the way any other control would", () => {
+    renderSplitPane();
+    const handle = separator();
+
+    const event = createEvent.pointerDown(handle, { button: 0, pointerId: 1 });
+    fireEvent(handle, event);
+
+    // preventDefault() here would deny the tabIndex={0} handle the focus a
+    // click normally gives it.
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it("restores a valid persisted width on mount, clamped to [20, 30]", () => {

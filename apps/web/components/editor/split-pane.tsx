@@ -21,6 +21,8 @@ import {
 /** `localStorage` key the Control Panel width is persisted under, per browser. */
 const STORAGE_KEY = "vm-panel-width";
 const KEYBOARD_STEP_PERCENT = 1;
+/** The keys `handleKeyDown` resizes on, and so the ones whose release persists. */
+const RESIZE_KEYS: ReadonlySet<string> = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 
 /**
  * `localStorage` never changes from outside this component (no other tab
@@ -102,14 +104,16 @@ export function SplitPane({
     }
   }, []);
 
-  const updateWidth = useCallback(
-    (next: number) => {
-      const clamped = clampPanelWidth(next);
-      setOverrideWidth(clamped);
-      persist(clamped);
-    },
-    [persist],
-  );
+  /**
+   * Live only. Persisting belongs at the *end* of a gesture (`pointerup`,
+   * `keyup`): a `localStorage.setItem` per `pointermove` is a synchronous
+   * write at 60–120 Hz, and each one changes what `getStoredWidth` — the
+   * `useSyncExternalStore` snapshot above — returns at render time, costing a
+   * second render over a value `overrideWidth` already supersedes.
+   */
+  const updateWidth = useCallback((next: number) => {
+    setOverrideWidth(clampPanelWidth(next));
+  }, []);
 
   const widthFromClientX = useCallback((clientX: number) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -120,7 +124,12 @@ export function SplitPane({
   }, []);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
+    // The primary button only: anything else — a right-click opening a context
+    // menu, a back button — would otherwise begin a resize that runs under the
+    // menu and ends on the next pointerup.
+    if (event.button !== 0) return;
+    // And no `preventDefault()`: it would deny the `tabIndex={0}` separator the
+    // focus a click gives every other focusable control.
     setIsDragging(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
@@ -135,6 +144,7 @@ export function SplitPane({
     if (!isDragging) return;
     setIsDragging(false);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
+    persist(panelWidth);
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -160,6 +170,12 @@ export function SplitPane({
     }
   };
 
+  /** One write per press, however long the key auto-repeats. */
+  const handleKeyUp = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!RESIZE_KEYS.has(event.key)) return;
+    persist(panelWidth);
+  };
+
   return (
     <div ref={containerRef} className="flex min-h-0 flex-1">
       {/* A flex container, not a block: the pane's child (the preview and its
@@ -181,6 +197,7 @@ export function SplitPane({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onKeyDown={handleKeyDown}
+        onKeyUp={handleKeyUp}
         // The handoff draws no handle at all: the divider *is* the panel's 1px
         // left border (ruling in docs/plans/phase-3-web-shell.md, "Design
         // handoff"). So the hairline stays a hairline and the grabbable strip
