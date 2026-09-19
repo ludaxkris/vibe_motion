@@ -86,6 +86,20 @@ describe("selectTargets", () => {
     expect(input).toEqual([c, a, b]);
   });
 
+  it("sorts the bridge's order -1 sentinel last, ties in input order", () => {
+    const lostA = el({ tag: "h1", order: -1 });
+    const first = el({ tag: "h2", order: 0 });
+    const lostB = el({ tag: "h3", order: -1 });
+    const tieA = el({ tag: "p", order: 4 });
+    const tieB = el({ tag: "li", order: 4 });
+    expect(selectTargets([lostA, tieA, lostB, first, tieB]).targets).toEqual([first, tieA, tieB, lostA, lostB]);
+  });
+
+  it("does not treat <picture> as a target", () => {
+    expect(TARGET_TAGS).not.toContain("picture");
+    expect(skipReason(el({ tag: "picture" }))).toBe("not-semantic");
+  });
+
   it("keeps nested targets (a link inside an article)", () => {
     const article = el({ tag: "article", order: 1 });
     const link = el({ tag: "a", order: 2 });

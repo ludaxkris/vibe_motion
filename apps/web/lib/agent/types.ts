@@ -5,7 +5,11 @@ import type { Assignment } from "@/lib/api-client";
 export type Viewport = { width: number; height: number };
 
 type Shared = {
-  /** Assignments the agent must not replace; context only. */
+  /**
+   * Assignments already on the page, for context. The caller decides which
+   * elements are candidates (see `selectAutoCandidates`, plan Task 4); an agent
+   * may be asked about an element that appears here.
+   */
   existing: Record<string, Assignment>;
   prompt: string;
   viewport: Viewport;

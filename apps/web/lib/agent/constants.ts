@@ -1,6 +1,10 @@
 // Its own file: index.ts → mock-agent.ts → index.ts would be a cycle.
 
-/** Delay step between consecutive `load` entrances, in document order. */
+/**
+ * Delay step between consecutive `load` entrances, in document order.
+ * build_plan's number; it is off the catalog's 50 ms `delay` step, which is
+ * tracked in docs/deferred_tasks.md.
+ */
 export const STAGGER_MS = 60;
 /** The stagger never pushes a delay past this. */
 export const STAGGER_CAP_MS = 600;

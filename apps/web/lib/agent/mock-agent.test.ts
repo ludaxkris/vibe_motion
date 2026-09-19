@@ -1,8 +1,9 @@
 import { CURRENT_VERSION, getEntry, type CatalogEntry } from "animation-catalog";
 import type { ElementInfo } from "bridge";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Assignment } from "@/lib/api-client";
+import * as runtimeCss from "@/lib/runtime-css";
 
 import { EXCLUDED_ANIMATION_IDS } from "./constants";
 import { filterPool, MockAnimationAgent } from "./mock-agent";
@@ -35,8 +36,10 @@ function entryOf(a: Assignment): CatalogEntry {
   return entry;
 }
 
-function defaultDelay(a: Assignment): string | undefined {
-  return entryOf(a).params.find((p) => p.key === "delay")?.default;
+function defaultDelay(a: Assignment): string {
+  const delay = entryOf(a).params.find((p) => p.key === "delay");
+  if (!delay) throw new Error(`${a.animationId} has no delay param`);
+  return delay.default;
 }
 
 function at<T>(record: Record<string, T>, key: string): T {
@@ -52,6 +55,19 @@ describe("MockAnimationAgent determinism", () => {
     expect(a).toEqual(b);
   });
 
+  it("gives the same suggestion twice from one instance", async () => {
+    const agent = new MockAnimationAgent(7);
+    const first = await agent.suggestForPage(pageCtx(PAGE));
+    const second = await agent.suggestForPage(pageCtx(PAGE));
+    expect(second).toEqual(first);
+
+    const element = el("h2", "h2", 100, 0);
+    const shared = { existing: {}, prompt: "", viewport, catalogVersion: CURRENT_VERSION };
+    const one = await agent.suggestForElement({ ...shared, element });
+    const two = await agent.suggestForElement({ ...shared, element });
+    expect(two).toEqual(one);
+  });
+
   it("varies across seeds", async () => {
     const results = new Set<string>();
     for (let seed = 1; seed <= 20; seed += 1) {
@@ -63,7 +79,7 @@ describe("MockAnimationAgent determinism", () => {
   it("ignores existing assignments and the prompt", async () => {
     const bare = await new MockAnimationAgent(11).suggestForPage(pageCtx(PAGE));
     const existing: Record<string, Assignment> = {
-      other: { animationId: "pulse", catalogVersion: CURRENT_VERSION, trigger: "load", params: {} },
+      h1: { animationId: "pulse", catalogVersion: CURRENT_VERSION, trigger: "load", params: {} },
     };
     const withContext = await new MockAnimationAgent(11).suggestForPage(
       pageCtx(PAGE, { existing, prompt: "make it playful" }),
@@ -123,7 +139,11 @@ describe("MockAnimationAgent.suggestForPage heuristics", () => {
 
 describe("MockAnimationAgent stagger", () => {
   it("steps load entrances by 60ms in document order, skipping hover and in-view", async () => {
-    const { assignments } = await new MockAnimationAgent(5).suggestForPage(pageCtx(PAGE));
+    // `late` is above the fold but after the hover and in-view elements in the document.
+    const late = el("late", "h3", 700, 5);
+    const { assignments } = await new MockAnimationAgent(5).suggestForPage(pageCtx([...PAGE, late]));
+    expect(at(assignments, "late").trigger).toBe("load");
+    expect(at(assignments, "late").params.delay).toBe("120ms");
     expect(at(assignments, "h1").params.delay).toBe("0ms");
     expect(at(assignments, "img").params.delay).toBe("60ms");
     const p = at(assignments, "p");
@@ -169,7 +189,20 @@ describe("MockAnimationAgent.suggestForElement", () => {
     const a = await new MockAnimationAgent(1).suggestForElement({ ...shared, element: el("div", "div", 100, 0) });
     expect(entryOf(a).category).toBe("entrance");
     expect(a.trigger).toBe("load");
-    expect(a.params.delay).toBe("0ms");
+  });
+
+  it("leaves the delay of a single above-the-fold element at the catalog default", async () => {
+    // Pinned to a non-zero default so the stagger's "0ms" cannot pass for it.
+    const spy = vi.spyOn(runtimeCss, "resolveParams").mockImplementation((entry) =>
+      Object.fromEntries(entry.params.map((p) => [p.key, p.key === "delay" ? "50ms" : p.default])),
+    );
+    try {
+      const a = await new MockAnimationAgent(1).suggestForElement({ ...shared, element: el("h1", "h1", 100, 0) });
+      expect(a.trigger).toBe("load");
+      expect(a.params.delay).toBe("50ms");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
@@ -190,5 +223,15 @@ describe("filterPool", () => {
     ];
     expect(filterPool(synthetic, "entrance").map((e) => e.id)).toEqual(["fade-in"]);
     expect(filterPool(synthetic, "hover").map((e) => e.id)).toEqual(["hover-lift"]);
+  });
+});
+
+describe("MockAnimationAgent and unordered elements", () => {
+  it("does not give the 0ms stagger slot to an element with order -1", async () => {
+    const { assignments } = await new MockAnimationAgent(5).suggestForPage(
+      pageCtx([el("lost", "h2", 50, -1), el("first", "h1", 100, 0)]),
+    );
+    expect(at(assignments, "first").params.delay).toBe("0ms");
+    expect(at(assignments, "lost").params.delay).toBe("60ms");
   });
 });
