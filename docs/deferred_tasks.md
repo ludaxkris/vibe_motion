@@ -111,6 +111,8 @@ Status: `open` · `in-progress` · `done` · `wont-do`.
 | DT-102 | polish | `summariseDiff` names changed params by raw key (`duration 600ms → 800ms`) instead of the tuning panel's labels | P3 | later | 6 | — | open | `paramLabel` lives under `components/control-panel/`; move it to `lib/` (or into the catalog, DT-080) and reuse. |
 | DT-103 | test | Bridge real-browser suite runs Chromium only | P3 | later | 4 | — | open | `packages/bridge/e2e` gates Chromium. WebKit and Firefox were probed by hand once by code-architect (replay flush, stylesheet mutation, in-view, nested hover) and nothing re-checks them per commit. From PR #12. |
 | DT-104 | bug | Duplicate `data-vm-id` values in a cloned page: bridge keeps the first, base-styles rule would match both | P3 | later | 4 | — | open | Phase 2's rewriter assigns unique ids, so this only happens with hand-made fixtures or a re-cloned export. Documented in the bridge README "Known limits". From PR #12. |
+| DT-105 | tech-debt | Bridge hover path reads the whole subtree `textContent` and measures twice per hover change | P3 | later | 4 | — | open | `elementInfo()` materialises full `textContent` before truncating to 80 chars, and `setHovered` calls `getBoundingClientRect` twice. Only on hovered-vmId change, not per mouse move; matters on huge containers. Walk text nodes up to the limit and reuse one rect. From PR #12 review. |
+| DT-106 | chore | CI Playwright failure artifacts are empty in the `web`/`e2e` jobs | P2 | this-phase | 0 | — | open | Reporter is `github` + `list`, so `playwright-report/` is never created; traces live in `test-results/` and nothing uploads them. PR #12 fixes this for the `bridge` job only. Coordinate with PR #11 (`apps/e2e`). |
 
 ## Bugs
 
