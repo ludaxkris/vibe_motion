@@ -41,6 +41,26 @@ export function getCatalogEntry(id: string): CatalogEntry | undefined {
 }
 
 /**
+ * The chip that is not a category: everything. Both chip rows — the editor's
+ * picker and the help page — lead with it.
+ */
+export const ALL_CATEGORIES = "all";
+
+/** A catalog category as it is written on screen ("entrance" -> "Entrance"). */
+export function categoryLabel(category: string): string {
+  return category.charAt(0).toUpperCase() + category.slice(1);
+}
+
+/**
+ * The categories in `entries`, in catalog order, deduplicated: a chip row
+ * follows the catalog rather than a list of categories hard-coded in the web
+ * app, so a new category in a new catalog version shows up on its own.
+ */
+export function catalogCategories(entries: readonly CatalogEntry[]): string[] {
+  return [...new Set(entries.map((entry) => entry.category))];
+}
+
+/**
  * `resolveParams` (Task 1, `lib/runtime-css`) types against the
  * `animation-catalog` package's own `CatalogEntry` (`triggers` is a
  * non-empty tuple, since the catalog schema requires `minItems: 1`), while

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { UnsavedGuardDialog } from "@/components/dialogs/unsaved-guard-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Trigger } from "@/lib/api-client";
-import { getCatalogEntry } from "@/lib/catalog";
+import { ALL_CATEGORIES, getCatalogEntry } from "@/lib/catalog";
 import {
   selectSelectedElementUnsaved,
   selectSelectedVmId,
@@ -13,7 +13,7 @@ import {
   useUnsaved,
 } from "@/lib/store";
 
-import { ALL_CATEGORIES, ChoosingPanel } from "./choosing";
+import { ChoosingPanel } from "./choosing";
 import { IdlePanel } from "./idle";
 import { PanelCard, PanelSection } from "./panel-card";
 import { SelectedPanel } from "./selected";

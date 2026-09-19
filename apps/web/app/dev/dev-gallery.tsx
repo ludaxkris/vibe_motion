@@ -4,7 +4,7 @@ import { getEntry } from "animation-catalog";
 import { cn } from "cn";
 import { useId, useState, type ReactNode } from "react";
 
-import { ALL_CATEGORIES, ChoosingPanel } from "@/components/control-panel/choosing";
+import { ChoosingPanel } from "@/components/control-panel/choosing";
 import { IdlePanel } from "@/components/control-panel/idle";
 import { SelectedPanel } from "@/components/control-panel/selected";
 import { TuningPanel } from "@/components/control-panel/tuning";
@@ -25,7 +25,12 @@ import { CloningCard } from "@/components/entry/cloning-card";
 import { Button } from "@/components/ui/button";
 import { ToastPill, useToast } from "@/components/ui/toast";
 import type { Assignment, EditorStateMap, Trigger } from "@/lib/api-client";
-import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
+import {
+  ALL_CATEGORIES,
+  CURRENT_CATALOG_VERSION,
+  getCatalogEntry,
+  resolveCatalogParams,
+} from "@/lib/catalog";
 import { summariseDiff } from "@/lib/diff-summary";
 
 import { StaticDialog } from "./static-dialog";

@@ -7,22 +7,17 @@ import { Chip } from "@/components/ui/chip";
 import { ElementTag } from "@/components/ui/element-tag";
 import { Input } from "@/components/ui/input";
 import type { CatalogEntry } from "@/lib/api-client";
-import { CURRENT_CATALOG_VERSION, catalogKeyframes, getCatalogEntries } from "@/lib/catalog";
+import {
+  ALL_CATEGORIES,
+  CURRENT_CATALOG_VERSION,
+  catalogCategories,
+  catalogKeyframes,
+  categoryLabel,
+  getCatalogEntries,
+} from "@/lib/catalog";
 
 import { AnimationCard } from "./animation-card";
 import { PanelCard, PanelSection } from "./panel-card";
-
-/** The chip that is not a category: everything. */
-export const ALL_CATEGORIES = "all";
-
-function categoryLabel(category: string): string {
-  return category.charAt(0).toUpperCase() + category.slice(1);
-}
-
-/** Catalog order, deduplicated — the chip row follows the catalog, not a fixed list. */
-function categoriesOf(entries: readonly CatalogEntry[]): string[] {
-  return [...new Set(entries.map((entry) => entry.category))];
-}
 
 /**
  * The animation picker (`docs/design/README.md` "2. Editor", choosing): a
@@ -148,7 +143,7 @@ export function ChoosingPanel({
           >
             All
           </Chip>
-          {categoriesOf(entries).map((name) => (
+          {catalogCategories(entries).map((name) => (
             <Chip
               key={name}
               pressed={category === name}
