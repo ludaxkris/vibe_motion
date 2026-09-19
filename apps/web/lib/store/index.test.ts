@@ -4,7 +4,9 @@ import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "
 
 import {
   initialEditorState,
-  selectSelectedElementUnsaved,
+  selectDirtyVmIdCount,
+  selectDirtyVmIds,
+  selectGuardedVmId,
   selectSelectedVmId,
   selectUnsaved,
   useEditorStore,
@@ -299,7 +301,7 @@ describe("useEditorStore panel/draft integration", () => {
   });
 });
 
-describe("selectSelectedElementUnsaved", () => {
+describe("dirty-element selectors", () => {
   /** A saved version holding one assignment on `vm-1`. */
   function withSavedAssignment(vmId: string, animationId: string) {
     const entry = getCatalogEntry(animationId);
@@ -316,22 +318,43 @@ describe("selectSelectedElementUnsaved", () => {
     });
   }
 
-  it("is false when nothing is selected, however dirty the draft is", () => {
+  it("lists nothing while the draft matches the saved version", () => {
+    withSavedAssignment("vm-1", "fade-in-up");
+    const state = useEditorStore.getState();
+
+    expect(selectDirtyVmIds(state)).toEqual([]);
+    expect(selectDirtyVmIdCount(state)).toBe(0);
+    expect(selectUnsaved(state)).toBe(false);
+  });
+
+  it("lists an element whose animation is new in the draft", () => {
     useEditorStore.getState().setDraftAssignment("vm-1", {
       animationId: "fade-in",
       catalogVersion: CURRENT_CATALOG_VERSION,
       trigger: "load",
       params: {},
     });
-    const state = useEditorStore.getState();
 
-    expect(selectUnsaved(state)).toBe(true);
-    expect(selectSelectedElementUnsaved(state)).toBe(false);
+    expect(selectDirtyVmIds(useEditorStore.getState())).toEqual(["vm-1"]);
   });
 
-  it("is false for a selected element whose own assignment is untouched", () => {
+  it("lists an element whose own params have moved", () => {
     withSavedAssignment("vm-1", "fade-in-up");
-    // Another element is what changed.
+    useEditorStore.getState().updateDraftParam("vm-1", "duration", "800ms");
+
+    expect(selectDirtyVmIds(useEditorStore.getState())).toEqual(["vm-1"]);
+  });
+
+  it("lists an element the draft dropped, which only the saved version still has", () => {
+    withSavedAssignment("vm-1", "fade-in-up");
+    useEditorStore.getState().removeDraftAssignment("vm-1");
+
+    expect(selectDirtyVmIds(useEditorStore.getState())).toEqual(["vm-1"]);
+  });
+
+  it("counts every element with unsaved changes, not just the selected one", () => {
+    withSavedAssignment("vm-1", "fade-in-up");
+    useEditorStore.getState().updateDraftParam("vm-1", "duration", "800ms");
     useEditorStore.getState().setDraftAssignment("vm-2", {
       animationId: "pulse",
       catalogVersion: CURRENT_CATALOG_VERSION,
@@ -341,31 +364,55 @@ describe("selectSelectedElementUnsaved", () => {
     useEditorStore.getState().setSelectedVmId("vm-1");
     const state = useEditorStore.getState();
 
-    expect(selectUnsaved(state)).toBe(true);
-    expect(selectSelectedElementUnsaved(state)).toBe(false);
+    expect(selectDirtyVmIds(state).sort()).toEqual(["vm-1", "vm-2"]);
+    expect(selectDirtyVmIdCount(state)).toBe(2);
   });
+});
 
-  it("is true once the selected element's own params move", () => {
-    withSavedAssignment("vm-1", "fade-in-up");
-    useEditorStore.getState().setSelectedVmId("vm-1");
-    useEditorStore.getState().updateDraftParam("vm-1", "duration", "800ms");
-
-    expect(selectSelectedElementUnsaved(useEditorStore.getState())).toBe(true);
-  });
-
-  it("is true for a selected element that has only just been given an animation", () => {
-    useEditorStore.getState().setSelectedVmId("vm-1");
+/**
+ * Discard reverts the whole draft, so the guard may only name an element when
+ * naming it describes everything a discard would take away.
+ */
+describe("selectGuardedVmId", () => {
+  function pick(vmId: string, animationId: string) {
+    useEditorStore.getState().setSelectedVmId(vmId);
     useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
-    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in-up" });
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId });
+  }
 
-    expect(selectSelectedElementUnsaved(useEditorStore.getState())).toBe(true);
+  it("is null while the draft is clean", () => {
+    useEditorStore.getState().setSelectedVmId("vm-1");
+
+    expect(selectGuardedVmId(useEditorStore.getState())).toBeNull();
   });
 
-  it("is true for a selected element whose animation was removed from the draft", () => {
-    withSavedAssignment("vm-1", "fade-in-up");
-    useEditorStore.getState().setSelectedVmId("vm-1");
-    useEditorStore.getState().removeDraftAssignment("vm-1");
+  it("is the selected element when it is the only one that changed", () => {
+    pick("vm-1", "fade-in-up");
 
-    expect(selectSelectedElementUnsaved(useEditorStore.getState())).toBe(true);
+    expect(selectGuardedVmId(useEditorStore.getState())).toBe("vm-1");
+  });
+
+  it("is null when the one element that changed is not the selected one", () => {
+    pick("vm-1", "fade-in-up");
+    useEditorStore.getState().setSelectedVmId("vm-2");
+
+    expect(selectGuardedVmId(useEditorStore.getState())).toBeNull();
+  });
+
+  it("is null when a second element has unsaved changes too", () => {
+    pick("vm-1", "fade-in-up");
+    pick("vm-2", "pulse");
+
+    // vm-2 is selected and dirty, but discarding would take vm-1 as well.
+    expect(selectSelectedVmId(useEditorStore.getState())).toBe("vm-2");
+    expect(selectGuardedVmId(useEditorStore.getState())).toBeNull();
+  });
+
+  it("is null when nothing is selected, however dirty the draft is", () => {
+    pick("vm-1", "fade-in-up");
+    useEditorStore.getState().setSelectedVmId(null);
+
+    expect(selectUnsaved(useEditorStore.getState())).toBe(true);
+    expect(selectGuardedVmId(useEditorStore.getState())).toBeNull();
   });
 });

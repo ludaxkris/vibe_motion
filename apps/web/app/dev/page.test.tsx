@@ -18,6 +18,7 @@ const FRAMES = [
   "dev-frame-panel-tuning-scale",
   "dev-frame-panel-tuning-selects",
   "dev-frame-dialog-unsaved-guard",
+  "dev-frame-dialog-unsaved-guard-many",
   "dev-frame-dialog-save",
   "dev-frame-toast",
   "dev-frame-entry-cloning",
@@ -145,6 +146,14 @@ describe("/dev", () => {
 
     // Nothing portalled: no real modal is open over the gallery.
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("shows the guard's other half: the question it asks for several elements", async () => {
+    await renderGallery();
+
+    const many = screen.getByTestId("dev-frame-dialog-unsaved-guard-many");
+    expect(within(many).getByText("Save changes?")).toBeInTheDocument();
+    expect(within(many).getByText(/You have unsaved changes on 2 elements\./)).toBeInTheDocument();
   });
 
   it("takes the Save dialog's meta straight from the catalog", async () => {

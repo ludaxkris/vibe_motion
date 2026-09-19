@@ -7,8 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Trigger } from "@/lib/api-client";
 import { ALL_CATEGORIES, getCatalogEntryAt } from "@/lib/catalog";
 import {
-  selectSelectedElementUnsaved,
-  selectSelectedVmId,
+  selectDirtyVmIdCount,
+  selectGuardedVmId,
   useEditorStore,
   useUnsaved,
 } from "@/lib/store";
@@ -153,13 +153,12 @@ export function ControlPanel({ currentVersionLabel }: { currentVersionLabel?: st
   // Guard-on-element-click and guard-on-Export/Restore are later phases; this
   // is the tab switch only.
   //
-  // The dialog names an element only when *that* element is what changed:
-  // with the unsaved work sitting on some other element, "Save changes to
-  // vm-2?" would point at the wrong thing, so the generic question is the
-  // honest one.
-  const selectedVmId = useEditorStore(selectSelectedVmId);
-  const selectedElementUnsaved = useEditorStore(selectSelectedElementUnsaved);
-  const guardedVmId = selectedElementUnsaved ? selectedVmId : null;
+  // Discard reverts the *whole* draft (that is what switching to History or
+  // Export requires), so the dialog only names an element when that element's
+  // changes are all there are to lose — otherwise it asks the generic question
+  // and counts them. `selectGuardedVmId` is where both conditions live.
+  const guardedVmId = useEditorStore(selectGuardedVmId);
+  const unsavedElementCount = useEditorStore(selectDirtyVmIdCount);
   const guardedAssignment = guardedVmId === null ? undefined : draftState[guardedVmId];
   const guardedAnimationName = guardedAssignment
     ? (getCatalogEntryAt(guardedAssignment.catalogVersion, guardedAssignment.animationId)?.name ??
@@ -236,6 +235,7 @@ export function ControlPanel({ currentVersionLabel }: { currentVersionLabel?: st
         open={pendingTab !== null}
         elementLabel={guardedVmId ?? undefined}
         animationName={guardedAnimationName}
+        unsavedElementCount={unsavedElementCount}
         currentVersionLabel={currentVersionLabel}
         onDiscard={() => {
           revertDraft();

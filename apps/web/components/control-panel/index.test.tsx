@@ -211,6 +211,44 @@ describe("ControlPanel · unsaved guard", () => {
     expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
   });
 
+  it("names the element only when a discard would take nothing else with it", () => {
+    makeDirty();
+    render(<ControlPanel currentVersionLabel="v5" />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    const dialog = screen.getByRole("dialog", { name: "Save changes to vm-1?" });
+    expect(within(dialog).getByText("Fade In Up")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(useEditorStore.getState().draftState).toEqual({});
+  });
+
+  it("counts the elements instead of naming one when two have unsaved changes", () => {
+    // The reviewer's repro: animate vm-1, then animate vm-2 and leave vm-2
+    // selected. "Save changes to vm-2?" would point at one of the two things
+    // Discard is about to throw away.
+    makeDirty();
+    const store = useEditorStore.getState();
+    store.setSelectedVmId("vm-2");
+    store.dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    store.dispatchPanel({ type: "PICK", animationId: "pulse" });
+    render(<ControlPanel currentVersionLabel="v5" />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Save changes?" });
+    expect(
+      within(dialog).getByText(/You have unsaved changes on 2 elements\./),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText("Pulse")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    // Both of them, which is exactly what the copy said.
+    expect(useEditorStore.getState().draftState).toEqual({});
+  });
+
   it("asks generically when the unsaved work is on some other element", () => {
     makeDirty();
     // The selection moves to an element that is exactly as it was saved

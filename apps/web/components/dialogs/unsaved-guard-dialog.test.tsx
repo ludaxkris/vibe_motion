@@ -36,6 +36,28 @@ describe("UnsavedGuardDialogContent", () => {
     );
   });
 
+  it("counts the elements a discard would revert when it cannot name one", () => {
+    // Discard reverts the whole draft, so the copy has to own up to its reach.
+    render(
+      <UnsavedGuardDialogContent
+        unsavedElementCount={2}
+        currentVersionLabel="v5"
+        {...callbacks()}
+      />,
+    );
+
+    expect(screen.getByText("Save changes?")).toBeInTheDocument();
+    expect(screen.getByText(/You have unsaved changes on 2 elements\./)).toHaveTextContent(
+      "discard to leave v5 as is.",
+    );
+  });
+
+  it("leaves the count out when a single element's changes are all there is", () => {
+    render(<UnsavedGuardDialogContent unsavedElementCount={1} {...callbacks()} />);
+
+    expect(screen.getByText(/You have unsaved changes\. Save to keep them/)).toBeInTheDocument();
+  });
+
   it("sets the title at 15/600 and the body in 13px muted ink", () => {
     render(<UnsavedGuardDialogContent elementLabel="h1" {...callbacks()} />);
 

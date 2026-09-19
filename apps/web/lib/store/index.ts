@@ -7,8 +7,9 @@
  * bridge client both read.
  *
  * `selectedVmId` and `unsaved` are *derived*, not stored: `selectedVmId` is a
- * pure function of `panel`, and `unsaved` a deep comparison of `draftState`
- * against `currentVersionState`. Mirroring them as their own state fields
+ * pure function of `panel`, and `unsaved` (like the set of elements it is the
+ * emptiness of) a deep comparison of `draftState` against
+ * `currentVersionState`. Mirroring them as their own state fields
  * would require every action that can change either input to remember to
  * recompute them — `currentVersionState` will get its own writers in Phase 6
  * (save/load/restore) that have no reason to know about `unsaved` — so
@@ -97,36 +98,55 @@ function assignmentsEqual(a: Assignment | undefined, b: Assignment | undefined):
   return aKeys.every((key) => a.params[key] === b.params[key]);
 }
 
-/** Deep-equal for two `EditorStateMap`s (plain `vmId -> Assignment` maps of strings). */
-function statesEqual(a: EditorStateMap, b: EditorStateMap): boolean {
-  const aKeys = Object.keys(a);
-  const bKeys = Object.keys(b);
-  if (aKeys.length !== bKeys.length) return false;
-  return aKeys.every((key) => assignmentsEqual(a[key], b[key]));
-}
-
 /** `data-vm-id` of the element selected in the preview iframe, or null when nothing is selected. */
 export function selectSelectedVmId(state: EditorState): string | null {
   return state.panel.status === "idle" ? null : state.panel.vmId;
 }
 
+/**
+ * Every element the draft has unsaved changes on: one the draft animated, one
+ * the draft dropped, or one whose assignment moved. Derived on demand from the
+ * two maps rather than mirrored as state, for the reason in the module header.
+ *
+ * It allocates, so components read one of the scalar selectors below rather
+ * than subscribing to this directly (Zustand compares snapshots by identity,
+ * and a fresh array every render is a fresh snapshot every render).
+ */
+export function selectDirtyVmIds(state: EditorState): string[] {
+  const vmIds = new Set([
+    ...Object.keys(state.draftState),
+    ...Object.keys(state.currentVersionState),
+  ]);
+  return [...vmIds].filter(
+    (vmId) => !assignmentsEqual(state.draftState[vmId], state.currentVersionState[vmId]),
+  );
+}
+
+/** How many elements have unsaved changes — what the guard's generic copy counts. */
+export function selectDirtyVmIdCount(state: EditorState): number {
+  return selectDirtyVmIds(state).length;
+}
+
 /** True when `draftState` differs from `currentVersionState`. */
 export function selectUnsaved(state: EditorState): boolean {
-  return !statesEqual(state.draftState, state.currentVersionState);
+  return selectDirtyVmIds(state).length > 0;
 }
 
 /**
- * True when the *selected* element's own assignment differs from the saved
- * version's — which is a narrower question than `selectUnsaved`.
+ * The one element the unsaved guard is allowed to name, or null for the
+ * generic question (`docs/design/README.md` "3. Dialogs & toast").
  *
- * The unsaved guard asks it before naming an element: "Save changes to h1?"
- * is a lie when h1 is exactly as it was saved and the unsaved work is on some
- * other element (`docs/design/README.md` "3. Dialogs & toast").
+ * Two conditions, and both matter. The element has to be the *selected* one,
+ * or "Save changes to h1?" points at whatever the user last clicked rather
+ * than at what they changed. And it has to be the *only* dirty one, because
+ * Discard calls `revertDraft()`, which throws the whole draft away — naming
+ * one element while silently reverting three would declare a smaller loss
+ * than the button delivers.
  */
-export function selectSelectedElementUnsaved(state: EditorState): boolean {
-  const vmId = selectSelectedVmId(state);
-  if (vmId === null) return false;
-  return !assignmentsEqual(state.draftState[vmId], state.currentVersionState[vmId]);
+export function selectGuardedVmId(state: EditorState): string | null {
+  const dirty = selectDirtyVmIds(state);
+  if (dirty.length !== 1) return null;
+  return dirty[0] === selectSelectedVmId(state) ? dirty[0] : null;
 }
 
 /**

@@ -336,6 +336,23 @@ export function DevGallery() {
         </Frame>
 
         <Frame
+          slug="dialog-unsaved-guard-many"
+          title="Unsaved guard · more than one element"
+          note="Discard reverts the whole draft, so past one element the question stops naming one and counts them."
+          bodyClassName="w-[440px]"
+        >
+          <StaticDialog className={UNSAVED_GUARD_DIALOG_WIDTH}>
+            <UnsavedGuardDialogContent
+              unsavedElementCount={2}
+              currentVersionLabel="v5"
+              onDiscard={() => undefined}
+              onKeepEditing={() => undefined}
+              saveDisabled
+            />
+          </StaticDialog>
+        </Frame>
+
+        <Frame
           slug="dialog-save"
           title="Save dialog · 420px"
           note="Label and rows come from summariseDiff over a sample saved state and draft."

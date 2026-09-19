@@ -13,12 +13,21 @@ const SAVE_NOTE = "Saving arrives with version history.";
 
 export type UnsavedGuardDialogContentProps = {
   /**
-   * The selected element's label — its `data-vm-id` until the bridge sends a
-   * tag and text (Phase 4). Absent when nothing is selected.
+   * The element to name — its `data-vm-id` until the bridge sends a tag and
+   * text (Phase 4).
+   *
+   * Only ever set when that element's changes are *all* the unsaved changes
+   * there are: Discard reverts the whole draft, so a named question has to
+   * describe everything it would revert (`lib/store`'s `selectGuardedVmId`).
    */
   elementLabel?: string;
   /** The animation on that element, when it has one. */
   animationName?: string;
+  /**
+   * How many elements have unsaved changes. Counted out loud in the generic
+   * copy from two up, so the question is never smaller than the Discard.
+   */
+  unsavedElementCount?: number;
   /** "v5": the version a discard leaves standing. */
   currentVersionLabel?: string;
   onDiscard: () => void;
@@ -39,6 +48,7 @@ export type UnsavedGuardDialogContentProps = {
 export function UnsavedGuardDialogContent({
   elementLabel,
   animationName,
+  unsavedElementCount,
   currentVersionLabel,
   onDiscard,
   onKeepEditing,
@@ -55,6 +65,13 @@ export function UnsavedGuardDialogContent({
     ? `discard to leave ${currentVersionLabel} as is.`
     : "discard to leave the saved version as is.";
 
+  // One element's worth of changes needs no arithmetic; from two up the
+  // sentence says how far the Discard reaches.
+  const changes =
+    unsavedElementCount !== undefined && unsavedElementCount > 1
+      ? `You have unsaved changes on ${unsavedElementCount} elements.`
+      : "You have unsaved changes.";
+
   return (
     <div data-testid="unsaved-guard-dialog" className="flex flex-col gap-3">
       <p id={headingId} className="text-lg leading-[1.3] font-semibold">
@@ -69,7 +86,7 @@ export function UnsavedGuardDialogContent({
           </>
         ) : (
           <>
-            You have unsaved changes. Save to keep them as a new version, or {leaves}
+            {changes} Save to keep them as a new version, or {leaves}
           </>
         )}
       </p>
