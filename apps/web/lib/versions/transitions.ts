@@ -5,8 +5,9 @@
  *
  * While viewing, `draftState` holds the *viewed* version's state (the iframe
  * always shows `draftState`) and `currentVersionState` still holds the real
- * current one, so "Back to v5" needs no fetch. `selectUnsaved` is therefore
- * meaningless while `mode === "viewing"`; callers check mode first.
+ * current one, so "Back to v5" needs no fetch. A raw draft-vs-current
+ * comparison would be meaningless while `mode === "viewing"` — `isDirty`
+ * accounts for that, so callers no longer need to check mode first.
  */
 import type { EditorStateMap, Version } from "@/lib/api-client";
 import { applyDiff, computeDiff, isEmptyDiff } from "./diff";
@@ -27,12 +28,21 @@ export function loadVersion(_slice: VersionSlice, versionId: string, state: Edit
   return { draftState: { ...state }, currentVersionState: state, mode: "editing", currentVersionId: versionId, viewingVersionId: null };
 }
 
+/** False while viewing (draftState is a viewer buffer then); otherwise whether the draft differs from the current version. */
+export function isDirty(slice: VersionSlice): boolean {
+  if (slice.mode === "viewing") return false;
+  return !isEmptyDiff(computeDiff(slice.currentVersionState, slice.draftState));
+}
+
 export function markSaved(slice: VersionSlice, version: Version): VersionSlice {
+  if (slice.mode === "viewing") {
+    throw new Error("markSaved while viewing: exit viewing first");
+  }
   return { ...slice, currentVersionState: { ...slice.draftState }, currentVersionId: version.id };
 }
 
 export function enterViewing(slice: VersionSlice, versionId: string, state: EditorStateMap): VersionSlice {
-  if (slice.mode === "editing" && !isEmptyDiff(computeDiff(slice.currentVersionState, slice.draftState))) {
+  if (isDirty(slice)) {
     throw new Error("enterViewing with unsaved changes: run the guard first");
   }
   return { ...slice, draftState: { ...state }, mode: "viewing", viewingVersionId: versionId };
