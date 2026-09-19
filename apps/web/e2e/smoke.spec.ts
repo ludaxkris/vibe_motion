@@ -96,6 +96,16 @@ test("help page plays the whole catalog", async ({ page }) => {
 
   // The note is in the HTML for everyone; only the media query shows it.
   await expect(page.getByText("Your system asks for reduced motion")).toBeHidden();
+
+  // `shimmer` slides a gradient across the block, and that gradient comes from
+  // the catalog entry's `baseStyles` — drop those and the demo is a still
+  // rectangle. Last, because it filters the grid down.
+  await page.getByRole("searchbox", { name: "Search animations" }).fill("shimmer");
+  await expect(cards).toHaveCount(1);
+  await expect(page.getByTestId("catalog-card-demo").first()).not.toHaveCSS(
+    "background-image",
+    "none",
+  );
 });
 
 test.describe("when the reader asks for less motion", () => {

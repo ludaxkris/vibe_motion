@@ -13,6 +13,8 @@
 import type { CatalogEntry, CatalogParam } from "animation-catalog";
 import { keyframesName } from "animation-catalog";
 
+import { parseDeclarations } from "./declarations";
+
 /**
  * Catalog param keys that map to a standard `animation-*` longhand instead of
  * a `--vm-*` custom property. Mirrors `packages/animation-catalog/schema.json`
@@ -57,6 +59,21 @@ export function resolveParams(
   return resolved;
 }
 
+/**
+ * The entry's `baseStyles` as a property map, or `{}` when it declares none.
+ *
+ * These are not decoration: `shimmer` and `underline-sweep` animate
+ * `background-position`/`background-size` over a `background-image` only
+ * `baseStyles` supplies, and `bounce` (`transform-origin`) and `flip-in-x`
+ * (`backface-visibility`) render from the wrong pivot or the wrong face
+ * without them. An assignment that drops them is not the animation the
+ * catalog describes, so they travel with it — into the editor's demos, the
+ * help page and the export alike.
+ */
+export function baseStyleDeclarations(entry: CatalogEntry): Record<string, string> {
+  return entry.baseStyles ? parseDeclarations(entry.baseStyles) : {};
+}
+
 /** `@keyframes <name> { <entry.keyframes> }`, where `<name>` is `keyframesName(entry.id, catalogVersion)`. */
 export function keyframesCss(entry: CatalogEntry, catalogVersion: string): string {
   return `@keyframes ${keyframesName(entry.id, catalogVersion)} { ${entry.keyframes} }`;
@@ -64,9 +81,13 @@ export function keyframesCss(entry: CatalogEntry, catalogVersion: string): strin
 
 /**
  * A flat CSS property -> value map for assigning `entry` (resolved against
- * `params`) to an element: `animation-name`, the standard `animation-*`
- * longhand for every standard-key param, and one `--vm-*` custom property for
- * every param that declares `cssVar`.
+ * `params`) to an element: the entry's own `baseStyles`, `animation-name`, the
+ * standard `animation-*` longhand for every standard-key param, and one
+ * `--vm-*` custom property for every param that declares `cssVar`.
+ *
+ * `baseStyles` go down first, so an assignment's own `animation-*` and `--vm-*`
+ * win any conflict: what the user tuned beats what the catalog set as the
+ * entry's floor.
  *
  * Throws if a param has neither a standard mapping nor a `cssVar` — per the
  * catalog schema every param must be one or the other, so this is a catalog
@@ -79,6 +100,7 @@ export function assignmentStyle(
 ): Record<string, string> {
   const resolved = resolveParams(entry, params);
   const style: Record<string, string> = {
+    ...baseStyleDeclarations(entry),
     "animation-name": keyframesName(entry.id, catalogVersion),
   };
 

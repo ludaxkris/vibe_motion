@@ -5,11 +5,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   assignmentStyle,
+  baseStyleDeclarations,
   inlineStyle,
   keyframesCss,
   resolveParams,
   runtimeStylesheet,
 } from "@/lib/runtime-css";
+import { parseDeclarations } from "@/lib/runtime-css/declarations";
 
 /** Every (entry, version) pair across every published catalog version. */
 const allEntries: Array<{ version: string; entry: CatalogEntry }> = CATALOG_VERSIONS.flatMap(
@@ -61,6 +63,46 @@ describe("keyframesCss", () => {
   });
 });
 
+describe("baseStyleDeclarations", () => {
+  it.each(allEntries)(
+    "parses every declaration $entry.id ($version) declares in baseStyles",
+    ({ entry }) => {
+      const declarations = baseStyleDeclarations(entry);
+
+      if (!entry.baseStyles) {
+        expect(declarations).toEqual({});
+        return;
+      }
+
+      // Every `prop: value;` fragment the catalog wrote is present, and the
+      // values are carried through verbatim (commas inside `linear-gradient()`
+      // and `var()` references included).
+      const fragments = entry.baseStyles.split(";").filter((part) => part.trim());
+      expect(Object.keys(declarations)).toHaveLength(fragments.length);
+      for (const fragment of fragments) {
+        const colon = fragment.indexOf(":");
+        expect(declarations[fragment.slice(0, colon).trim()]).toBe(
+          fragment.slice(colon + 1).trim(),
+        );
+      }
+    },
+  );
+
+  it("carries shimmer's background-image, which its keyframes have nothing to slide without", () => {
+    const entry = CATALOGS[CURRENT_VERSION].entries.find((e) => e.id === "shimmer")!;
+    const declarations = baseStyleDeclarations(entry);
+
+    expect(declarations["background-image"]).toContain("linear-gradient(");
+    expect(declarations["background-size"]).toBe("200% 100%");
+  });
+
+  it("is empty for an entry with no baseStyles", () => {
+    const entry = CATALOGS[CURRENT_VERSION].entries.find((e) => e.id === "fade-in")!;
+    expect(entry.baseStyles).toBeUndefined();
+    expect(baseStyleDeclarations(entry)).toEqual({});
+  });
+});
+
 describe("assignmentStyle", () => {
   it.each(allEntries)(
     "covers every param of $entry.id ($version) with a standard property or a --vm- custom property",
@@ -69,8 +111,11 @@ describe("assignmentStyle", () => {
 
       expect(style["animation-name"]).toBe(keyframesName(entry.id, version));
 
-      // animation-name plus exactly one declaration per catalog param.
-      expect(Object.keys(style)).toHaveLength(1 + entry.params.length);
+      // animation-name, one declaration per catalog param, plus whatever the
+      // entry's baseStyles declare.
+      expect(Object.keys(style)).toHaveLength(
+        1 + entry.params.length + Object.keys(baseStyleDeclarations(entry)).length,
+      );
 
       for (const param of entry.params) {
         if (param.cssVar) {
@@ -106,6 +151,33 @@ describe("assignmentStyle", () => {
     const changedProps = Object.keys(baseline).filter((prop) => baseline[prop] !== overridden[prop]);
     expect(changedProps).toHaveLength(1);
     expect(overridden[changedProps[0]]).toBe("OVERRIDDEN-VALUE");
+  });
+
+  it.each(allEntries.filter(({ entry }) => entry.baseStyles))(
+    "carries $entry.id ($version)'s baseStyles into the assignment",
+    ({ version, entry }) => {
+      const style = assignmentStyle(entry, version);
+      for (const [property, value] of Object.entries(parseDeclarations(entry.baseStyles ?? ""))) {
+        expect(style[property]).toBe(value);
+      }
+    },
+  );
+
+  it("lets the assignment's own declarations win over a baseStyles conflict", () => {
+    const entry: CatalogEntry = {
+      ...sampleEntry,
+      baseStyles: "animation-duration: 1s; --vm-distance: 1px; transform-origin: top;",
+      params: [
+        { key: "duration", type: "duration", default: "600ms" },
+        { key: "distance", type: "length", default: "24px", cssVar: "--vm-distance" },
+      ],
+    };
+    const style = assignmentStyle(entry, sampleVersion);
+
+    expect(style["animation-duration"]).toBe("600ms");
+    expect(style["--vm-distance"]).toBe("24px");
+    // …and a declaration the assignment has no opinion about is kept.
+    expect(style["transform-origin"]).toBe("top");
   });
 
   it("throws for a param with neither a standard mapping nor a cssVar", () => {
@@ -162,6 +234,16 @@ describe("inlineStyle", () => {
   it("carries overrides through, exactly like assignmentStyle", () => {
     const style = inlineStyle(sampleEntry, sampleVersion, { duration: "1200ms" });
     expect(style.animationDuration).toBe("1200ms");
+  });
+
+  it("camel-cases a baseStyles property too, so React really applies it", () => {
+    const entry = CATALOGS[CURRENT_VERSION].entries.find((e) => e.id === "shimmer")!;
+    const style = inlineStyle(entry, CURRENT_VERSION);
+
+    expect(style.backgroundImage).toContain("linear-gradient(");
+    expect(style.backgroundSize).toBe("200% 100%");
+    expect(style.backgroundRepeat).toBe("no-repeat");
+    expect(style).not.toHaveProperty("background-image");
   });
 
   it("keeps the same key count as assignmentStyle for every catalog entry", () => {
