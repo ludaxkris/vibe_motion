@@ -2,7 +2,6 @@
 
 import { useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { ElementTag } from "@/components/ui/element-tag";
 import { Input } from "@/components/ui/input";
@@ -17,6 +16,7 @@ import {
 } from "@/lib/catalog";
 
 import { AnimationCard } from "./animation-card";
+import { PanelBackButton } from "./panel-back-button";
 import { PanelCard, PanelSection } from "./panel-card";
 
 /**
@@ -132,14 +132,7 @@ export function ChoosingPanel({
       <style>{keyframes}</style>
 
       <PanelSection className="h-11 flex-row items-center gap-2 py-0">
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="Back"
-          glyph="‹"
-          onClick={onBack}
-          className="-ml-1.5 text-lg"
-        />
+        <PanelBackButton onClick={onBack} />
         <span className="flex-1 text-md font-semibold">Choose animation</span>
         <ElementTag size="sm">{vmId}</ElementTag>
       </PanelSection>

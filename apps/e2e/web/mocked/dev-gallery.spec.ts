@@ -15,6 +15,8 @@ test("the /dev gallery renders every state at the handoff's widths", async ({ pa
   // actually measured: panel 320, unsaved guard 380, Save dialog 420.
   const widths: [string, string, number][] = [
     ["dev-frame-panel-tuning-distance", "[data-dev-frame-body]", 320],
+    ["dev-frame-panel-tuning-from-auto", "[data-dev-frame-body]", 320],
+    ["dev-frame-panel-auto-result", "[data-dev-frame-body]", 320],
     ["dev-frame-dialog-unsaved-guard", "[data-slot='dialog-card']", 380],
     ["dev-frame-dialog-save", "[data-slot='dialog-card']", 420],
   ];
@@ -32,6 +34,8 @@ test("the /dev gallery renders every state at the handoff's widths", async ({ pa
     "dev-frame-panel-choosing-empty-search",
     "dev-frame-panel-tuning-scale",
     "dev-frame-panel-tuning-selects",
+    "dev-frame-panel-tuning-from-auto",
+    "dev-frame-panel-auto-result",
     "dev-frame-dialog-unsaved-guard-many",
     "dev-frame-toast",
     "dev-frame-entry-cloning",

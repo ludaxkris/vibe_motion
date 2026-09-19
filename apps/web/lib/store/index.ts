@@ -88,7 +88,7 @@ export const initialEditorState: EditorState = {
 
 /** `data-vm-id` of the element selected in the preview iframe, or null when nothing is selected. */
 export function selectSelectedVmId(state: EditorState): string | null {
-  return state.panel.status === "idle" ? null : state.panel.vmId;
+  return "vmId" in state.panel ? state.panel.vmId : null;
 }
 
 /**

@@ -13,6 +13,7 @@ import {
   useUnsaved,
 } from "@/lib/store";
 
+import { AutoResultPanel } from "./auto-result";
 import { ChoosingPanel } from "./choosing";
 import { IdlePanel } from "./idle";
 import { PanelCard, PanelSection } from "./panel-card";
@@ -69,7 +70,15 @@ function ChoosingSection({ vmId }: { vmId: string }) {
  * version never had would write a value that version cannot validate
  * (CLAUDE.md rule 9). That is also why the assignment is read before the entry.
  */
-function TuningSection({ vmId, animationId }: { vmId: string; animationId: string }) {
+function TuningSection({
+  vmId,
+  animationId,
+  onBack,
+}: {
+  vmId: string;
+  animationId: string;
+  onBack?: () => void;
+}) {
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
   const setDraftAssignment = useEditorStore((state) => state.setDraftAssignment);
   const updateDraftParam = useEditorStore((state) => state.updateDraftParam);
@@ -108,7 +117,10 @@ function TuningSection({ vmId, animationId }: { vmId: string; animationId: strin
       assignment={assignment}
       onTriggerChange={(trigger: Trigger) => setDraftAssignment(vmId, { ...assignment, trigger })}
       onParamChange={(key, value) => updateDraftParam(vmId, key, value)}
-      onChangeAnimation={() => dispatchPanel({ type: "BACK" })}
+      // CHANGE, not BACK: BACK means "up one level", which from a tuning panel
+      // opened from the result list is the list, not the picker.
+      onChangeAnimation={() => dispatchPanel({ type: "CHANGE" })}
+      onBack={onBack}
       onRemove={() => {
         removeDraftAssignment(vmId);
         dispatchPanel({ type: "CLEAR" });
@@ -123,8 +135,12 @@ const TABS = [
   { value: "export", label: "Export" },
 ] as const;
 
+/** Stable: the `auto` state has no rows until Phase 5 Track B derives them. */
+const NO_ROWS: never[] = [];
+
 /**
- * Control Panel: idle -> selected -> choosing -> tuning, driven by the
+ * Control Panel: idle -> selected -> choosing -> tuning (+ the `auto` result
+ * list), driven by the
  * `panel` state machine (`lib/store/panel-machine.ts`), under the handoff's
  * folder tabs (`docs/design/README.md` "2. Editor").
  *
@@ -142,6 +158,13 @@ export function ControlPanel({ currentVersionLabel }: { currentVersionLabel?: st
   const setSelectedVmId = useEditorStore((state) => state.setSelectedVmId);
   const revertDraft = useEditorStore((state) => state.revertDraft);
   const unsaved = useUnsaved();
+
+  // "‹" on selected/tuning exists only for an element opened from the result
+  // list; everywhere else there is no level above to go back up to.
+  const backToResults =
+    "returnTo" in panel && panel.returnTo === "auto"
+      ? () => dispatchPanel({ type: "BACK" })
+      : undefined;
 
   // The tab is controlled so an unsaved draft can hold the switch: the guard
   // parks the requested tab here and `onValueChange` is simply not honoured
@@ -201,17 +224,45 @@ export function ControlPanel({ currentVersionLabel }: { currentVersionLabel?: st
             {panel.status === "idle" && (
               <IdlePanel assignments={draftState} onSelectElement={setSelectedVmId} />
             )}
+            {/* Unreachable in the app until Phase 5 Track B (Tasks 4-5): nothing
+                dispatches AUTO_DONE yet, and the rows, prompt, Regenerate,
+                Replay all and Remove all need store state (`lastRun`,
+                `generated`, `prompt`) that lands there. What needs no new
+                state is already wired: row -> select, "‹" -> AUTO_CLOSE. The
+                rest is disabled, so no control looks live and does nothing. */}
+            {panel.status === "auto" && (
+              <AutoResultPanel
+                rows={NO_ROWS}
+                prompt=""
+                skippedCount={0}
+                truncated={false}
+                consideredLimit={0}
+                onSelectRow={setSelectedVmId}
+                onRegenerate={() => undefined}
+                onReplayAll={() => undefined}
+                onRemoveAll={() => undefined}
+                onClose={() => dispatchPanel({ type: "AUTO_CLOSE" })}
+                regenerateDisabled
+                replayDisabled
+                removeAllDisabled
+              />
+            )}
             {panel.status === "selected" && (
               <SelectedPanel
                 vmId={panel.vmId}
                 onChooseCustom={() => dispatchPanel({ type: "CHOOSE_CUSTOM" })}
+                onBack={backToResults}
               />
             )}
             {panel.status === "choosing" && (
               <ChoosingSection key={panel.vmId} vmId={panel.vmId} />
             )}
             {panel.status === "tuning" && (
-              <TuningSection vmId={panel.vmId} animationId={panel.animationId} />
+              <TuningSection
+                vmId={panel.vmId}
+                animationId={panel.animationId}
+                onBack={backToResults}
+              />
             )}
           </TabsContent>
 

@@ -19,6 +19,7 @@ import { Slider } from "@/components/ui/slider";
 import type { Assignment, CatalogEntry, CatalogParam, Trigger } from "@/lib/api-client";
 import { easingCurvePath } from "@/lib/easing-curve";
 
+import { PanelBackButton } from "./panel-back-button";
 import { PanelCard, PanelSection } from "./panel-card";
 import { paramControl, paramLabel } from "./param-control";
 import { joinValue, splitValue } from "./param-value";
@@ -199,6 +200,7 @@ export function TuningPanel({
   onParamChange,
   onChangeAnimation,
   onRemove,
+  onBack,
 }: {
   vmId: string;
   entry: CatalogEntry;
@@ -208,11 +210,19 @@ export function TuningPanel({
   /** The "Change" link: back to the picker. */
   onChangeAnimation?: () => void;
   onRemove?: () => void;
+  /**
+   * "‹", up one level. Rendered only when passed: tuning has somewhere to go
+   * back to only when it was opened from the auto-generate result list.
+   */
+  onBack?: () => void;
 }) {
   return (
     <PanelCard data-testid="panel-tuning">
       <PanelSection>
         <div className="flex min-w-0 items-center gap-2">
+          {onBack ? (
+            <PanelBackButton onClick={onBack} />
+          ) : null}
           <ElementTag>{vmId}</ElementTag>
           <span className="min-w-0 flex-1 truncate text-md font-semibold">{entry.name}</span>
           <Button variant="link" className="text-sm" onClick={onChangeAnimation}>

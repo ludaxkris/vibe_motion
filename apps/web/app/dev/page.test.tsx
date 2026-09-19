@@ -17,6 +17,8 @@ const FRAMES = [
   "dev-frame-panel-tuning-distance",
   "dev-frame-panel-tuning-scale",
   "dev-frame-panel-tuning-selects",
+  "dev-frame-panel-tuning-from-auto",
+  "dev-frame-panel-auto-result",
   "dev-frame-dialog-unsaved-guard",
   "dev-frame-dialog-unsaved-guard-many",
   "dev-frame-dialog-save",
@@ -59,6 +61,34 @@ describe("/dev", () => {
     expect(notFound).not.toHaveBeenCalled();
   });
 
+  it("shows the ‹ control only on the tuning frame opened from the result list", async () => {
+    await renderGallery();
+
+    const fromAuto = screen.getByTestId("dev-frame-panel-tuning-from-auto");
+    expect(within(fromAuto).getByRole("button", { name: "Back" })).toBeInTheDocument();
+
+    const plain = screen.getByTestId("dev-frame-panel-tuning-distance");
+    expect(within(plain).queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+  });
+
+  it("takes the result list's names and timings straight from the catalog", async () => {
+    await renderGallery();
+    const { getCatalogEntry, resolveCatalogParams } = await import("@/lib/catalog");
+
+    const entry = getCatalogEntry("fade-in-up");
+    if (!entry) throw new Error("fade-in-up has left the catalog");
+    const params = resolveCatalogParams(entry);
+
+    const rows = within(screen.getByTestId("dev-frame-panel-auto-result")).getAllByTestId(
+      "auto-result-row",
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toHaveTextContent(entry.name);
+    expect(rows[0]).toHaveTextContent(`load · ${params.duration} · ${params.delay}`);
+    // Exactly one row has been tuned by hand since the run.
+    expect(rows.filter((row) => within(row).queryByText("edited"))).toHaveLength(1);
+  });
+
   it("shows each Control Panel state inside its own 320px frame", async () => {
     await renderGallery();
 
@@ -71,6 +101,8 @@ describe("/dev", () => {
       ["dev-frame-panel-tuning-distance", "panel-tuning"],
       ["dev-frame-panel-tuning-scale", "panel-tuning"],
       ["dev-frame-panel-tuning-selects", "panel-tuning"],
+      ["dev-frame-panel-tuning-from-auto", "panel-tuning"],
+      ["dev-frame-panel-auto-result", "panel-auto-result"],
     ];
 
     for (const [frameId, panelId] of panels) {

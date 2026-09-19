@@ -7,7 +7,20 @@ const selectedA: PanelState = { status: "selected", vmId: "a" };
 const choosingA: PanelState = { status: "choosing", vmId: "a" };
 const tuningA: PanelState = { status: "tuning", vmId: "a", animationId: "fade-in" };
 
+const auto: PanelState = { status: "auto" };
+const selectedAFromAuto: PanelState = { status: "selected", vmId: "a", returnTo: "auto" };
+const choosingAFromAuto: PanelState = { status: "choosing", vmId: "a", returnTo: "auto" };
+const tuningAFromAuto: PanelState = {
+  status: "tuning",
+  vmId: "a",
+  animationId: "fade-in",
+  returnTo: "auto",
+};
+
 const events: Record<string, PanelEvent> = {
+  AUTO_DONE: { type: "AUTO_DONE" },
+  AUTO_CLOSE: { type: "AUTO_CLOSE" },
+  CHANGE: { type: "CHANGE" },
   SELECT_A: { type: "SELECT", vmId: "a" },
   SELECT_B: { type: "SELECT", vmId: "b" },
   SELECT_A_WITH_DRAFT: { type: "SELECT", vmId: "a", draftAnimationId: "fade-in" },
@@ -57,6 +70,45 @@ describe("transition", () => {
     it("REVERT carrying a draft is still a no-op (nothing is selected)", () => {
       expect(transition(idle, events.REVERT_WITH_DRAFT)).toBe(idle);
     });
+    it("AUTO_DONE -> auto", () => {
+      expect(transition(idle, events.AUTO_DONE)).toEqual(auto);
+    });
+    it("AUTO_CLOSE is a no-op", () => {
+      expect(transition(idle, events.AUTO_CLOSE)).toBe(idle);
+    });
+    it("CHANGE is a no-op", () => {
+      expect(transition(idle, events.CHANGE)).toBe(idle);
+    });
+  });
+
+  describe("from auto", () => {
+    it("SELECT (no draft) -> selected, remembering the list", () => {
+      expect(transition(auto, events.SELECT_A)).toEqual(selectedAFromAuto);
+    });
+    it("SELECT (with draft) -> tuning, remembering the list", () => {
+      expect(transition(auto, events.SELECT_A_WITH_DRAFT)).toEqual(tuningAFromAuto);
+    });
+    it("AUTO_CLOSE -> idle", () => {
+      expect(transition(auto, events.AUTO_CLOSE)).toEqual(idle);
+    });
+    it("AUTO_DONE is a no-op (identity — a Regenerate lands where it already is)", () => {
+      expect(transition(auto, events.AUTO_DONE)).toBe(auto);
+    });
+    it("DESELECT is a no-op (identity — Esc must not throw the list away)", () => {
+      expect(transition(auto, events.DESELECT)).toBe(auto);
+    });
+    it("REVERT -> idle (the generated assignments are gone)", () => {
+      expect(transition(auto, events.REVERT)).toEqual(idle);
+    });
+    it("REVERT carrying a draft -> idle all the same (no element is in play)", () => {
+      expect(transition(auto, events.REVERT_WITH_DRAFT)).toEqual(idle);
+    });
+    it.each(["BACK", "BACK_WITH_DRAFT", "PICK", "CHOOSE_CUSTOM", "CLEAR", "CHANGE"])(
+      "%s is a no-op (identity)",
+      (name) => {
+        expect(transition(auto, events[name])).toBe(auto);
+      },
+    );
   });
 
   describe("from selected { vmId: a }", () => {
@@ -200,6 +252,143 @@ describe("transition", () => {
     });
   });
 
+  describe("AUTO_DONE while an element is in play", () => {
+    it("selected gains returnTo without moving", () => {
+      expect(transition(selectedA, events.AUTO_DONE)).toEqual(selectedAFromAuto);
+    });
+    it("choosing gains returnTo without moving", () => {
+      expect(transition(choosingA, events.AUTO_DONE)).toEqual(choosingAFromAuto);
+    });
+    it("tuning gains returnTo without moving", () => {
+      expect(transition(tuningA, events.AUTO_DONE)).toEqual(tuningAFromAuto);
+    });
+    it("is a no-op (identity) on a state that already returns to the list", () => {
+      expect(transition(selectedAFromAuto, events.AUTO_DONE)).toBe(selectedAFromAuto);
+      expect(transition(choosingAFromAuto, events.AUTO_DONE)).toBe(choosingAFromAuto);
+      expect(transition(tuningAFromAuto, events.AUTO_DONE)).toBe(tuningAFromAuto);
+    });
+  });
+
+  describe("AUTO_CLOSE", () => {
+    it("is a no-op (identity) from selected, choosing and tuning, with or without returnTo", () => {
+      for (const state of [
+        selectedA,
+        choosingA,
+        tuningA,
+        selectedAFromAuto,
+        choosingAFromAuto,
+        tuningAFromAuto,
+      ]) {
+        expect(transition(state, events.AUTO_CLOSE)).toBe(state);
+      }
+    });
+  });
+
+  describe("CHANGE", () => {
+    it("tuning -> choosing", () => {
+      expect(transition(tuningA, events.CHANGE)).toEqual(choosingA);
+      expect(transition(tuningA, events.CHANGE)).not.toHaveProperty("returnTo");
+    });
+    it("tuning -> choosing, preserving returnTo", () => {
+      expect(transition(tuningAFromAuto, events.CHANGE)).toEqual(choosingAFromAuto);
+    });
+    it("is a no-op (identity) from selected and choosing", () => {
+      for (const state of [selectedA, choosingA, selectedAFromAuto, choosingAFromAuto]) {
+        expect(transition(state, events.CHANGE)).toBe(state);
+      }
+    });
+  });
+
+  describe("from a state opened from the result list (returnTo: auto)", () => {
+    it("SELECT of a different element carries returnTo", () => {
+      expect(transition(selectedAFromAuto, events.SELECT_B)).toEqual({
+        status: "selected",
+        vmId: "b",
+        returnTo: "auto",
+      });
+      expect(
+        transition(choosingAFromAuto, { type: "SELECT", vmId: "b", draftAnimationId: "pulse" }),
+      ).toEqual({ status: "tuning", vmId: "b", animationId: "pulse", returnTo: "auto" });
+    });
+    it("SELECT of the same element with no draft is a no-op (identity)", () => {
+      expect(transition(selectedAFromAuto, events.SELECT_A)).toBe(selectedAFromAuto);
+      expect(transition(choosingAFromAuto, events.SELECT_A)).toBe(choosingAFromAuto);
+      expect(transition(tuningAFromAuto, events.SELECT_A)).toBe(tuningAFromAuto);
+    });
+    it("SELECT of the element and animation already being tuned is a no-op (identity)", () => {
+      expect(transition(tuningAFromAuto, events.SELECT_A_WITH_DRAFT)).toBe(tuningAFromAuto);
+    });
+    it("SELECT of the same element with a different draft animation -> tuning that one, keeping returnTo", () => {
+      expect(
+        transition(tuningAFromAuto, { type: "SELECT", vmId: "a", draftAnimationId: "scale-in" }),
+      ).toEqual({ status: "tuning", vmId: "a", animationId: "scale-in", returnTo: "auto" });
+    });
+    it("a state without returnTo never gains one from SELECT", () => {
+      expect(transition(selectedA, events.SELECT_B)).not.toHaveProperty("returnTo");
+      expect(transition(tuningA, events.SELECT_A_WITH_DRAFT)).toBe(tuningA);
+    });
+    it("DESELECT lands on the list, not on idle", () => {
+      expect(transition(selectedAFromAuto, events.DESELECT)).toEqual(auto);
+      expect(transition(choosingAFromAuto, events.DESELECT)).toEqual(auto);
+      expect(transition(tuningAFromAuto, events.DESELECT)).toEqual(auto);
+    });
+    it("CHOOSE_CUSTOM preserves returnTo", () => {
+      expect(transition(selectedAFromAuto, events.CHOOSE_CUSTOM)).toEqual(choosingAFromAuto);
+    });
+    it("PICK preserves returnTo", () => {
+      expect(transition(choosingAFromAuto, events.PICK)).toEqual({
+        status: "tuning",
+        vmId: "a",
+        animationId: "scale-in",
+        returnTo: "auto",
+      });
+    });
+    it("CLEAR preserves returnTo", () => {
+      expect(transition(tuningAFromAuto, events.CLEAR)).toEqual(selectedAFromAuto);
+      expect(transition(choosingAFromAuto, events.CLEAR)).toEqual(selectedAFromAuto);
+      expect(transition(selectedAFromAuto, events.CLEAR)).toBe(selectedAFromAuto);
+    });
+    it("REVERT drops returnTo: the whole draft is gone, generated work included, so there is no list to go back to", () => {
+      expect(transition(tuningAFromAuto, events.REVERT)).toEqual(selectedA);
+      expect(transition(tuningAFromAuto, events.REVERT)).not.toHaveProperty("returnTo");
+      expect(transition(choosingAFromAuto, events.REVERT)).toEqual(selectedA);
+      expect(transition(choosingAFromAuto, events.REVERT)).not.toHaveProperty("returnTo");
+      expect(transition(selectedAFromAuto, events.REVERT)).toEqual(selectedA);
+      expect(transition(selectedAFromAuto, events.REVERT)).not.toHaveProperty("returnTo");
+    });
+    it("REVERT that leaves an assignment drops returnTo too, even onto the same animation", () => {
+      expect(transition(selectedAFromAuto, events.REVERT_WITH_DRAFT)).toEqual(tuningA);
+      expect(transition(choosingAFromAuto, events.REVERT_WITH_DRAFT)).toEqual(tuningA);
+      const reverted = transition(tuningAFromAuto, events.REVERT_WITH_DRAFT);
+      expect(reverted).toEqual(tuningA);
+      expect(reverted).not.toHaveProperty("returnTo");
+    });
+    it("REVERT without returnTo keeps its identity no-ops", () => {
+      expect(transition(selectedA, events.REVERT)).toBe(selectedA);
+      expect(transition(tuningA, events.REVERT_WITH_DRAFT)).toBe(tuningA);
+    });
+    it("BACK from tuning -> the list", () => {
+      expect(transition(tuningAFromAuto, events.BACK)).toEqual(auto);
+      expect(transition(tuningAFromAuto, events.BACK_WITH_DRAFT)).toEqual(auto);
+    });
+    it("BACK from selected -> the list", () => {
+      expect(transition(selectedAFromAuto, events.BACK)).toEqual(auto);
+    });
+    it("BACK from choosing is unchanged and preserves returnTo", () => {
+      expect(transition(choosingAFromAuto, events.BACK)).toEqual(selectedAFromAuto);
+      expect(transition(choosingAFromAuto, events.BACK_WITH_DRAFT)).toEqual(tuningAFromAuto);
+    });
+  });
+
+  it("BACK from a tuning state opened from the result list returns to the list", () => {
+    const s = transition(
+      { status: "auto" },
+      { type: "SELECT", vmId: "vm-a", draftAnimationId: "fade-in" },
+    );
+    expect(s).toEqual({ status: "tuning", vmId: "vm-a", animationId: "fade-in", returnTo: "auto" });
+    expect(transition(s, { type: "BACK" })).toEqual({ status: "auto" });
+  });
+
   it("BACK from choosing then BACK from selected chains: tuning -> choosing -> selected", () => {
     const afterFirstBack = transition(tuningA, events.BACK);
     expect(afterFirstBack).toEqual(choosingA);
@@ -208,7 +397,7 @@ describe("transition", () => {
   });
 
   it("Change then ‹ returns to tuning the animation the element still has", () => {
-    const afterChange = transition(tuningA, events.BACK);
+    const afterChange = transition(tuningA, events.CHANGE);
     expect(afterChange).toEqual(choosingA);
     expect(transition(afterChange, events.BACK_WITH_DRAFT)).toEqual(tuningA);
   });

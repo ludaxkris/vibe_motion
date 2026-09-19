@@ -4,6 +4,7 @@ import { getEntry } from "animation-catalog";
 import { cn } from "cn";
 import { useId, useState, type ReactNode } from "react";
 
+import { AutoResultPanel, type AutoResultRow } from "@/components/control-panel/auto-result";
 import { ChoosingPanel } from "@/components/control-panel/choosing";
 import { IdlePanel } from "@/components/control-panel/idle";
 import { SelectedPanel } from "@/components/control-panel/selected";
@@ -97,6 +98,40 @@ const SAMPLE_FAILURE = describeCloneFailure(
   new CloneRequestError(422, "login_required", "login required"),
 );
 
+/**
+ * One result-list row at the catalog's own name and defaults — `undefined`
+ * when the id has gone, for the reason `sampleAssignment` gives. `tuned` is
+ * what the designer changed by hand since the run, which is what makes a row
+ * read "edited".
+ */
+function sampleAutoResultRow(
+  vmId: string,
+  tag: string,
+  animationId: string,
+  trigger?: Trigger,
+  tuned?: { duration?: string; delay?: string },
+): AutoResultRow | undefined {
+  const entry = getCatalogEntry(animationId);
+  const assignment = sampleAssignment(animationId, trigger);
+  if (!entry || !assignment) return undefined;
+  return {
+    vmId,
+    tag,
+    animationName: entry.name,
+    trigger: assignment.trigger,
+    duration: tuned?.duration ?? assignment.params.duration ?? "",
+    delay: tuned?.delay ?? assignment.params.delay ?? "",
+    edited: tuned !== undefined,
+  };
+}
+
+/** What a page auto-generate run leaves behind; the middle row has been hand-tuned since. */
+const AUTO_RESULT_ROWS: AutoResultRow[] = [
+  sampleAutoResultRow(VM_HEADLINE, "h1", "fade-in-up", "load"),
+  sampleAutoResultRow(VM_DROPPED, "p", "fade-in", "in-view", { duration: "900ms" }),
+  sampleAutoResultRow(VM_CTA, "a", "pulse", "hover"),
+].filter((row): row is AutoResultRow => row !== undefined);
+
 function Frame({
   slug,
   title,
@@ -144,7 +179,14 @@ function ChoosingFrame({ initialSearch = "" }: { initialSearch?: string }) {
   );
 }
 
-function TuningFrame({ animationId }: { animationId: string }) {
+function TuningFrame({
+  animationId,
+  fromAuto = false,
+}: {
+  animationId: string;
+  /** As opened from the auto-generate result list: renders the "‹" control. */
+  fromAuto?: boolean;
+}) {
   const entry = getCatalogEntry(animationId);
   const [assignment, setAssignment] = useState<Assignment | undefined>(() =>
     sampleAssignment(animationId),
@@ -169,6 +211,8 @@ function TuningFrame({ animationId }: { animationId: string }) {
           current ? { ...current, params: { ...current.params, [key]: value } } : current,
         )
       }
+      // Opened from the result list: the "‹" control is there to go back up to it.
+      onBack={fromAuto ? () => undefined : undefined}
     />
   );
 }
@@ -313,6 +357,35 @@ export function DevGallery() {
           bodyClassName={PANEL_FRAME}
         >
           <TuningFrame animationId="spin" />
+        </Frame>
+
+        <Frame
+          slug="panel-tuning-from-auto"
+          title="Tuning · opened from the result list"
+          note="The ‹ control appears only here: it goes back up to the auto-generate result list."
+          bodyClassName={PANEL_FRAME}
+        >
+          <TuningFrame animationId="fade-in-up" fromAuto />
+        </Frame>
+
+        <Frame
+          slug="panel-auto-result"
+          title="Auto-generate result"
+          note="One row per element of the last run; a row tuned by hand since keeps its place with a quiet “edited” tag."
+          bodyClassName={PANEL_FRAME}
+        >
+          <AutoResultPanel
+            rows={AUTO_RESULT_ROWS}
+            prompt="calm, staggered entrances, nothing loops"
+            skippedCount={4}
+            truncated={false}
+            consideredLimit={200}
+            onSelectRow={() => undefined}
+            onRegenerate={() => undefined}
+            onReplayAll={() => undefined}
+            onRemoveAll={() => undefined}
+            onClose={() => undefined}
+          />
         </Frame>
       </Group>
 
