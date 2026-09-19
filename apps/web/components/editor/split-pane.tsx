@@ -177,7 +177,15 @@ export function SplitPane({
   };
 
   return (
-    <div ref={containerRef} className="flex min-h-0 flex-1">
+    <div
+      ref={containerRef}
+      // `handlePointerDown` deliberately does not `preventDefault()` — that is
+      // what lets a click focus the separator — so the browser still treats the
+      // drag as a text selection and paints the panel's labels blue as the
+      // pointer sweeps over them. Suppressing selection for the duration of the
+      // gesture costs nothing else: it is off again the moment the drag ends.
+      className={cn("flex min-h-0 flex-1", isDragging && "select-none")}
+    >
       {/* A flex container, not a block: the pane's child (the preview and its
           sheet) has to be able to fill the row's full height. */}
       <div className="flex min-w-0 flex-1">

@@ -177,6 +177,25 @@ describe("SplitPane", () => {
     expect(handle).not.toHaveClass("bg-vm-accent");
   });
 
+  it("suppresses text selection for the length of a drag, and only that long", () => {
+    stubContainerBox();
+    renderSplitPane();
+    const handle = separator();
+    // The whole split, so neither pane's text is selected by the sweep.
+    const split = handle.parentElement;
+
+    expect(split).not.toHaveClass("select-none");
+
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 760, pointerId: 1 });
+    // pointerdown does not preventDefault() (the separator has to be
+    // focusable by click), so without this the drag selects panel text.
+    expect(split).toHaveClass("select-none");
+
+    fireEvent.pointerUp(handle, { pointerId: 1 });
+    expect(split).not.toHaveClass("select-none");
+  });
+
   it("lets a click focus the separator, the way any other control would", () => {
     renderSplitPane();
     const handle = separator();
