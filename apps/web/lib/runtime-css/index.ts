@@ -10,7 +10,7 @@
  * No React, no DOM, no network — safe to run on the server (help page) or in
  * the browser (bridge, draft store).
  */
-import type { CatalogEntry, CatalogParam } from "animation-catalog";
+import type { CatalogEntry } from "animation-catalog";
 import { keyframesName } from "animation-catalog";
 
 import { parseDeclarations } from "./declarations";
@@ -53,7 +53,7 @@ export function resolveParams(
   params?: Readonly<Record<string, string>>,
 ): Record<string, string> {
   const resolved: Record<string, string> = {};
-  for (const param of entry.params as CatalogParam[]) {
+  for (const param of entry.params) {
     resolved[param.key] = params?.[param.key] ?? param.default;
   }
   return resolved;
@@ -104,7 +104,7 @@ export function assignmentStyle(
     "animation-name": keyframesName(entry.id, catalogVersion),
   };
 
-  for (const param of entry.params as CatalogParam[]) {
+  for (const param of entry.params) {
     const value = resolved[param.key];
     const standardProperty = STANDARD_PROPERTY_BY_KEY[param.key];
     if (standardProperty) {
