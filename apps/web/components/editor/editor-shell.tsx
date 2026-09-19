@@ -267,18 +267,21 @@ export function EditorShell({ projectId }: { projectId: string }) {
                 title="Cloned page preview"
                 src={previewPageUrl(projectId)}
                 // No `allow-scripts`: the postMessage bridge script arrives in
-                // Phase 4. `allow-same-origin` keeps the frame on the API's
-                // origin instead of the opaque one a bare `sandbox` would give
-                // it — an opaque origin has no cookies, no storage and a null
-                // `Origin` header, so it cannot be a postMessage peer, and
-                // relative URLs in the cloned page would resolve against
-                // nothing rather than against the page's own base.
+                // Phase 4. `allow-same-origin` keeps the framed document on
+                // the API's own origin rather than the unique opaque one a
+                // bare `sandbox` gives it. Relative URLs resolve against the
+                // document's base either way — what an opaque origin costs is
+                // everything origin-derived: no cookies or storage, `Origin:
+                // null` on the requests it makes, and a `postMessage` whose
+                // `event.origin` is the string "null" and so cannot be checked
+                // against anything.
                 //
                 // Phase 4, when the bridge script arrives: never pair
-                // `allow-scripts` with `allow-same-origin` while the page is
-                // served from an origin of ours — together they let the framed
-                // page reach out and strip its own sandbox attribute. The
-                // bridge needs its page on a separate origin first.
+                // `allow-scripts` with `allow-same-origin` while the framed
+                // page is served from an origin of ours — together they let
+                // the framed page reach into this document, remove its own
+                // sandbox attribute and reload itself unsandboxed. The bridge
+                // needs the cloned page on an origin of its own first.
                 sandbox="allow-same-origin"
                 className="size-full border-0 bg-vm-surface"
                 style={isDragging ? { pointerEvents: "none" } : undefined}
