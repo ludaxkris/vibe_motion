@@ -734,6 +734,32 @@ describe("selectDirtyVmIds cost", () => {
     expect(selectDirtyVmIds(store.getState())).toEqual([]);
   });
 
+  it("caches the clean answer too, whether the two maps are shared or merely equal", () => {
+    const store = createEditorStore();
+    const clean = selectDirtyVmIds(store.getState());
+    expect(clean).toEqual([]);
+    // A hover changes the state object but neither map, so the clean answer is
+    // identity-stable for the same reason the dirty one is.
+    store.getState().setHoverVmId("vm-9");
+    expect(selectDirtyVmIds(store.getState())).toBe(clean);
+
+    store.getState().setDraftAssignment("vm-1", assignmentFor("fade-in"));
+
+    // The *same object* for both maps. Nothing in the store produces this
+    // today — `initialEditorState` holds two distinct `{}`, `reset()` re-uses
+    // those two and `revertDraft` allocates a copy — which is why there is no
+    // identity fast path in the selector. Phase 6's save is the obvious thing
+    // that might, so the answer has to be right either way.
+    store.setState({ currentVersionState: store.getState().draftState });
+    expect(store.getState().draftState).toBe(store.getState().currentVersionState);
+    expect(selectDirtyVmIds(store.getState())).toEqual([]);
+
+    // …and equal but distinct.
+    store.setState({ currentVersionState: { ...store.getState().draftState } });
+    expect(store.getState().draftState).not.toBe(store.getState().currentVersionState);
+    expect(selectDirtyVmIds(store.getState())).toEqual([]);
+  });
+
   it("is still correct when two stores interleave", () => {
     const a = createEditorStore();
     const b = createEditorStore();

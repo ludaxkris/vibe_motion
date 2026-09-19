@@ -609,6 +609,27 @@ describe("createBridgeClient — hardening", () => {
     expect(h.ackErrors).toEqual([]);
   });
 
+  it("says nothing about a `hello` the frame acked `ok: false`", () => {
+    const h = harness();
+
+    // Spec D7: before the frame's body is parsed, `ok: false` is `hello`'s
+    // *normal* answer and proves nothing. Reporting it would put an error in
+    // the panel on an ordinary page load, before the handshake has even failed.
+    h.client.hello();
+    const seq = h.posted.at(-1)?.data.seq;
+    h.deliver("ack", { seq, ms: 0.1, ok: false });
+
+    expect(h.ackErrors).toEqual([]);
+
+    // …and the very next refusal, on a real message, is still reported.
+    h.ready();
+    h.client.replay("vm-1").catch(() => {});
+    const replaySeq = h.posted.at(-1)?.data.seq;
+    h.deliver("ack", { seq: replaySeq, ms: 0.2, ok: false, error: "unknown-element" });
+
+    expect(h.ackErrors).toEqual([{ seq: replaySeq, ms: 0.2, ok: false, error: "unknown-element" }]);
+  });
+
   it("drops an element:select whose payload is not an ElementInfo", () => {
     const h = harness();
     h.ready();
@@ -677,5 +698,25 @@ describe("createBridgeClient — hardening", () => {
     h.frame();
 
     expect(h.types()).toEqual(["apply"]);
+  });
+
+  it("posts nothing on clearPreview() when no preview is up", () => {
+    const h = harness();
+    h.ready();
+    h.clear();
+
+    // Every hover-out calls this, and the frame's `dropPreview` acks `ok: true`
+    // with nothing to drop — one message per hover-out for a no-op. The
+    // internal `clearActivePreview` has always had this early return; this is
+    // the one path that did not mirror it.
+    h.client.clearPreview();
+    expect(h.types()).toEqual([]);
+
+    // Twice in a row, which is what a flush followed by a hover-out produces.
+    h.client.preview("vm-1", assignment());
+    h.client.clearPreview();
+    h.client.clearPreview();
+
+    expect(h.types()).toEqual(["preview", "preview:clear"]);
   });
 });

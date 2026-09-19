@@ -147,6 +147,11 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
   let previewVmId: string | null = null;
 
   const pending = new Map<number, Deferred>();
+  /**
+   * Seqs whose ack must never reach `onAckError`. Only `hello` lands here; see
+   * `send`. Emptied as each ack arrives and by `settleAll`.
+   */
+  const unreported = new Set<number>();
   /** vmIds whose draft entry changed since the last flush, coalesced per frame (§5). */
   const changed = new Set<string>();
   let frameScheduled = false;
@@ -201,6 +206,12 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     // (it can come back `ok: false` with no `ready` behind it), so waiting on
     // one would make `whenIdle()` wait for something that means nothing.
     const tracked = type !== "hello";
+    // …and for the same reason its ack is never reported as an error: spec D7
+    // makes `ok: false` the *normal* answer while the frame's body is not
+    // parsed yet, so surfacing it would put an error in front of the designer
+    // on an ordinary page load. Seqs are monotonic and never reused, so an
+    // entry left here by a `hello` that is never acked is one stale number.
+    if (!tracked) unreported.add(current);
     const deferred = defer();
     if (tracked) {
       pending.set(current, deferred);
@@ -232,6 +243,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
   }
 
   function settleAll(error: Error): void {
+    unreported.clear();
     const owed = [...pending.entries()];
     pending.clear();
     owed.forEach(([, deferred]) => {
@@ -410,10 +422,14 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
   function onAck(payload: unknown): void {
     const ack = payload as Ack | null;
     if (!ack || typeof ack.seq !== "number") return;
-    // Reported whether or not anyone is awaiting this seq: a refused `apply`
-    // leaves the store and the frame showing different things, and the panel
-    // is the only place that can say so.
-    if (ack.ok === false || (ack.unknownVmIds?.length ?? 0) > 0) options.onAckError?.(ack);
+    // Reported whether or not anyone is *awaiting* this seq — a refused `apply`
+    // leaves the store and the frame showing different things and the panel is
+    // the only place that can say so — but never for a `hello`, whose refusal
+    // carries no state and means nothing (spec D7).
+    const reportable = !unreported.delete(ack.seq);
+    if (reportable && (ack.ok === false || (ack.unknownVmIds?.length ?? 0) > 0)) {
+      options.onAckError?.(ack);
+    }
     const deferred = pending.get(ack.seq);
     if (!deferred) return;
     settle(ack.seq, deferred);
@@ -504,10 +520,11 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       if (sent) previewVmId = vmId;
     },
 
-    clearPreview: () => {
-      previewVmId = null;
-      void post("preview:clear", {});
-    },
+    // Exactly `clearActivePreview`, early return and all: with nothing up,
+    // `preview:clear` is one message per hover-out for a frame-side no-op
+    // (`dropPreview` acks `ok: true` having dropped nothing). A `flush` that
+    // already ended a masked preview, and `onReady`, both leave it null.
+    clearPreview: clearActivePreview,
 
     replay: (vmId) => {
       // Flush first: a draft change made in this same turn is still sitting in

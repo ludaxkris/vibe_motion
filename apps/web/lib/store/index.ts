@@ -177,9 +177,6 @@ export function selectSelectedVmId(state: EditorState): string | null {
  */
 let dirtyCache: { draft: EditorStateMap; saved: EditorStateMap; vmIds: string[] } | null = null;
 
-/** Shared, so the clean case is also identity-stable. Never handed out mutable elsewhere. */
-const NO_DIRTY_VM_IDS: string[] = [];
-
 /**
  * Every element the draft has unsaved changes on: one the draft animated, one
  * the draft dropped, or one whose assignment moved. Derived on demand from the
@@ -196,14 +193,15 @@ export function selectDirtyVmIds(state: EditorState): string[] {
     return dirtyCache.vmIds;
   }
 
-  // The common case by far — nothing saved and nothing drafted, or a draft that
-  // was just reverted — and it needs no comparison at all.
-  const vmIds =
-    draftState === currentVersionState
-      ? NO_DIRTY_VM_IDS
-      : [...new Set([...Object.keys(draftState), ...Object.keys(currentVersionState)])].filter(
-          (vmId) => !assignmentsEqual(draftState[vmId], currentVersionState[vmId]),
-        );
+  // No identity fast path for `draftState === currentVersionState`: nothing in
+  // this module ever makes the two the same object — `initialEditorState` holds
+  // two distinct `{}`, `reset()` re-uses those same two, and `revertDraft`
+  // allocates a copy — so it would be unreachable. The cache above is what does
+  // the work, and it answers a clean pair by identity just as well as a dirty
+  // one, whether or not a later phase's save ever shares the two.
+  const vmIds = [
+    ...new Set([...Object.keys(draftState), ...Object.keys(currentVersionState)]),
+  ].filter((vmId) => !assignmentsEqual(draftState[vmId], currentVersionState[vmId]));
 
   dirtyCache = { draft: draftState, saved: currentVersionState, vmIds };
   return vmIds;

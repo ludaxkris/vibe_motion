@@ -110,9 +110,21 @@ type FrameProbe = {
  * the delta between the two is the handler's whole cost — and the overlay's
  * `requestAnimationFrame` reposition, which §4 budgets separately, is correctly
  * outside it.
+ *
+ * Two things this must *not* do. `addInitScript` runs in every frame, the shell
+ * included, so the guard below keeps the monkey-patches out of the shell, where
+ * React would be paying for them and no claim is being counted. And this is
+ * installed only by the cost-fact tests (`openInstrumentedEditor`): §6's
+ * millisecond budgets are defined for the editor, not for the editor plus five
+ * patched DOM methods on both sides of the round trip, so the wall-clock tests
+ * open the editor with `openEditor` and measure an uninstrumented page.
  */
 async function installFrameProbe(page: Page) {
   await page.addInitScript(() => {
+    // The preview frame only. Everything counted here is a claim about what the
+    // *bridge* does per message.
+    if (window.parent === window) return;
+
     const probe = {
       setProperty: 0,
       properties: [] as string[],
@@ -219,7 +231,7 @@ async function lastHandlerCost(frame: Frame): Promise<FrameProbe> {
   });
 }
 
-/** Every envelope type the frame has received so far. */
+/** Every envelope type the frame has received so far. Needs the frame probe. */
 function receivedTypes(frame: Frame): Promise<string[]> {
   return frame.evaluate(
     () => (window as unknown as { __vmProbe: { received: string[] } }).__vmProbe.received.slice(),
@@ -248,14 +260,20 @@ function previewFrame(page: Page): Frame {
   return frame;
 }
 
-async function openEditorWithBridge(page: Page) {
-  await installFrameProbe(page);
+/** Clone the fixture and wait for the handshake. Nothing is instrumented. */
+async function openEditor(page: Page) {
   await page.goto("/");
   await page.getByLabel("Page URL").fill("https://example.com");
   await page.getByRole("button", { name: "Clone" }).click();
   await page.waitForURL(/\/p\/.+/);
   await page.waitForFunction(() => window.__vmTest?.client.status() === "ready");
-  const frame = previewFrame(page);
+  return previewFrame(page);
+}
+
+/** The same, with the frame probe — for the cost-fact tests only. */
+async function openInstrumentedEditor(page: Page) {
+  await installFrameProbe(page);
+  const frame = await openEditor(page);
   await armFrameProbe(frame);
   return frame;
 }
@@ -283,7 +301,7 @@ async function throttle(page: Page, rate: number) {
 test("a param change costs one inline write, no stylesheet edit and no layout read", async ({
   page,
 }) => {
-  const frame = await openEditorWithBridge(page);
+  const frame = await openInstrumentedEditor(page);
   await applyFadeInUp(page);
 
   await page.evaluate(() => {
@@ -308,7 +326,7 @@ test("a param change costs one inline write, no stylesheet edit and no layout re
 test("state:load inserts one rule per distinct keyframes body and reads no layout", async ({
   page,
 }) => {
-  const frame = await openEditorWithBridge(page);
+  const frame = await openInstrumentedEditor(page);
 
   // A page big enough to hold them, and four distinct animations so "one rule
   // per distinct keyframes name" is a claim rather than a coincidence.
@@ -375,7 +393,7 @@ test("state:load inserts one rule per distinct keyframes body and reads no layou
 test("the shell coalesces a frame's worth of param writes into one apply per element", async ({
   page,
 }) => {
-  const frame = await openEditorWithBridge(page);
+  const frame = await openInstrumentedEditor(page);
   await applyFadeInUp(page);
   const before = (await receivedTypes(frame)).length;
 
@@ -406,7 +424,7 @@ test("the shell coalesces a frame's worth of param writes into one apply per ele
 test("a param change round-trips inside one frame, and the bridge's handler well inside it", async ({
   page,
 }) => {
-  await openEditorWithBridge(page);
+  await openEditor(page);
   await applyFadeInUp(page);
 
   await collectAcks(page);
@@ -501,7 +519,11 @@ test("a param change round-trips inside one frame, and the bridge's handler well
 });
 
 test("state:load of 200 assignments lands inside 50ms of frame time", async ({ page }) => {
-  await openEditorWithBridge(page);
+  await openEditor(page);
+  // Armed before the reload below, because it is also how that reload's own
+  // handshake is waited for — the frame is deliberately uninstrumented here, so
+  // `receivedTypes` is not available to watch it from the inside.
+  await collectAcks(page);
 
   // The fixture has twelve tagged elements; the budget is quoted at 200, so
   // the mock route is asked for a page that size (dev-only query parameter).
@@ -515,11 +537,16 @@ test("state:load of 200 assignments lands inside 50ms of frame time", async ({ p
   await expect(
     page.frameLocator('iframe[title="Cloned page preview"]').locator('[data-vm-id="vm-extra-200"]'),
   ).toBeAttached();
-  // Same race as above: let the reload's own handshake finish before the ack
-  // buffer is armed, so only the `state:load` under test is timed.
-  await expect.poll(() => receivedTypes(previewFrame(page))).toContain("select");
+  // Same race as in the cost test above: the reload re-handshakes, and `ready`
+  // makes the client re-send `state:load` *and* `select`, so two acks come
+  // back. Wait for them, drain anything else still in flight, then empty the
+  // buffer, so that only the `state:load` under test is timed.
+  await expect.poll(() => page.evaluate(() => window.__vmAcks.length)).toBeGreaterThanOrEqual(2);
+  await page.evaluate(() => window.__vmTest!.client.whenIdle());
+  await page.evaluate(() => {
+    window.__vmAcks = [];
+  });
 
-  await collectAcks(page);
   const session = await throttle(page, 4);
 
   // 200 changed entries in one update is past `BULK_APPLY_LIMIT`, so the
