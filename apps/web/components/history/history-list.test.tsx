@@ -46,6 +46,13 @@ const V2 = version({
   label: "Pulse on .cta",
   diff: { set: { ".cta": assignment("pulse") }, remove: [] },
 });
+const V3 = version({
+  id: "v3",
+  seq: 3,
+  parentVersionId: "v2",
+  label: "Glow on .cta",
+  diff: { set: { ".cta": assignment("glow") }, remove: [] },
+});
 
 function callbacks() {
   return { onView: vi.fn(), onRestore: vi.fn() };
@@ -96,6 +103,52 @@ describe("HistoryList", () => {
     expect(
       screen.getByText("Restoring creates a new version — v1 and v2 stay in the list."),
     ).toBeInTheDocument();
+  });
+
+  it("uses singular grammar with exactly one later version", () => {
+    render(
+      <HistoryList
+        versions={[V0, V1, V2]}
+        currentVersionId="v2"
+        viewingVersionId="v1"
+        now={NOW}
+        {...callbacks()}
+      />,
+    );
+
+    expect(
+      screen.getByText("Restoring creates a new version — v2 stays in the list."),
+    ).toBeInTheDocument();
+  });
+
+  it("uses plural grammar and a serial comma with three or more later versions", () => {
+    render(
+      <HistoryList
+        versions={[V0, V1, V2, V3]}
+        currentVersionId="v3"
+        viewingVersionId="v0"
+        now={NOW}
+        {...callbacks()}
+      />,
+    );
+
+    expect(
+      screen.getByText("Restoring creates a new version — v1, v2 and v3 stay in the list."),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the caption when the viewed version is the newest (no later versions)", () => {
+    render(
+      <HistoryList
+        versions={[V0, V1, V2]}
+        currentVersionId="v2"
+        viewingVersionId="v2"
+        now={NOW}
+        {...callbacks()}
+      />,
+    );
+
+    expect(screen.queryByText(/Restoring creates a new version/)).not.toBeInTheDocument();
   });
 
   it("passes elementCount through to the v0 row only", () => {

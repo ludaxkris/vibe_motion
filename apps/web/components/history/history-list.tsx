@@ -82,7 +82,8 @@ export function HistoryList({
 
       {viewedVersion && versionsAfterViewed.length > 0 ? (
         <p className="px-3.5 py-2.5 text-xs leading-body text-vm-ink-2">
-          Restoring creates a new version — {joinLabels(versionsAfterViewed)} stay in the list.
+          Restoring creates a new version — {joinLabels(versionsAfterViewed)}{" "}
+          {versionsAfterViewed.length === 1 ? "stays" : "stay"} in the list.
         </p>
       ) : null}
     </div>
