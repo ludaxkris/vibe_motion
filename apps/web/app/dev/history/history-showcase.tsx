@@ -57,19 +57,24 @@ const VERSIONS: Version[] = [
   version(1, "Fade In Up on h1", [["h1", "fade-in-up"]]),
   version(2, "Slide In on 3 plan cards", [
     ["h1", "fade-in-up"],
-    [".plan-1", "slide-in-left"],
-    [".plan-2", "slide-in-left"],
-    [".plan-3", "slide-in-left"],
+    [".plan-1", "slide-in-up"],
+    [".plan-2", "slide-in-up"],
+    [".plan-3", "slide-in-up"],
   ]),
-  version(3, "removed Slide In on .plan-2", [
-    ["h1", "fade-in-up"],
-    [".plan-1", "slide-in-left"],
-    [".plan-3", "slide-in-left"],
-  ]),
+  version(
+    3,
+    "removed Slide In on .plan-2",
+    [
+      ["h1", "fade-in-up"],
+      [".plan-1", "slide-in-up"],
+      [".plan-3", "slide-in-up"],
+    ],
+    [".plan-2"],
+  ),
   version(4, "Pulse on .cta", [
     ["h1", "fade-in-up"],
-    [".plan-1", "slide-in-left"],
-    [".plan-3", "slide-in-left"],
+    [".plan-1", "slide-in-up"],
+    [".plan-3", "slide-in-up"],
     [".cta", "pulse"],
   ]),
 ];
@@ -79,8 +84,8 @@ const CURRENT_VERSION_ID = "dev-v4";
 /** What a save that lost the 409 race would carry: it names the version that won. */
 const CONFLICT_THEIRS = version(5, "Pulse on .cta, retriggered on hover", [
   ["h1", "fade-in-up"],
-  [".plan-1", "slide-in-left"],
-  [".plan-3", "slide-in-left"],
+  [".plan-1", "slide-in-up"],
+  [".plan-3", "slide-in-up"],
   [".cta", "pulse", "hover"],
 ]);
 

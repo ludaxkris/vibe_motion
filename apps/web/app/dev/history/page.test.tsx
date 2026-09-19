@@ -51,6 +51,7 @@ describe("/dev/history", () => {
     expect(
       within(frame).getByText(/Restoring creates a new version/),
     ).toBeInTheDocument();
+    expect(within(frame).getByText("Removed")).toHaveClass("sr-only");
   });
 
   it("shows the viewing banner", async () => {
