@@ -1,0 +1,16 @@
+{
+  "branch": "feat/4-bridge-integration",
+  "sha": "21ae15af0b84dac48207ea0f9f778beec7202e0e",
+  "viewport": "1440x900",
+  "names": [
+    "editor-idle",
+    "editor-selected",
+    "editor-choosing",
+    "editor-tuning",
+    "element-switch-dialog",
+    "after-discard"
+  ],
+  "diffs": {
+    "note": "No baseline screenshots available for comparison on first run"
+  }
+}
