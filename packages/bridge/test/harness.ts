@@ -106,6 +106,16 @@ export type Harness = {
   setLiveAnimations(vmId: string, names: string[] | null, playState?: string): void;
   /** jsdom has no layout, so a test that cares about the overlay's box supplies one. */
   setRect(vmId: string, rect: { x: number; y: number; width: number; height: number }): void;
+  /**
+   * The same for the *layout* box the overlay reads while one of our animations is running:
+   * `offsetLeft` / `offsetTop` / `offsetWidth` / `offsetHeight`, which jsdom reports as 0.
+   *
+   * jsdom also reports `offsetParent` as null, which the bridge reads as "these coordinates are
+   * already viewport-relative" (what it would conclude for a `position: fixed` box), so it walks
+   * no ancestors and no scroll offsets: whatever is passed here is exactly what `layoutBox()`
+   * returns. Scrolling, resizing and reflowing for real is what `e2e/bridge.spec.ts` is for.
+   */
+  setOffsetBox(vmId: string, box: { left: number; top: number; width: number; height: number }): void;
   /** Put the body back and fire DOMContentLoaded, for a harness built with `beforeBody`. */
   completeLoad(): void;
   destroy(): void;
@@ -355,6 +365,18 @@ export function loadBridge(
       const target = el(vmId);
       target.getBoundingClientRect = () =>
         ({ ...rect, top: rect.y, left: rect.x, right: rect.x + rect.width, bottom: rect.y + rect.height, toJSON: () => rect }) as DOMRect;
+    },
+    setOffsetBox(vmId, box) {
+      const target = el(vmId);
+      const values: Record<string, number> = {
+        offsetLeft: box.left,
+        offsetTop: box.top,
+        offsetWidth: box.width,
+        offsetHeight: box.height,
+      };
+      for (const name of Object.keys(values)) {
+        Object.defineProperty(target, name, { value: values[name], configurable: true });
+      }
     },
     animationEvent(vmId, opts = {}) {
       const event = new window.Event(opts.type ?? "animationend", { bubbles: true });

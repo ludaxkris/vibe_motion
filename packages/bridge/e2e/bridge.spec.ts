@@ -447,6 +447,168 @@ test("the selection ring marks the resting box, not the box mid-animation", asyn
 });
 
 // ---------------------------------------------------------------------------------------------
+// 6b. the ring under an animation that never ends
+//
+// Catalog 1.1.0 ships six entries whose `iteration` default is `infinite` — pulse, heartbeat,
+// glow, spin, float and shimmer. None of them ever fires `animationend`, and `animationiteration`
+// is deliberately not a resync trigger, so anything the overlay defers "until the animation is
+// over" is deferred for as long as the element stays selected. These three cover the resync
+// triggers that are not message-driven: the capture-phase `scroll` listener (page and nested
+// scroller), the `ResizeObserver` on <html>, and the `resize` listener.
+// ---------------------------------------------------------------------------------------------
+
+const RING = "[data-vm-overlay-ring]";
+
+/**
+ * `float` crossed with `pulse`, and — unlike either — never passing through the identity
+ * transform: every single sample is off the resting box in both axes *and* in size, so a ring
+ * that measured the live box could not accidentally pass any assertion below.
+ */
+function neverResting(vmId: string) {
+  return assignment(vmId, {
+    keyframesName: "vm-drift-v1-1-0",
+    keyframesCss:
+      "@keyframes vm-drift-v1-1-0 { from { transform: translate(12px, 20px) scale(1.2) } to { transform: translate(28px, 44px) scale(1.4) } }",
+    style: {
+      "animation-duration": "900ms",
+      "animation-iteration-count": "infinite",
+      "animation-timing-function": "linear",
+      "animation-fill-mode": "both",
+    },
+    animationId: "float",
+    catalogVersion: "1.1.0",
+  });
+}
+
+/** Assert the element really is mid-flight and really is never going to stop. */
+async function assertAdrift(h: Awaited<ReturnType<typeof mountBridge>>, vmId: string, resting: { y: number; height: number }) {
+  expect(await h.animations(vmId)).toMatchObject([{ name: "vm-drift-v1-1-0", state: "running" }]);
+  const live = await h.rect(`[data-vm-id="${vmId}"]`);
+  expect(live.y, "the element is translated").toBeGreaterThan(resting.y);
+  expect(live.height, "and scaled").toBeGreaterThan(resting.height);
+}
+
+test("the ring tracks page and nested scrolling while an infinite animation runs", async ({ page }) => {
+  const h = await mountBridge(
+    page,
+    `<div class="spacer" style="height:150px"></div>
+     <div id="sc" style="height:220px;overflow:auto;border:1px solid #999">
+       <div style="height:1200px;padding-top:300px">
+         <div class="box" data-vm-id="vm-deep">deep</div>
+       </div>
+     </div>
+     <div class="spacer"></div>`,
+  );
+
+  const resting = await h.rect('[data-vm-id="vm-deep"]');
+  await h.send("select", { vmId: "vm-deep", label: "div" });
+  await h.send("apply", neverResting("vm-deep"));
+  await page.waitForTimeout(120);
+  await assertAdrift(h, "vm-deep", resting);
+
+  // Before anything scrolls the ring is on the resting box, not on the live one.
+  await expect.poll(() => h.rect(RING)).toEqual(resting);
+
+  // The page scrolls…
+  let pageY = 0;
+  for (const by of [180, 260, -90]) {
+    await h.frame.evaluate((n) => window.scrollBy(0, n), by);
+    pageY = await h.frame.evaluate(() => Math.round(window.scrollY));
+    await expect
+      .poll(() => h.rect(RING), { timeout: 2_000, message: `page scrolled to ${pageY}` })
+      .toEqual({ ...resting, y: resting.y - pageY });
+  }
+  expect(pageY, "the page really scrolled").toBeGreaterThan(0);
+
+  // …and so does a scroller inside it, which only the capture-phase listener hears.
+  for (const top of [120, 420, 40]) {
+    await h.frame.evaluate((n) => {
+      document.getElementById("sc")!.scrollTop = n;
+    }, top);
+    await expect
+      .poll(() => h.rect(RING), { timeout: 2_000, message: `#sc scrolled to ${top}` })
+      .toEqual({ ...resting, y: resting.y - pageY - top });
+  }
+
+  // It never ended, and the ring never once showed the live box.
+  await assertAdrift(h, "vm-deep", { y: resting.y - pageY - 40, height: resting.height });
+});
+
+test("the ring follows a reflow above it and a viewport resize while an infinite animation runs", async ({ page }) => {
+  const h = await mountBridge(
+    page,
+    `<div id="above"></div>
+     <div style="display:flex;justify-content:flex-end">
+       <div class="box" data-vm-id="vm-1">drift</div>
+     </div>`,
+  );
+
+  const resting = await h.rect('[data-vm-id="vm-1"]');
+  await h.send("select", { vmId: "vm-1", label: "div" });
+  await h.send("apply", neverResting("vm-1"));
+  await page.waitForTimeout(120);
+  await assertAdrift(h, "vm-1", resting);
+  await expect.poll(() => h.rect(RING)).toEqual(resting);
+
+  // A late image, font or ad lands above the element. Nothing is scrolled, nothing is resized and
+  // no message arrives: the ResizeObserver on <html> is the only thing that hears this.
+  await h.frame.evaluate(() => {
+    document.getElementById("above")!.style.height = "140px";
+  });
+  await expect
+    .poll(() => h.rect(RING), { timeout: 2_000, message: "after a 140px reflow above the element" })
+    .toEqual({ ...resting, y: resting.y + 140 });
+
+  // And the viewport changes, which in this layout moves the element horizontally.
+  await page.evaluate(() => {
+    document.getElementById("f")!.style.width = "500px";
+  });
+  await expect
+    .poll(() => h.rect(RING), { timeout: 2_000, message: "after narrowing the frame by 300px" })
+    .toEqual({ ...resting, x: resting.x - 300, y: resting.y + 140 });
+
+  await assertAdrift(h, "vm-1", { y: resting.y + 140, height: resting.height });
+});
+
+test("a finite animation's ring still marks the resting box, and tracks a scroll through it", async ({ page }) => {
+  const h = await mountBridge(
+    page,
+    `<div class="spacer" style="height:80px"></div>
+     <div class="box" data-vm-id="vm-1">Headline</div>
+     <div class="spacer"></div>`,
+  );
+
+  const resting = await h.rect('[data-vm-id="vm-1"]');
+  await h.send("select", { vmId: "vm-1", label: "div" });
+  await h.send(
+    "apply",
+    assignment("vm-1", {
+      keyframesName: "vm-fade-in-up-v1-1-0",
+      keyframesCss:
+        "@keyframes vm-fade-in-up-v1-1-0 { from { opacity: 0; transform: translateY(24px) } to { opacity: 1; transform: none } }",
+      // Long enough that the assertions below are comfortably inside the play even on a slow CI
+      // box; the ring is expected to settle within a frame or two, not within the duration.
+      style: { "animation-duration": "4000ms", "animation-timing-function": "linear", "animation-fill-mode": "both" },
+    }),
+  );
+
+  await page.waitForTimeout(150);
+  expect((await h.rect('[data-vm-id="vm-1"]')).y, "mid-flight the element is 24px low").toBeGreaterThan(resting.y);
+
+  // The resting box, through the scroll, *while* it plays — the ring must move by the scroll and
+  // by nothing else.
+  await h.frame.evaluate(() => window.scrollBy(0, 200));
+  const scrolled = await h.frame.evaluate(() => Math.round(window.scrollY));
+  expect(scrolled).toBe(200);
+  await expect.poll(() => h.rect(RING), { timeout: 2_000 }).toEqual({ ...resting, y: resting.y - scrolled });
+  expect((await h.animations("vm-1"))[0], "still playing").toMatchObject({ state: "running" });
+
+  // And once it has finished, still there.
+  await expect.poll(() => h.animations("vm-1").then((a) => a[0]?.state), { timeout: 8_000 }).toBe("finished");
+  expect(await h.rect(RING)).toEqual({ ...resting, y: resting.y - scrolled });
+});
+
+// ---------------------------------------------------------------------------------------------
 // elements:query -> elements:list (Phase 5, bridge 1.1.0)
 // ---------------------------------------------------------------------------------------------
 
