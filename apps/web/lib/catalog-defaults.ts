@@ -25,7 +25,9 @@ const QUIET_DEFAULTS: Readonly<Record<string, string | null>> = {
 };
 
 function isQuiet(key: string, value: string): boolean {
-  if (!(key in QUIET_DEFAULTS)) return false;
+  // `hasOwn`, not `in`: the key comes from the catalog, and `toString` would
+  // otherwise answer yes and resolve to an inherited function.
+  if (!Object.hasOwn(QUIET_DEFAULTS, key)) return false;
   const quiet = QUIET_DEFAULTS[key];
   return quiet === null || quiet === value;
 }

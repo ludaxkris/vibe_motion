@@ -143,6 +143,19 @@ export function isAbortError(error: unknown): boolean {
   );
 }
 
+/**
+ * `BY_CODE[code]`, but only for a code the table actually declares.
+ *
+ * The code is a server-supplied string (`openapi.yaml` types `Error.code` as a
+ * bare string; DT-077 tracks it), so a body of `{"code":"toString"}` would
+ * otherwise resolve to the inherited function — truthy, with no `headline` and
+ * no `detail` — instead of falling through to the generic sentences written
+ * for exactly this case.
+ */
+function sentencesFor(code: string | undefined): Sentences | undefined {
+  return code !== undefined && Object.hasOwn(BY_CODE, code) ? BY_CODE[code] : undefined;
+}
+
 export function describeCloneFailure(error: unknown): CloneFailure {
   if (!(error instanceof CloneRequestError)) {
     // Nothing came back at all: the network, not the page.
@@ -153,7 +166,7 @@ export function describeCloneFailure(error: unknown): CloneFailure {
     };
   }
 
-  const sentences = BY_CODE[error.code] ?? BY_CODE[BY_STATUS[error.status] ?? ""];
+  const sentences = sentencesFor(error.code) ?? sentencesFor(BY_STATUS[error.status]);
   if (sentences) {
     return {
       headline: sentences.headline,

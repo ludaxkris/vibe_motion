@@ -126,6 +126,20 @@ describe("describeCloneFailure", () => {
     });
   });
 
+  it("treats a code that names an Object.prototype member as unknown", () => {
+    // `openapi.yaml` types `Error.code` as a bare string (DT-077), so the body
+    // is free to say `{"code":"toString"}` — which used to resolve to the
+    // inherited function and render an empty red "!" line.
+    expect(describeCloneFailure(failure(422, "toString", "Renderer crashed"))).toEqual({
+      headline: "Couldn’t clone this page.",
+      detail: "Renderer crashed",
+      showOtherReasons: true,
+    });
+    expect(describeCloneFailure(failure(413, "constructor")).headline).toBe(
+      "Couldn’t clone this page — it’s over 10 MB.",
+    );
+  });
+
   it("does not leave the detail empty when the server sends no message", () => {
     expect(describeCloneFailure(failure(422, "clone_failed", "")).detail).toBe(
       "Try another URL, or the same one again in a moment.",

@@ -105,7 +105,9 @@ function paramKeys(
 }
 
 function isSilent(key: string, value: string): boolean {
-  return SILENT[key]?.includes(value) ?? false;
+  // `hasOwn`, not a bare index: a param keyed `constructor` would otherwise
+  // resolve to the inherited function and throw on `.includes`.
+  return Object.hasOwn(SILENT, key) && SILENT[key].includes(value);
 }
 
 /** "600ms · ease-out · 24px" — what this assignment is, at a glance. */

@@ -7,6 +7,7 @@ import {
   assignmentStyle,
   baseStyleDeclarations,
   inlineStyle,
+  isStandardParamKey,
   keyframesCss,
   resolveParams,
   runtimeStylesheet,
@@ -178,6 +179,25 @@ describe("assignmentStyle", () => {
     expect(style["--vm-distance"]).toBe("24px");
     // …and a declaration the assignment has no opinion about is kept.
     expect(style["transform-origin"]).toBe("top");
+  });
+
+  it("sends a param named after an Object.prototype member to its cssVar", () => {
+    // `STANDARD_PROPERTY_BY_KEY[key]` used to resolve `toString` to the
+    // inherited function, which is truthy — the value landed under a property
+    // named after a function body rather than under the param's own cssVar.
+    const entry: CatalogEntry = {
+      ...sampleEntry,
+      params: [{ key: "toString", type: "length", default: "3px", cssVar: "--vm-to-string" }],
+    };
+
+    const style = assignmentStyle(entry, sampleVersion);
+
+    expect(style["--vm-to-string"]).toBe("3px");
+    expect(Object.keys(style)).toEqual(
+      expect.arrayContaining(["animation-name", "--vm-to-string"]),
+    );
+    expect(isStandardParamKey("toString")).toBe(false);
+    expect(isStandardParamKey("constructor")).toBe(false);
   });
 
   it("throws for a param with neither a standard mapping nor a cssVar", () => {

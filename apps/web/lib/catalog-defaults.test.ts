@@ -30,6 +30,20 @@ describe("defaultsLine", () => {
     expect(defaultsLine(entry("fade-in"))).toBe("600ms · ease-out");
   });
 
+  it("treats a param named after an Object.prototype member as animation-specific", () => {
+    // `key in QUIET_DEFAULTS` said yes to `toString`, and so did the standard-
+    // key check behind it — the value would have been printed bare, as though
+    // it were a duration.
+    const line = defaultsLine(
+      withParams([
+        { key: "duration", type: "duration", default: "600ms" },
+        { key: "toString", type: "length", default: "3px", cssVar: "--vm-to-string" },
+      ]),
+    );
+
+    expect(line).toBe("600ms · toString 3px");
+  });
+
   it("keeps a delay, an iteration and a direction that are not the quiet default", () => {
     const line = defaultsLine(
       withParams([

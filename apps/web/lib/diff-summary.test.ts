@@ -77,6 +77,21 @@ function pulse(params: Partial<Assignment["params"]> = {}): Assignment {
 const NOTHING: EditorStateMap = {};
 
 describe("summariseDiff", () => {
+  it("survives a param key that names an Object.prototype member", () => {
+    // A catalog param called `constructor` used to resolve `SILENT[key]` to
+    // the inherited function and throw on `.includes`.
+    const odd: Assignment = {
+      animationId: "fade-in-up",
+      catalogVersion: "1.1.0",
+      trigger: "load",
+      params: { constructor: "8px", toString: "9px" },
+    };
+
+    const { rows } = summariseDiff(NOTHING, { "vm-1": odd }, lookup);
+
+    expect(rows[0].meta).toBe("8px · 9px");
+  });
+
   it("reports nothing for an unchanged draft", () => {
     const state: EditorStateMap = { "vm-3": fadeInUp() };
 

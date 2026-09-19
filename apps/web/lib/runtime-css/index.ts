@@ -40,7 +40,9 @@ const STANDARD_PROPERTY_BY_KEY: Readonly<Record<string, string>> = {
  * ("distance 24px").
  */
 export function isStandardParamKey(key: string): boolean {
-  return key in STANDARD_PROPERTY_BY_KEY;
+  // `hasOwn`, not `in`: catalog keys are data, and `toString` or `constructor`
+  // would otherwise answer yes and resolve to an inherited function.
+  return Object.hasOwn(STANDARD_PROPERTY_BY_KEY, key);
 }
 
 /**
@@ -106,7 +108,9 @@ export function assignmentStyle(
 
   for (const param of entry.params) {
     const value = resolved[param.key];
-    const standardProperty = STANDARD_PROPERTY_BY_KEY[param.key];
+    const standardProperty = isStandardParamKey(param.key)
+      ? STANDARD_PROPERTY_BY_KEY[param.key]
+      : undefined;
     if (standardProperty) {
       style[standardProperty] = value;
     } else if (param.cssVar) {
