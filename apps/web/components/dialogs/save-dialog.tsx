@@ -17,20 +17,25 @@ export const SAVE_DIALOG_WIDTH = "w-[420px]";
  * The sign column's colours: `--diff-add` / `--diff-change` / `--diff-remove`,
  * which the token file aliases to success / warning / danger.
  */
-const SIGN_CLASS: Readonly<Record<DiffRowKind, string>> = {
+export const SIGN_CLASS: Readonly<Record<DiffRowKind, string>> = {
   added: "text-vm-success",
   changed: "text-vm-warning",
   removed: "text-vm-danger",
 };
 
 /** What the sign glyph means, for anyone who cannot see its colour. */
-const KIND_WORD: Readonly<Record<DiffRowKind, string>> = {
+export const KIND_WORD: Readonly<Record<DiffRowKind, string>> = {
   added: "Added",
   changed: "Changed",
   removed: "Removed",
 };
 
-function ChangeRow({ row }: { row: DiffRow }) {
+/**
+ * One diff row: sign · mono `data-vm-id` chip · name · meta. Shared with
+ * `components/history/version-row.tsx`, whose expanded rows render the same
+ * shape (`docs/design/README.md` "History tab").
+ */
+export function ChangeRow({ row }: { row: DiffRow }) {
   return (
     <li className="flex min-w-0 items-center gap-2">
       <span
