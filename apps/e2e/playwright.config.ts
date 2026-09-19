@@ -4,11 +4,15 @@ const PORT = 3000;
 const baseURL = `http://localhost:${PORT}`;
 const isCI = Boolean(process.env.CI);
 
+/** Full-stack specs need the Docker stack (api + Postgres + fixtures): `pnpm e2e:docker`. */
+const STACK_SPECS = "**/stack/**";
+/** Measured alone, after everything else. */
+const PERF_SPEC = "**/bridge-perf.spec.ts";
+
 export default defineConfig({
   // One directory per client under test; mobile/ joins web/ when there is a mobile client.
   testDir: "./web",
-  // Full-stack specs need the Docker stack (api + Postgres + fixtures): `pnpm e2e:docker`.
-  testIgnore: "**/stack/**",
+  testIgnore: STACK_SPECS,
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
@@ -18,7 +22,21 @@ export default defineConfig({
     baseURL,
     trace: "on-first-retry",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testIgnore: [STACK_SPECS, PERF_SPEC] },
+    {
+      // The performance spec measures wall-clock time under CPU throttling, so
+      // it must not be measuring five other Chromium instances competing for
+      // the same throttled CPU: `dependencies` holds it until every other spec
+      // has finished, and `fullyParallel: false` keeps its own two tests in one
+      // worker. Ignored by the Docker config, which never runs `mocked/`.
+      name: "perf",
+      testMatch: PERF_SPEC,
+      dependencies: ["chromium"],
+      fullyParallel: false,
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
   webServer: {
     // Explicit port so an ambient PORT (Render sets one) cannot move the server.
     command: `pnpm --filter web exec next dev --port ${PORT}`,
