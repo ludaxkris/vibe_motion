@@ -3,17 +3,23 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "pnpm --filter animation-catalog build",
     "dev": "next dev --port 3000",
+    "prebuild": "pnpm --filter animation-catalog build",
     "build": "next build",
     "start": "next start -p ${PORT:-3000}",
+    "prelint": "pnpm --filter animation-catalog build",
     "lint": "eslint .",
+    "pretypecheck": "pnpm --filter animation-catalog build",
     "typecheck": "next typegen && tsc --noEmit",
+    "pretest": "pnpm --filter animation-catalog build",
     "test": "vitest run",
     "gen:client": "node scripts/gen-client.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
     "@tanstack/react-query": "^5.103.1",
+    "animation-catalog": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.3.0",
     "lucide-react": "^1.47.0",
@@ -35,12 +41,19 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "jsdom": "^30.1.0",
+    "msw": "^2.4.9",
     "openapi-typescript": "^7.13.0",
+    "postcss": "^8.5.28",
     "shadcn": "^4.21.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^3.2.7"
   },
-  "packageManager": "pnpm@10.34.5"
+  "packageManager": "pnpm@10.34.5",
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
+  }
 }

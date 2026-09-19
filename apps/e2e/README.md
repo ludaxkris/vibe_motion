@@ -6,7 +6,8 @@ second client does not have to borrow another app's folder.
 ```
 apps/e2e/
   web/                     Playwright specs for the web app
-    *.spec.ts              web-only: run against `next dev` (`pnpm e2e`) and inside the Docker stack
+    *.spec.ts              true of any deployment: run against `next dev` (`pnpm e2e`) AND in the Docker stack
+    mocked/                need the MSW mock api or a dev build: run only under `pnpm e2e`
     stack/                 need the real api + Postgres: run only inside the Docker stack
   mobile/                  (future) specs for a mobile client; add a Playwright project or its own runner here
   fixtures/                static pages the stack serves for cloning; shared by every client's specs
@@ -16,8 +17,8 @@ apps/e2e/
 ```
 
 ```bash
-pnpm e2e           # web-only specs; starts `next dev` on :3000 itself (reuses a running one)
-pnpm e2e:docker    # everything, against a brand-new full stack in Docker
+pnpm e2e           # web/ + web/mocked/; starts `next dev` on :3000 itself with the MSW mocks on
+pnpm e2e:docker    # web/ + web/stack/, against a brand-new full stack in Docker
 ```
 
 First local run on a new machine: `pnpm --filter e2e exec playwright install chromium`.
@@ -69,9 +70,18 @@ five newest are kept).
 
 ## Writing specs
 
-- Web-only specs go in `web/*.spec.ts`; they run both here and under `pnpm e2e`.
-- Anything needing the api goes in `web/stack/` (ignored by the default config). Import
-  origins from `stack/env.ts`; never hardcode them.
+Three buckets, by what a spec needs of the deployment under it:
+
+- `web/*.spec.ts` — needs no api and no dev build, so it runs **both** here and under `pnpm e2e`.
+  That is the default; put a spec here unless it cannot live here.
+- `web/mocked/` — needs the MSW mock api (`apps/web/mocks/`) or a development build. Only
+  `pnpm e2e` runs these: this stack is `next build` + `next start` against the real api, where
+  `lib/env.ts` forces `apiMocking` off and `/dev` 404s. Ignored by `playwright.docker.config.ts`.
+- `web/stack/` — needs the real api + Postgres. Only `pnpm e2e:docker` runs these; ignored by
+  `playwright.config.ts`. Import origins from `stack/env.ts`; never hardcode them.
+
+A flow worth having both ways gets a spec in each of the last two (`web/mocked/editor.spec.ts`
+and `web/stack/editor.spec.ts` are the clone → editor flow, faked and real).
 - Clone fixture pages (`${stack.fixtureOrigin}/marketing.html`), never the public internet. Add pages
   under `fixtures/`.
 - The database is never cleaned within a run and specs run in parallel with retries: scope every

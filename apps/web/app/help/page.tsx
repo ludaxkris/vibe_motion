@@ -1,13 +1,8 @@
 import type { Metadata } from "next";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { CURRENT_CATALOG_VERSION, getCatalogEntries } from "@/lib/catalog";
+import { HelpScreen } from "@/components/help/help-screen";
+import { REDUCED_MOTION_DEMO_CSS } from "@/components/help/reduced-motion";
+import { CURRENT_CATALOG_VERSION, catalogKeyframes, getCatalogEntries } from "@/lib/catalog";
 
 export const metadata: Metadata = {
   title: "Animation catalog · Vibe Motion",
@@ -15,51 +10,34 @@ export const metadata: Metadata = {
 };
 
 /**
- * Help page (wireframe).
+ * `/help` — the catalog, live (`docs/design/README.md` "4. Help").
  *
- * Renders the catalog read at build time from `packages/animation-catalog/versions/`
- * (currently `lib/catalog.ts`'s pinned version — see `CURRENT_CATALOG_VERSION`).
- * Phase 3 replaces each card's body with a live demo driven by the same runtime
- * CSS generator the editor uses, so this page doubles as a visual test of the
- * catalog.
+ * A Server Component: the catalog is read at build time from the
+ * `animation-catalog` package, and the `@keyframes` for every entry are
+ * emitted once, here, as `<style id="vm-runtime">` — the same stylesheet the
+ * preview bridge will inject into a cloned page (Phase 4), from the same
+ * `lib/runtime-css`. The cards are the client half; they only set
+ * `animation-*` on their demo block.
+ *
+ * That makes this page a visual test of the catalog: what plays here is what
+ * the editor applies and what the exporter ships.
  */
 export default function HelpPage() {
   const entries = getCatalogEntries();
 
   return (
-    <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-10">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Animation catalog
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {entries.length} animations in catalog {CURRENT_CATALOG_VERSION}. Live
-          demos and default params land in Phase 3.
-        </p>
-      </header>
-
-      <ul className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {entries.map((entry) => (
-          <li key={entry.id}>
-            <Card data-testid="catalog-card" className="h-full">
-              <CardHeader>
-                <CardTitle className="flex items-baseline justify-between gap-2 text-base">
-                  <span>{entry.name}</span>
-                  <span className="rounded-full border px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
-                    {entry.category}
-                  </span>
-                </CardTitle>
-                <CardDescription>{entry.description}</CardDescription>
-              </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
-                <span className="font-mono">{entry.id}</span> ·{" "}
-                {entry.params.length} params · triggers:{" "}
-                {entry.triggers.join(", ")}
-              </CardContent>
-            </Card>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <>
+      {/* Everything in here comes from the catalog and from this repo, never
+          from a user or a cloned page. That matters because `<style>` is raw
+          text while React escapes `<`, `>` and `&` in a text child: a catalog
+          string carrying one would arrive as `&lt;` and corrupt the CSS.
+          `app/help/page.test.tsx` holds the catalog to that. */}
+      <style id="vm-runtime">
+        {`${catalogKeyframes(
+          entries.map((entry) => [entry, CURRENT_CATALOG_VERSION] as const),
+        )}\n\n${REDUCED_MOTION_DEMO_CSS}`}
+      </style>
+      <HelpScreen entries={entries} catalogVersion={CURRENT_CATALOG_VERSION} />
+    </>
   );
 }

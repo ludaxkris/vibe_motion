@@ -1,13 +1,16 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { keyframesName } from "animation-catalog";
 import { describe, expect, it } from "vitest";
 
 import {
   CURRENT_CATALOG_VERSION,
-  getCatalog,
+  catalogInlineStyle,
+  catalogKeyframes,
   getCatalogEntries,
   getCatalogEntry,
+  getCatalogEntryAt,
 } from "@/lib/catalog";
 
 describe("catalog", () => {
@@ -18,7 +21,6 @@ describe("catalog", () => {
       "utf8",
     ).trim();
     expect(CURRENT_CATALOG_VERSION).toBe(current);
-    expect(getCatalog().version).toBe(CURRENT_CATALOG_VERSION);
   });
 
   it("loads all 26 entries of catalog 1.1.0", () => {
@@ -40,5 +42,45 @@ describe("catalog", () => {
     expect(new Set(ids).size).toBe(ids.length);
     expect(getCatalogEntry(ids[0])?.id).toBe(ids[0]);
     expect(getCatalogEntry("no-such-animation")).toBeUndefined();
+  });
+});
+
+describe("getCatalogEntryAt", () => {
+  it("resolves against the version asked for, not the current one", () => {
+    // 1.1.0 added `fillMode` to every entry, so an assignment still pinned to
+    // 1.0.0 must not grow a row the version it was saved against never had.
+    const pinned = getCatalogEntryAt("1.0.0", "fade-in");
+    expect(pinned?.params.map((p) => p.key)).toEqual(["duration", "delay", "easing"]);
+
+    const current = getCatalogEntryAt(CURRENT_CATALOG_VERSION, "fade-in");
+    expect(current?.params.map((p) => p.key)).toContain("fillMode");
+  });
+
+  it("agrees with getCatalogEntry for the current version", () => {
+    expect(getCatalogEntryAt(CURRENT_CATALOG_VERSION, "pulse")).toEqual(getCatalogEntry("pulse"));
+  });
+
+  it("is undefined for an unknown version or an unknown id", () => {
+    expect(getCatalogEntryAt("9.9.9", "fade-in")).toBeUndefined();
+    expect(getCatalogEntryAt(CURRENT_CATALOG_VERSION, "no-such-animation")).toBeUndefined();
+  });
+});
+
+describe("catalog type bridges", () => {
+  it("catalogInlineStyle renders an entry's animation as a React style object", () => {
+    const entry = getCatalogEntry("fade-in-up")!;
+    const style = catalogInlineStyle(entry, CURRENT_CATALOG_VERSION);
+
+    expect(style.animationName).toBe(keyframesName(entry.id, CURRENT_CATALOG_VERSION));
+    expect(style.animationDuration).toBe("600ms");
+  });
+
+  it("catalogKeyframes emits one block per entry", () => {
+    const entries = [getCatalogEntry("fade-in")!, getCatalogEntry("pulse")!];
+    const css = catalogKeyframes(entries.map((entry) => [entry, CURRENT_CATALOG_VERSION] as const));
+
+    for (const entry of entries) {
+      expect(css).toContain(`@keyframes ${keyframesName(entry.id, CURRENT_CATALOG_VERSION)}`);
+    }
   });
 });

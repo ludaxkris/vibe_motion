@@ -1,0 +1,21 @@
+import * as React from "react"
+import { cn } from "cn"
+
+/**
+ * The one place the handoff breaks sentence case: 11px semibold uppercase with
+ * 0.04em tracking ("TRIGGER", "SELECTED"). Takes an `id` so the section it
+ * heads can point `aria-labelledby` at it.
+ */
+export function SectionLabel({ className, ...props }: React.ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="section-label"
+      className={cn(
+        // --type-label: `600 11px/1` + uppercase + 0.04em tracking.
+        "text-xs leading-none font-semibold tracking-label text-vm-ink-2 uppercase",
+        className
+      )}
+      {...props}
+    />
+  )
+}
