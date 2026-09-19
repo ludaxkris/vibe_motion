@@ -19,6 +19,9 @@ Rules
 | .worktrees/feat/4-bridge-integration | feat/4-bridge-integration | Claude Fable 5.1 (orchestrator + subagents) | 4 | Rest of Phase 4 on ONE feature branch (Chris's call): plan Tasks 6–7 (store factory, element metadata, guard state, `toApplied`, bridge client), Task 8 (API serves `packages/bridge` script; removes the Phase 2 stub), Task 9 (iframe hook, sandbox, cross-origin mock page, guard dialog), Task 10 (e2e, perf, docs). Edits `apps/web/lib/store`, `components/editor/editor-shell.tsx`, mock page route, `apps/api` bridge assets + Gradle + Dockerfile. | in progress | 2026-09-18 | implements bridge protocol v1; no new contract change expected |
 | .worktrees/chore/phase-5-plan | chore/phase-5-plan | Claude Fable 5.1 (planning session with Chris) | 5 (planning) | Phase 5 design + plan doc `docs/plans/phase-5-agent-flows.md` (docs only), draft PR #14, architect review pending. No implementation claimed yet. | in progress | 2026-09-18 | plans an ADDITIVE bridge protocol change (see notice); no code |
 | .worktrees/feat/6-version-history | feat/6-version-history | Claude Fable 5.1 (session with Chris) | 6 | Version history. Plan: `docs/plans/phase-6-version-history-plan.md` (on the branch). **Track A now** — new files only: `apps/web/lib/versions/*`, `components/history/*`, `components/dialogs/conflict-dialog.tsx`, `app/dev/history/page.tsx`. Track B (store, editor-shell, control-panel, stack e2e) waits for Phase 4. One PR, opened after Phase 4 merges (Chris's call). | in progress (Track A) | 2026-09-18 | no (consumes openapi read-only) |
+| .worktrees/feat/5-mock-agent | feat/5-mock-agent | Claude Fable 5.1 (orchestrator + subagent) | 5 / Track A1 | Plan Task 1: `apps/web/lib/agent` (AnimationAgent, seeded MockAnimationAgent, targets). New directory only. | in progress | 2026-09-18 | no |
+| .worktrees/feat/5-bridge-elements-query | feat/5-bridge-elements-query | Claude Fable 5.1 (orchestrator + subagent) | 5 / Track A2 | Plan Task 2: bridge `elements:query` → `elements:list` in `packages/bridge` (+ protocol spec §3/§6/§7), `BRIDGE_VERSION` 1.1.0. | in progress | 2026-09-18 | YES — bridge protocol, additive (notice below) |
+| .worktrees/feat/5-panel-auto-state | feat/5-panel-auto-state | Claude Fable 5.1 (orchestrator + subagent) | 5 / Track A3 | Plan Task 3: panel machine `auto` state, `returnTo`, `CHANGE` event, `auto-result.tsx`, /dev frame. Touches `panel-machine.ts`, two selectors in `store/index.ts`, `tuning.tsx`/`selected.tsx` (optional `onBack`). | in progress | 2026-09-18 | no |
 
 ## Notices (newest first)
 
@@ -64,6 +67,7 @@ Agents claim a task here before creating a worktree so two agents do not pick th
 | Task | Claimed by | Date |
 |---|---|---|
 | Phase 4 Tasks 6–10 (bridge client, API wiring, shell integration, e2e) on `feat/4-bridge-integration` | Claude Fable 5.1 (session w/ Chris) | 2026-09-18 |
+| Phase 5 Track A: plan Tasks 1–3 (`docs/plans/phase-5-agent-flows.md`, PR #14) on `feat/5-mock-agent`, `feat/5-bridge-elements-query`, `feat/5-panel-auto-state`. Track B (Tasks 0, 4–7) is NOT claimed; it waits for Phase 4. | Claude Fable 5.1 (session w/ Chris) | 2026-09-18 |
 | Phase 6 (version history), Track A now / Track B after Phase 4, on `feat/6-version-history` | Claude Fable 5.1 (session w/ Chris) | 2026-09-18 |
 
 ## Facts other agents need
