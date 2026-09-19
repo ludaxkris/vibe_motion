@@ -23,11 +23,18 @@ export function MockProvider({ children }: { children: React.ReactNode }) {
     if (!env.apiMocking) return;
 
     let cancelled = false;
-    void import("./browser").then(({ startWorker }) =>
-      startWorker().then(() => {
+    void import("./browser")
+      .then(({ startWorker }) => startWorker())
+      .catch((error: unknown) => {
+        // A worker that will not register is worth a line in the console, but
+        // never a blank page: `ready` gates the whole tree, and the app is
+        // still usable (against a real API, or on a route that calls none).
+        // Dev and e2e only — `lib/env.ts` bars mocking from a production build.
+        console.error("Vibe Motion: the mock API worker failed to start.", error);
+      })
+      .finally(() => {
         if (!cancelled) setReady(true);
-      }),
-    );
+      });
 
     return () => {
       cancelled = true;
