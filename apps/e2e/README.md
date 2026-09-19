@@ -18,6 +18,7 @@ apps/e2e/
 
 ```bash
 pnpm e2e           # web/ + web/mocked/; starts `next dev` on :3000 itself with the MSW mocks on
+E2E_WEB_PORT=3210 pnpm e2e   # …on a port of your own, never reusing a server it did not start (DT-113)
 pnpm e2e:docker    # web/ + web/stack/, against a brand-new full stack in Docker
 ```
 

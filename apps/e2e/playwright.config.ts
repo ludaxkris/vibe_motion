@@ -1,6 +1,14 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 3000;
+/**
+ * DT-113: several agents share one machine, and `reuseExistingServer` on a
+ * fixed port silently attaches this suite to another checkout's `next dev` —
+ * a false red, or worse a false green. Setting `E2E_WEB_PORT` takes a port of
+ * your own and refuses to reuse anything, so a busy :3000 is no longer a
+ * reason to distrust a local run. The default is unchanged.
+ */
+const explicitPort = process.env.E2E_WEB_PORT;
+const PORT = Number(explicitPort ?? 3000);
 const baseURL = `http://localhost:${PORT}`;
 const isCI = Boolean(process.env.CI);
 
@@ -41,7 +49,7 @@ export default defineConfig({
     // Explicit port so an ambient PORT (Render sets one) cannot move the server.
     command: `pnpm --filter web exec next dev --port ${PORT}`,
     url: baseURL,
-    reuseExistingServer: !isCI,
+    reuseExistingServer: !isCI && explicitPort === undefined,
     timeout: 120_000,
     // The real Ktor API (apps/api) isn't running in this phase's e2e — serve
     // it from the MSW mocks instead (mocks/, gated by lib/env.ts#apiMocking).
