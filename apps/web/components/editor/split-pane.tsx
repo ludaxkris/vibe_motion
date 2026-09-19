@@ -73,6 +73,11 @@ type SplitPaneProps = {
  * Two panes divided by a draggable, keyboard-operable `role="separator"`
  * handle. The right pane's width is a percentage of the container, clamped to
  * [20, 30] and persisted per browser in `localStorage` (`vm-panel-width`).
+ *
+ * The panel percentage is what the component works in and what is persisted;
+ * what the separator *announces* is the other pane. APG's window-splitter
+ * pattern puts `aria-valuenow`/`min`/`max` on the primary pane — here the
+ * preview — so a 25% panel is announced as a 75% preview in [70, 80].
  */
 export function SplitPane({
   left,
@@ -166,9 +171,10 @@ export function SplitPane({
         role="separator"
         aria-label={separatorLabel}
         aria-orientation="vertical"
-        aria-valuemin={MIN_PANEL_WIDTH_PERCENT}
-        aria-valuemax={MAX_PANEL_WIDTH_PERCENT}
-        aria-valuenow={Math.round(panelWidth)}
+        // The primary pane's share, not the panel's — see the component note.
+        aria-valuemin={100 - MAX_PANEL_WIDTH_PERCENT}
+        aria-valuemax={100 - MIN_PANEL_WIDTH_PERCENT}
+        aria-valuenow={100 - Math.round(panelWidth)}
         tabIndex={0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

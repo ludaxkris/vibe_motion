@@ -50,15 +50,22 @@ test("the Control Panel separator resizes with the keyboard", async ({ page }) =
   await page.getByRole("button", { name: "Clone" }).click();
   await page.waitForURL(/\/p\/.+/);
 
+  // The separator describes the primary (preview) pane, per APG's
+  // window-splitter pattern: a 25% Control Panel is a 75% preview.
   const separator = page.getByRole("separator", { name: "Resize Control Panel" });
-  await expect(separator).toHaveAttribute("aria-valuenow", "25");
+  await expect(separator).toHaveAttribute("aria-valuenow", "75");
 
   await separator.focus();
   await page.keyboard.press("End");
-  await expect(separator).toHaveAttribute("aria-valuenow", "20");
+  await expect(separator).toHaveAttribute("aria-valuenow", "80");
 
   await page.keyboard.press("Home");
-  await expect(separator).toHaveAttribute("aria-valuenow", "30");
+  await expect(separator).toHaveAttribute("aria-valuenow", "70");
+
+  // …and the panel really is at its widest, whatever the separator announces.
+  const panel = page.getByRole("complementary", { name: "Control Panel" });
+  const [panelBox, viewport] = [await panel.boundingBox(), page.viewportSize()];
+  expect(panelBox && viewport && Math.round((panelBox.width / viewport.width) * 100)).toBe(30);
 });
 
 test("a cloned project comes back under Recent projects", async ({ page }) => {

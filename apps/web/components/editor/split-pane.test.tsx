@@ -39,26 +39,30 @@ describe("SplitPane", () => {
     expect(handle.className).toContain("after:-right-1");
   });
 
-  it("defaults the Control Panel width to 25%, exposed via aria-valuenow", () => {
+  // APG's window-splitter pattern: the value describes the PRIMARY pane — the
+  // preview, on the left — not the panel the drag is sized against. So the
+  // default 25% panel reads as a 75% preview, in [70, 80].
+  it("describes the preview pane, per the window-splitter pattern", () => {
     renderSplitPane();
 
     const handle = separator();
     expect(handle).toHaveAttribute("aria-orientation", "vertical");
-    expect(handle).toHaveAttribute("aria-valuemin", "20");
-    expect(handle).toHaveAttribute("aria-valuemax", "30");
-    expect(handle).toHaveAttribute("aria-valuenow", "25");
+    expect(handle).toHaveAttribute("aria-valuemin", "70");
+    expect(handle).toHaveAttribute("aria-valuemax", "80");
+    expect(handle).toHaveAttribute("aria-valuenow", "75");
   });
 
   it("grows the panel on ArrowLeft and shrinks it on ArrowRight, by 1 each press", () => {
     renderSplitPane();
     const handle = separator();
 
+    // The panel grows to 26, so the preview it is measured against is 74.
     fireEvent.keyDown(handle, { key: "ArrowLeft" });
-    expect(handle).toHaveAttribute("aria-valuenow", "26");
+    expect(handle).toHaveAttribute("aria-valuenow", "74");
 
     fireEvent.keyDown(handle, { key: "ArrowRight" });
     fireEvent.keyDown(handle, { key: "ArrowRight" });
-    expect(handle).toHaveAttribute("aria-valuenow", "24");
+    expect(handle).toHaveAttribute("aria-valuenow", "76");
   });
 
   it("clamps keyboard resize at the minimum and maximum", () => {
@@ -68,23 +72,25 @@ describe("SplitPane", () => {
     for (let i = 0; i < 10; i += 1) {
       fireEvent.keyDown(handle, { key: "ArrowRight" });
     }
-    expect(handle).toHaveAttribute("aria-valuenow", "20");
+    expect(handle).toHaveAttribute("aria-valuenow", "80");
 
     for (let i = 0; i < 20; i += 1) {
       fireEvent.keyDown(handle, { key: "ArrowLeft" });
     }
-    expect(handle).toHaveAttribute("aria-valuenow", "30");
+    expect(handle).toHaveAttribute("aria-valuenow", "70");
   });
 
-  it("Home sets the width to the maximum (30) and End to the minimum (20)", () => {
+  it("Home widens the panel to its maximum (30) and End shrinks it to its minimum (20)", () => {
     renderSplitPane();
     const handle = separator();
 
     fireEvent.keyDown(handle, { key: "Home" });
-    expect(handle).toHaveAttribute("aria-valuenow", "30");
+    expect(handle).toHaveAttribute("aria-valuenow", "70");
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("30");
 
     fireEvent.keyDown(handle, { key: "End" });
-    expect(handle).toHaveAttribute("aria-valuenow", "20");
+    expect(handle).toHaveAttribute("aria-valuenow", "80");
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("20");
   });
 
   it("persists the width to localStorage under vm-panel-width", () => {
@@ -97,23 +103,32 @@ describe("SplitPane", () => {
   });
 
   it("restores a valid persisted width on mount, clamped to [20, 30]", () => {
+    // The key still holds the PANEL percentage; only what the separator
+    // announces changed.
     window.localStorage.setItem(STORAGE_KEY, "22");
     renderSplitPane();
 
-    expect(separator()).toHaveAttribute("aria-valuenow", "22");
+    expect(separator()).toHaveAttribute("aria-valuenow", "78");
   });
 
   it("clamps an out-of-range persisted width on mount", () => {
     window.localStorage.setItem(STORAGE_KEY, "80");
     renderSplitPane();
 
-    expect(separator()).toHaveAttribute("aria-valuenow", "30");
+    expect(separator()).toHaveAttribute("aria-valuenow", "70");
   });
 
   it("ignores an invalid persisted width and falls back to the default", () => {
     window.localStorage.setItem(STORAGE_KEY, "not-a-number");
     renderSplitPane();
 
-    expect(separator()).toHaveAttribute("aria-valuenow", "25");
+    expect(separator()).toHaveAttribute("aria-valuenow", "75");
+  });
+
+  it("sizes the panel pane itself from the stored percentage, not the announced one", () => {
+    window.localStorage.setItem(STORAGE_KEY, "22");
+    renderSplitPane();
+
+    expect(screen.getByText("right pane").parentElement).toHaveStyle({ width: "22%" });
   });
 });
