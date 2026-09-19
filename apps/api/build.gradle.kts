@@ -82,9 +82,36 @@ val catalogResources =
         }
     }
 
+// ---------------------------------------------------------------------------
+// Preview bridge: packages/bridge/src/vm-bridge.js is the single source of truth
+// for the script served at /bridge/vm-bridge.js and injected into every cloned
+// page. It is copied into the jar the same way the catalog is, rather than kept
+// as a second copy under src/main/resources, so the file the API serves, the
+// file the web mock route serves and the file the package's own vitest and
+// Playwright suites exercise are byte-identical. BridgeAssets parses
+// BRIDGE_VERSION out of it; nothing here hand-syncs a version.
+// ---------------------------------------------------------------------------
+val bridgeSource: Directory = layout.projectDirectory.dir("../../packages/bridge")
+
+val bridgeResources =
+    tasks.register<Sync>("bridgeResources") {
+        description = "Copies packages/bridge/src/vm-bridge.js into the API resources."
+        group = "build"
+        into(layout.buildDirectory.dir("generated/bridge"))
+        from(bridgeSource.file("src/vm-bridge.js"))
+        doLast {
+            check(File(destinationDir, "vm-bridge.js").isFile) {
+                "No bridge script found in $bridgeSource/src"
+            }
+        }
+    }
+
 tasks.processResources {
     from(catalogResources) {
         into("catalog")
+    }
+    from(bridgeResources) {
+        into("bridge")
     }
 }
 

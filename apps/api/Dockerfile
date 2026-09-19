@@ -1,7 +1,8 @@
 # Vibe Motion API — multi-stage build.
 #
 # Build context is the REPO ROOT (see render.yaml: dockerfilePath ./apps/api/Dockerfile,
-# dockerContext .) because the service bundles packages/animation-catalog into its jar.
+# dockerContext .) because the service bundles packages/animation-catalog and
+# packages/bridge into its jar.
 #
 #   docker build -f apps/api/Dockerfile -t vibe-motion-api:dev .
 
@@ -20,6 +21,9 @@ COPY apps/api/settings.gradle.kts apps/api/build.gradle.kts apps/api/gradle.prop
 RUN ./gradlew --no-daemon --version > /dev/null
 
 COPY packages/animation-catalog /workspace/packages/animation-catalog
+# The preview bridge script: `bridgeResources` copies it into the jar, so the build
+# needs it on disk exactly like the catalog above.
+COPY packages/bridge /workspace/packages/bridge
 COPY apps/api/.editorconfig ./.editorconfig
 COPY apps/api/src ./src
 
