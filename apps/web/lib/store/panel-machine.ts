@@ -43,7 +43,8 @@ export const initialPanelState: PanelState = { status: "idle" };
  *   assignment) — from any current state. Reselecting the *same* element
  *   with no draft is a no-op (identity): it must not collapse `choosing` or
  *   `tuning` back down to `selected`, since nothing about the element
- *   actually changed.
+ *   actually changed. Reselecting it *with* the draft it is already being
+ *   tuned on is a no-op for the same reason.
  * - `DESELECT` returns to `idle` from any non-idle state.
  * - `CHOOSE_CUSTOM` only applies from `selected` -> `choosing`.
  * - `PICK` only applies from `choosing` -> `tuning`.
@@ -66,7 +67,15 @@ export function transition(state: PanelState, event: PanelEvent): PanelState {
       const sameElement = state.status !== "idle" && state.vmId === event.vmId;
 
       if (event.draftAnimationId) {
-        return { status: "tuning", vmId: event.vmId, animationId: event.draftAnimationId };
+        // Reselecting the element already being tuned, on the same animation,
+        // is the same no-op as reselecting one with no draft: a fresh object
+        // would re-render every `panel` subscriber over a state that did not
+        // change (Phase 4's bridge re-reports the selection on every message).
+        return sameElement &&
+          state.status === "tuning" &&
+          state.animationId === event.draftAnimationId
+          ? state
+          : { status: "tuning", vmId: event.vmId, animationId: event.draftAnimationId };
       }
 
       return sameElement ? state : { status: "selected", vmId: event.vmId };

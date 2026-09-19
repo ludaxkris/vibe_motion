@@ -152,6 +152,20 @@ describe("transition", () => {
         animationId: "scale-in",
       });
     });
+    it("SELECT of the element and animation already being tuned is a no-op (identity)", () => {
+      // Phase 4's bridge re-reports the same selection on every message; a
+      // fresh object each time would re-render every `panel` subscriber over a
+      // state that did not change.
+      expect(transition(tuningA, events.SELECT_A_WITH_DRAFT)).toBe(tuningA);
+    });
+    it("SELECT of a different element with the same draft animation -> tuning that element", () => {
+      const event: PanelEvent = { type: "SELECT", vmId: "b", draftAnimationId: "fade-in" };
+      expect(transition(tuningA, event)).toEqual({
+        status: "tuning",
+        vmId: "b",
+        animationId: "fade-in",
+      });
+    });
     it("DESELECT -> idle", () => {
       expect(transition(tuningA, events.DESELECT)).toEqual(idle);
     });
