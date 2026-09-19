@@ -99,6 +99,8 @@ export type Harness = {
    * bridge's "was this cancel ours?" check cannot be exercised in either direction.
    */
   setLiveAnimations(vmId: string, names: string[] | null): void;
+  /** Put the body back and fire DOMContentLoaded, for a harness built with `beforeBody`. */
+  completeLoad(): void;
   destroy(): void;
 };
 
@@ -126,7 +128,18 @@ export function destroyAll(): void {
   while (live.length) live.pop()?.destroy();
 }
 
-export function loadBridge(html: string, opts: { parentOrigin?: string | null } = {}): Harness {
+export function loadBridge(
+  html: string,
+  opts: {
+    parentOrigin?: string | null;
+    /**
+     * Evaluate the script with no `<body>` in the document and without firing DOMContentLoaded,
+     * which is what a bridge injected into `<head>` without `defer` would see. `completeLoad()`
+     * puts the document back together.
+     */
+    beforeBody?: boolean;
+  } = {},
+): Harness {
   const parentOrigin = opts.parentOrigin === undefined ? PARENT_ORIGIN : opts.parentOrigin;
   const dom = new JSDOM(html, { runScripts: "outside-only", url: FRAME_URL });
   const window = dom.window as unknown as Window & typeof globalThis;
@@ -209,6 +222,9 @@ export function loadBridge(html: string, opts: { parentOrigin?: string | null } 
     writable: true,
   });
 
+  const detachedBody = opts.beforeBody ? document.body : null;
+  if (detachedBody) document.documentElement.removeChild(detachedBody);
+
   // --- evaluate the script with a currentScript that carries the parent origin ----------------
   const scriptEl = document.createElement("script");
   if (parentOrigin !== null) scriptEl.setAttribute("data-vm-parent-origin", parentOrigin);
@@ -219,7 +235,7 @@ export function loadBridge(html: string, opts: { parentOrigin?: string | null } 
 
   // jsdom's own DOMContentLoaded lands on the event loop later; tests are synchronous, so fire it
   // now. The bridge listens with `{ once: true }`, so the later one is a no-op.
-  document.dispatchEvent(new window.Event("DOMContentLoaded", { bubbles: true }));
+  if (!detachedBody) document.dispatchEvent(new window.Event("DOMContentLoaded", { bubbles: true }));
 
   function el(vmId: string): HTMLElement {
     const found = document.querySelector<HTMLElement>(`[data-vm-id="${vmId}"]`);
@@ -312,6 +328,10 @@ export function loadBridge(html: string, opts: { parentOrigin?: string | null } 
     },
     keydown(key) {
       document.dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    },
+    completeLoad() {
+      if (detachedBody && !detachedBody.parentNode) document.documentElement.appendChild(detachedBody);
+      document.dispatchEvent(new window.Event("DOMContentLoaded", { bubbles: true }));
     },
     setLiveAnimations(vmId, names) {
       const target = el(vmId) as unknown as { getAnimations?: () => Array<{ animationName: string }> };

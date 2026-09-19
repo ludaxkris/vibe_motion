@@ -94,6 +94,23 @@ describe("handshake", () => {
     expect(h.acks()).toEqual([]);
   });
 
+  it("fails the ack for a hello it cannot answer yet, rather than claiming success", () => {
+    // Only reachable if the script is ever injected without `defer`. The shell must never read
+    // a `hello` ack as proof that a `ready` followed (spec D7).
+    const h = loadBridge(FIXTURE, { beforeBody: true });
+
+    h.send({ type: "hello", payload: {}, seq: 1 });
+
+    expect(h.payloads("ready")).toEqual([]);
+    expect(h.lastAck()).toMatchObject({ seq: 1, ok: false });
+    expect(h.lastAck()?.error).toBeUndefined();
+
+    // The DOMContentLoaded ready still arrives, so the shell needs no recovery path.
+    h.completeLoad();
+    expect(h.payloads("ready")).toHaveLength(1);
+    expect(h.payloads("ready")[0]).toMatchObject({ elementCount: 3 });
+  });
+
   it("normalises the parent origin, so a trailing slash is not a half-dead bridge", () => {
     const h = loadBridge(FIXTURE, { parentOrigin: `${PARENT_ORIGIN}/editor/` });
 

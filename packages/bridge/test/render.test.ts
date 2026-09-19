@@ -265,6 +265,117 @@ describe("the runtime stylesheet is driven through CSSOM", () => {
   });
 });
 
+describe("state:load stylesheet budget (spec §6)", () => {
+  it("inserts one rule per distinct keyframes name plus one per base-styles entry", () => {
+    const h = loadBridge(FIXTURE);
+    const sheet = h.runtimeSheet() as CSSStyleSheet;
+    const insert = vi.spyOn(sheet, "insertRule");
+    const scale = {
+      keyframesName: "vm-scale-in-v1-1-0",
+      keyframesCss: "@keyframes vm-scale-in-v1-1-0 { to { transform: none } }",
+    };
+
+    // Three assignments, two distinct keyframes names, one non-empty baseStyles.
+    h.send({
+      type: "state:load",
+      payload: {
+        assignments: [
+          applied({ vmId: "vm-heading", ...scale }),
+          applied({ vmId: "vm-button", ...scale, baseStyles: "transform-origin: top;" }),
+          applied({ vmId: "vm-para" }),
+        ],
+      },
+      seq: 1,
+    });
+
+    expect(insert).toHaveBeenCalledTimes(3);
+    expect(h.keyframeNames().sort()).toEqual(["vm-fade-in-up-v1-1-0", "vm-scale-in-v1-1-0"]);
+    // Nothing inserted twice.
+    expect(new Set(h.runtimeRules()).size).toBe(h.runtimeRules().length);
+  });
+
+  it("does not grow the sheet when the same state is loaded again", () => {
+    const h = loadBridge(FIXTURE);
+    const payload = {
+      assignments: [
+        applied({ vmId: "vm-heading", baseStyles: "transform-origin: top;" }),
+        applied({ vmId: "vm-button" }),
+      ],
+    };
+    h.send({ type: "state:load", payload, seq: 1 });
+    const before = h.runtimeRules();
+
+    h.send({ type: "state:load", payload, seq: 2 });
+    h.send({ type: "state:load", payload, seq: 3 });
+
+    expect(h.runtimeRules()).toEqual(before);
+    expect((h.runtimeSheet() as CSSStyleSheet).cssRules.length).toBe(before.length);
+  });
+});
+
+describe("a rejected apply leaves nothing behind", () => {
+  const badKeyframes = { keyframesCss: "@keyframes vm-somewhere-else-v1-1-0 { to { opacity: 1 } }" };
+
+  it("does not disturb an assignment already on the element", () => {
+    const h = loadBridge(FIXTURE);
+    h.send({ type: "apply", payload: applied({ baseStyles: "transform-origin: center;" }), seq: 1 });
+
+    h.send({ type: "apply", payload: applied({ ...badKeyframes }), seq: 2 });
+
+    expect(h.lastAck()).toMatchObject({ seq: 2, ok: false, error: "invalid-payload" });
+    expect(h.el("vm-heading").style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
+    expect(h.keyframeNames()).toEqual(["vm-fade-in-up-v1-1-0"]);
+    expect(h.runtimeCss()).toContain('[data-vm-id="vm-heading"] { transform-origin: center; }');
+  });
+
+  it("leaves a fresh element exactly as it found it", () => {
+    const h = loadBridge(
+      page('<h1 data-vm-id="vm-heading" style="animation-duration: 9s">Hi</h1>'),
+    );
+
+    h.send({ type: "apply", payload: applied({ ...badKeyframes }), seq: 1 });
+
+    expect(h.lastAck()).toMatchObject({ seq: 1, ok: false, error: "invalid-payload" });
+    expect(h.el("vm-heading").getAttribute("style")).toBe("animation-duration: 9s");
+    expect(h.keyframeNames()).toEqual([]);
+
+    // The record the rejected apply would otherwise have left behind must not make the next,
+    // valid apply behave differently: the host's inline value is still snapshotted and restored.
+    h.send({ type: "apply", payload: applied(), seq: 2 });
+    expect(h.el("vm-heading").style.getPropertyValue("animation-duration")).toBe("600ms");
+    h.send({ type: "clear", payload: { vmId: "vm-heading" }, seq: 3 });
+    expect(h.el("vm-heading").style.getPropertyValue("animation-duration")).toBe("9s");
+  });
+});
+
+describe("the runtime stylesheet survives its element being removed", () => {
+  it("rebuilds every live rule rather than holding handles into a dead sheet", () => {
+    const h = loadBridge(FIXTURE);
+    h.send({ type: "apply", payload: applied({ baseStyles: "transform-origin: center;" }), seq: 1 });
+
+    const style = h.runtimeStyle() as HTMLStyleElement;
+    style.parentNode?.removeChild(style);
+
+    h.send({
+      type: "apply",
+      payload: applied({
+        vmId: "vm-button",
+        keyframesName: "vm-scale-in-v1-1-0",
+        keyframesCss: "@keyframes vm-scale-in-v1-1-0 { to { transform: none } }",
+      }),
+      seq: 2,
+    });
+
+    expect(h.keyframeNames().sort()).toEqual(["vm-fade-in-up-v1-1-0", "vm-scale-in-v1-1-0"]);
+    expect(h.runtimeCss()).toContain('[data-vm-id="vm-heading"] { transform-origin: center; }');
+
+    // And the rebuilt handles are live, so releasing still removes the right rule.
+    h.send({ type: "clear", payload: { vmId: "vm-heading" }, seq: 3 });
+    expect(h.keyframeNames()).toEqual(["vm-scale-in-v1-1-0"]);
+    expect(h.runtimeCss()).not.toContain('[data-vm-id="vm-heading"]');
+  });
+});
+
 describe("the armed group is whole", () => {
   it("writes every animation longhand the style map leaves out at its initial value", () => {
     const h = loadBridge(FIXTURE);

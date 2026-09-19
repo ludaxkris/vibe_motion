@@ -32,6 +32,7 @@ Everything it injects into the page is prefixed:
 | `<style id="vm-runtime">` | every `@keyframes` body in use (reference-counted), one `[data-vm-id="…"] { … }` base-styles rule per assignment, and the crosshair rule. Always the bridge's own element, mutated through CSSOM (`insertRule` / `rule.style.cssText`), never by writing text |
 | `data-vm-mode="edit"` on `<html>` | what the crosshair rule keys on; Phase 6's reserved `mode` message is one attribute flip |
 | `<div data-vm-overlay>` | the fixed, `pointer-events: none` container holding the hover outline and the selection ring |
+| `data-vm-overlay-hover` / `data-vm-overlay-ring` / `data-vm-overlay-label` | the three boxes inside it, so a test or a screenshot can name what it means instead of counting children |
 | `data-vm-hovered` / `data-vm-selected` on that container | the vmId the outline and the ring are currently drawn around; the bridge's only readable state, which is how the tests and the Phase 4 e2e spec assert that a click did **not** move the ring (spec D10) |
 | `--vm-*` custom properties, `animation-*` longhands | inline on the element, the animation group `!important` and only while the trigger is armed. The group is always *whole*: any longhand the payload omits is written at its initial value, so the host's cannot leak in |
 

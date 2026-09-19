@@ -284,20 +284,41 @@ describe("replay", () => {
     expect(h.lastAck()).toMatchObject({ seq: 2, ok: true });
   });
 
+  it("rewinds every element in one batch, with a single style flush, when vmId is null", () => {
+    const body = Array.from({ length: 4 }, (_, i) => `<div data-vm-id="vm-box-${i}">box ${i}</div>`).join("");
+    const h = loadBridge(page(body));
+    for (let i = 0; i < 4; i += 1) {
+      h.send({ type: "apply", payload: applied({ vmId: `vm-box-${i}` }), seq: i + 1 });
+    }
+    let flushes = 0;
+    const real = h.window.getComputedStyle.bind(h.window);
+    vi.spyOn(h.window, "getComputedStyle").mockImplementation(((el: Element) => {
+      flushes += 1;
+      return real(el);
+    }) as typeof h.window.getComputedStyle);
+
+    h.send({ type: "replay", payload: { vmId: null }, seq: 5 });
+
+    // N elements must cost one style recalculation, not N.
+    expect(flushes).toBe(1);
+    for (let i = 0; i < 4; i += 1) {
+      expect(h.el(`vm-box-${i}`).style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
+    }
+  });
+
   it("replays every assigned element when vmId is null", () => {
     const h = loadBridge(FIXTURE);
     h.send({ type: "apply", payload: applied({ vmId: "vm-heading" }), seq: 1 });
-    h.send({ type: "apply", payload: applied({ vmId: "vm-button" }), seq: 2 });
-
-    const flushed: string[] = [];
-    vi.spyOn(h.window, "getComputedStyle").mockImplementation(((el: Element) => {
-      flushed.push(el.getAttribute("data-vm-id") ?? "?");
-      return { animationName: "none" } as unknown as CSSStyleDeclaration;
-    }) as typeof h.window.getComputedStyle);
+    h.send({ type: "apply", payload: applied({ vmId: "vm-button", trigger: "hover" }), seq: 2 });
+    expect(h.el("vm-button").style.getPropertyValue("animation-name")).toBe("");
+    const heading = watchNameWrites(h, "vm-heading");
+    const button = watchNameWrites(h, "vm-button");
 
     h.send({ type: "replay", payload: { vmId: null }, seq: 3 });
 
-    expect(flushed.sort()).toEqual(["vm-button", "vm-heading"]);
+    // The armed one restarts; the unarmed one is forced to play once.
+    expect(heading).toEqual(["none", "vm-fade-in-up-v1-1-0"]);
+    expect(button).toEqual(["none", "vm-fade-in-up-v1-1-0"]);
   });
 
   it("arms an unarmed hover element for one play and lets it go again on animationend", () => {
@@ -542,6 +563,39 @@ describe("preview", () => {
 
     expect(writes).toEqual([]);
     expect(el.style.getPropertyValue("animation-name")).toBe("vm-pulse-v1-1-0");
+  });
+
+  it("sits out an in-view arm transition and catches up when it clears (spec D4)", () => {
+    const h = loadBridge(hostPage);
+    h.send({ type: "apply", payload: applied(held), seq: 1 });
+    h.send({ type: "preview", payload: previewAssignment, seq: 2 });
+    const el = h.el("vm-heading");
+    expect(el.style.getPropertyValue("animation-name")).toBe("vm-pulse-v1-1-0");
+    const writes = watchNameWrites(h, "vm-heading");
+
+    // A preview belongs to the catalog card under the pointer, not to the scroll position.
+    h.intersect("vm-heading", true);
+    expect(writes).toEqual([]);
+    expect(el.style.getPropertyValue("animation-name")).toBe("vm-pulse-v1-1-0");
+    expect(el.style.getPropertyValue("animation-play-state")).toBe("running");
+
+    // Clearing it lands on the arm state the element reached while the preview was up.
+    h.send({ type: "preview:clear", payload: {}, seq: 3 });
+    expect(el.style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
+    expect(el.style.getPropertyValue("animation-play-state")).toBe("running");
+    expect(el.style.getPropertyValue("animation-delay")).toBe("300ms");
+  });
+
+  it("returns a still-unarmed in-view element to a fresh held animation when it clears", () => {
+    const h = loadBridge(hostPage);
+    h.send({ type: "apply", payload: applied(held), seq: 1 });
+    h.send({ type: "preview", payload: previewAssignment, seq: 2 });
+    const writes = watchNameWrites(h, "vm-heading");
+
+    h.send({ type: "preview:clear", payload: {}, seq: 3 });
+
+    expect(writes).toEqual(["none", "vm-fade-in-up-v1-1-0"]);
+    expect(h.el("vm-heading").style.getPropertyValue("animation-play-state")).toBe("paused");
   });
 
   it("is dropped by state:load", () => {

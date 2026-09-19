@@ -120,16 +120,21 @@
     attachPageListeners();
   }
 
+  /**
+   * Answer the handshake, if we can. Never answers before the element map exists, or a `hello`
+   * from a shell that mounted early would report `elementCount: 0`.
+   *
+   * @returns {boolean} whether a `ready` was posted
+   */
   function announceReady() {
     ensureInit();
-    // Never answer before the element map exists, or `hello` from a shell that mounted early
-    // would report `elementCount: 0`.
-    if (!initialised) return;
+    if (!initialised) return false;
     post("ready", {
       elementCount: elements.size,
       bridgeVersion: BRIDGE_VERSION,
       protocolVersion: PROTOCOL_VERSION,
     });
+    return true;
   }
 
   // ---------------------------------------------------------------------------------------
@@ -184,6 +189,10 @@
    */
   function ensureRuntimeSheet() {
     if (runtimeStyle && runtimeStyle.parentNode && runtimeStyle.sheet) return runtimeStyle.sheet;
+    // Having had one before means it was detached. The rules we are holding belong to a sheet
+    // that no longer applies, so they are rebuilt below rather than left as dead handles that
+    // `dropRule` would silently no-op on.
+    var rebuilding = !!runtimeStyle;
     var created = document.createElement("style");
     created.id = RUNTIME_STYLE_ID;
     (document.head || document.documentElement).appendChild(created);
@@ -196,7 +205,32 @@
         /* An engine that will not take the rule simply shows the page's own cursors. */
       }
     }
+    if (rebuilding) rebuildRules();
     return runtimeSheet;
+  }
+
+  /** Re-insert everything the reference counts say should be live, into the new sheet. */
+  function rebuildRules() {
+    if (!runtimeSheet) return;
+    var sheet = /** @type {CSSStyleSheet} */ (runtimeSheet);
+    keyframeRefs.forEach(function (entry) {
+      try {
+        entry.rule = sheet.cssRules[sheet.insertRule(entry.css, sheet.cssRules.length)];
+      } catch (error) {
+        /* A body that parsed once should parse again; if it does not, drop it silently. */
+      }
+    });
+    baseRules.forEach(function (entry, vmId) {
+      try {
+        var rule = /** @type {CSSStyleRule} */ (
+          sheet.cssRules[sheet.insertRule("[" + ID_ATTR + '="' + vmId + '"] {}', sheet.cssRules.length)]
+        );
+        rule.style.cssText = entry.css;
+        entry.rule = rule;
+      } catch (error) {
+        /* Same. */
+      }
+    });
   }
 
   /**
@@ -545,6 +579,19 @@
   }
 
   /**
+   * Arm a record for a forced replay without touching the DOM, so a page-wide `replay` can
+   * collect every element first and rewind them in one batch.
+   *
+   * @param {ElementRecord} record
+   * @returns {boolean} whether the record takes part
+   */
+  function armForReplay(record) {
+    if (!effective(record)) return false;
+    if (!isArmed(record)) record.replaying = true;
+    return true;
+  }
+
+  /**
    * Give each record a brand new animation: `animation-name: none` for all of them, one style
    * flush for the batch, then render each.
    *
@@ -609,6 +656,10 @@
       var next = !!entries[i].isIntersecting;
       if (record.armed === next) continue;
       record.armed = next;
+      // A preview is transient and belongs to the catalog card the pointer is on, not to the
+      // scroll position (spec D4). Record the new arm state so `preview:clear` renders the right
+      // thing, but leave what is on screen alone.
+      if (record.preview) continue;
       changed.push(record);
     }
     // Both directions, in one batch: arming has to start a new animation, and disarming has to
@@ -698,7 +749,9 @@
     if (record.preview) releaseKeyframes(record.preview.keyframesName);
     record.preview = null;
     syncBaseRule(record);
-    render(record);
+    // Back to whatever the trigger says now, including any arm transitions the preview sat out.
+    if (record.applied && record.applied.trigger === "in-view") rewind([record]);
+    else render(record);
     if (!record.applied) records.delete(record.vmId);
   }
 
@@ -726,10 +779,13 @@
     root.style.cssText =
       "position:fixed;left:0;top:0;width:0;height:0;margin:0;padding:0;border:0;pointer-events:none;z-index:2147483647;";
     hoverBox = document.createElement("div");
+    hoverBox.setAttribute("data-vm-overlay-hover", "");
     hoverBox.style.cssText = BOX_BASE + "border:1.5px dashed " + ACCENT + ";border-radius:2px;";
     selectBox = document.createElement("div");
+    selectBox.setAttribute("data-vm-overlay-ring", "");
     selectBox.style.cssText = BOX_BASE + "outline:2px solid " + ACCENT + ";outline-offset:6px;border-radius:2px;";
     selectLabel = document.createElement("div");
+    selectLabel.setAttribute("data-vm-overlay-label", "");
     selectLabel.style.cssText =
       "position:absolute;left:-6px;bottom:100%;margin:0 0 10px;padding:2px 6px;border-radius:3px;background:" +
       ACCENT +
@@ -1032,14 +1088,24 @@
    */
   var HANDLERS = {
     hello: function () {
-      announceReady();
+      // A failed ack rather than a silent `ok: true`, so the shell is never told the handshake
+      // succeeded when no `ready` followed. It does not need to do anything about it: the
+      // DOMContentLoaded `ready` and the `hello` it re-sends on the iframe `load` event both
+      // still come (spec D7).
+      if (!announceReady()) return { ok: false };
     },
 
     apply: function (payload) {
       if (!validateApplied(payload)) return { ok: false, error: "invalid-payload" };
+      var known = records.has(payload.vmId);
       var record = recordFor(payload.vmId);
       if (!record) return { ok: false, error: "unknown-element" };
-      if (!setApplied(record, payload)) return { ok: false, error: "invalid-payload" };
+      if (!setApplied(record, payload)) {
+        // `setApplied` rejects before it mutates anything, so an element that already had an
+        // assignment keeps it; an element that did not must not be left holding an empty record.
+        if (!known) records.delete(payload.vmId);
+        return { ok: false, error: "invalid-payload" };
+      }
     },
 
     clear: function (payload) {
@@ -1097,11 +1163,12 @@
       if (!Object.prototype.hasOwnProperty.call(payload, "vmId")) return { ok: false, error: "invalid-payload" };
       var vmId = payload.vmId;
       if (vmId === null) {
+        // One rewind for the whole page: N elements must cost one style recalculation, not N.
         var all = /** @type {ElementRecord[]} */ ([]);
         records.forEach(function (record) {
-          all.push(record);
+          if (armForReplay(record)) all.push(record);
         });
-        for (var i = 0; i < all.length; i += 1) restart(all[i], true);
+        rewind(all);
         return;
       }
       if (typeof vmId !== "string" || !VM_ID_RE.test(vmId)) return { ok: false, error: "invalid-payload" };
@@ -1112,11 +1179,13 @@
 
     preview: function (payload) {
       if (!validateApplied(payload)) return { ok: false, error: "invalid-payload" };
+      var known = records.has(payload.vmId);
       var record = recordFor(payload.vmId);
       if (!record) return { ok: false, error: "unknown-element" };
       // Acquire before anything is torn down, so a keyframes body that will not parse leaves
       // whatever was on screen exactly as it was.
       if (!acquireKeyframes(payload.keyframesName, payload.keyframesCss)) {
+        if (!known) records.delete(payload.vmId);
         return { ok: false, error: "invalid-payload" };
       }
       if (previewVmId && previewVmId !== payload.vmId) dropPreview();

@@ -305,7 +305,7 @@ test("the selection ring tracks the element through a nested scroller", async ({
   );
 
   await h.send("select", { vmId: "vm-deep", label: "div · Fade" });
-  const ring = "[data-vm-overlay] > div:nth-child(2)";
+  const ring = "[data-vm-overlay-ring]";
   await expect.poll(() => h.rect(ring)).toEqual(await h.rect('[data-vm-id="vm-deep"]'));
 
   await h.frame.evaluate(() => {
@@ -314,6 +314,7 @@ test("the selection ring tracks the element through a nested scroller", async ({
   await page.waitForTimeout(200);
 
   expect(await h.rect(ring)).toEqual(await h.rect('[data-vm-id="vm-deep"]'));
+  expect(await h.frame.textContent("[data-vm-overlay-label]")).toBe("div · Fade");
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -359,6 +360,15 @@ test("keyframes css that is not exactly one matching @keyframes rule is rejected
 
   const notKeyframes = await h.send("apply", assignment("vm-a", { keyframesCss: "body { display: none }" }));
   expect(notKeyframes).toMatchObject({ ok: false, error: "invalid-payload" });
+
+  // The one that matters: a correct block with a second rule smuggled in behind it.
+  const trailing = await h.send(
+    "apply",
+    assignment("vm-a", {
+      keyframesCss: "@keyframes vm-fade-v1-0-0 { to { opacity: 1 } } body { display: none }",
+    }),
+  );
+  expect(trailing).toMatchObject({ ok: false, error: "invalid-payload" });
 
   expect(await h.frame.evaluate(() => getComputedStyle(document.body).display)).not.toBe("none");
   expect(await h.inline("vm-a", "animation-name")).toBe("");
