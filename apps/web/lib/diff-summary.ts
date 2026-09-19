@@ -13,6 +13,7 @@
  * Nothing here calls the API; Phase 6 turns these rows into a `Diff` body.
  */
 import type { Assignment, EditorStateMap } from "@/lib/api-client";
+import { assignmentsEqual } from "@/lib/assignment";
 
 /** The little a row needs from a catalog entry — satisfied by either `CatalogEntry` type. */
 export type CatalogLookupEntry = {
@@ -166,15 +167,6 @@ function changedMeta(before: Assignment, after: Assignment, lookup: CatalogLooku
   }
 
   return parts.join(" · ");
-}
-
-function assignmentsEqual(a: Assignment, b: Assignment): boolean {
-  if (a.animationId !== b.animationId) return false;
-  if (a.catalogVersion !== b.catalogVersion) return false;
-  if (a.trigger !== b.trigger) return false;
-  const aKeys = Object.keys(a.params);
-  if (aKeys.length !== Object.keys(b.params).length) return false;
-  return aKeys.every((key) => a.params[key] === b.params[key]);
 }
 
 /**

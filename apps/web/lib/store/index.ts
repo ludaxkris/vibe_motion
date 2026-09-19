@@ -25,6 +25,7 @@
 import { create } from "zustand";
 
 import type { Assignment, EditorStateMap } from "@/lib/api-client";
+import { assignmentsEqual } from "@/lib/assignment";
 import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
 
 import {
@@ -84,19 +85,6 @@ export const initialEditorState: EditorState = {
   currentVersionState: {},
   mode: "editing",
 };
-
-function assignmentsEqual(a: Assignment | undefined, b: Assignment | undefined): boolean {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  if (a.animationId !== b.animationId) return false;
-  if (a.catalogVersion !== b.catalogVersion) return false;
-  if (a.trigger !== b.trigger) return false;
-
-  const aKeys = Object.keys(a.params);
-  const bKeys = Object.keys(b.params);
-  if (aKeys.length !== bKeys.length) return false;
-  return aKeys.every((key) => a.params[key] === b.params[key]);
-}
 
 /** `data-vm-id` of the element selected in the preview iframe, or null when nothing is selected. */
 export function selectSelectedVmId(state: EditorState): string | null {
