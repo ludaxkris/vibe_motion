@@ -24,6 +24,7 @@ Vibe Motion is a web tool that lets product designers add CSS animations to an e
 
 ```
 apps/web/                 Next.js app (editor shell, control panel, help page, bridge client, mock agent)
+apps/e2e/                 end-to-end tests for every client (web/ today, mobile/ later), fixtures, the Docker full-stack (docker/)
 apps/api/                 Ktor service (clone, versions, export, catalog endpoint), openapi.yaml, Dockerfile, Flyway migrations
 packages/animation-catalog/  versions/<semver>.json (immutable), current, schema.json, CHANGELOG.md, type generation, check-immutable gate
 docs/                     build_plan.md, architecture.md, user_flow.md, deferred_tasks.md, agents/pr-comment.md
@@ -41,9 +42,10 @@ Once Phase 0 lands these are the canonical entry points. Until then, see the pha
 ```bash
 pnpm install                     # JS workspace
 pnpm dev                         # web on :3000, expects API on :8080
-pnpm gates                       # ALL gates (web + api + catalog); what CI runs
+pnpm gates                       # ALL gates (catalog + web + api + e2e + full-stack Docker e2e); what CI runs
 pnpm --filter web test           # vitest
-pnpm --filter web e2e            # playwright (needs api running)
+pnpm e2e                         # playwright (apps/e2e), web-only specs against `next dev`
+pnpm e2e:docker                  # full-stack e2e: a NEW throwaway Docker stack per run (db + api image + prod web build + fixtures + runner); safe to run concurrently from any worktree; agents run it (and `pnpm gates`) in the background. See apps/e2e/README.md
 pnpm --filter animation-catalog validate
 scripts/cleanup-merged.sh <branch> # after the PR merges: remove worktree, branch, temp files
 
@@ -55,11 +57,11 @@ Local Postgres: `docker compose up db` (compose file lands in Phase 0).
 
 ## Conventions
 
-- **Naming prefix.** Every class, keyframe, custom property, data attribute, or message type this tool injects into a cloned page or an export is prefixed `vm-` / `--vm-` / `data-vm-`. No exceptions.
+- **Naming prefix.** Every class, id, keyframe, custom property, or data attribute this tool injects into a cloned page or an export is prefixed `vm-` / `--vm-` / `data-vm-`. No exceptions. Bridge `postMessage` types are the one thing that is not prefixed: they are namespaced by the envelope's `source: "vibe-motion"` (see `docs/plans/phase-4-bridge-protocol.md`).
 - **Web.** TypeScript strict. Server Components by default, `"use client"` only where needed (the editor is almost entirely client). State in Zustand (`apps/web/lib/store`), server data via TanStack Query with the generated client in `apps/web/lib/api-client` (regenerate with `pnpm gen:client`, never hand-edit). Tailwind + shadcn/ui. No CSS modules.
 - **API.** Kotlin idiomatic, no `!!`. Routes thin, logic in services, persistence behind repository interfaces. kotlinx.serialization for JSON. Every endpoint exists in `openapi.yaml` before it exists in code.
 - **Catalog is versioned and immutable.** Never edit a file under `packages/animation-catalog/versions/` that already exists on `main`, not even for a typo. Any change is a new `versions/<semver>.json` (patch: metadata only; minor: new animations, or new params — standard or cssVar-backed — whose default reproduces the previous rendering, which may add `var(--vm-x)` references to keyframes/baseStyles; major: changed rendering at default params, removed animations, renamed or removed params), a `current` bump, and a CHANGELOG entry. CI's `check-immutable` gate fails otherwise, and `pnpm --filter animation-catalog validate` enforces a superset gate within a shared major (no id or param key may be dropped going forward). Every saved assignment pins `catalogVersion`; the runtime and exporter resolve against that pinned version, and CSS is derived from it, never stored. Add a params entry rather than special-casing an animation in code.
-- **Tests.** TDD is expected: write the failing test, then the code. Unit tests next to source. e2e in `apps/web/e2e`. Golden files for the exporter in `apps/api/src/test/resources/golden`.
+- **Tests.** TDD is expected: write the failing test, then the code. Unit tests next to source. e2e lives in its own package, `apps/e2e` (never inside the app under test): web specs in `apps/e2e/web/`, those that need the real api in `apps/e2e/web/stack/` (run only via `pnpm e2e:docker`), fixture pages to clone in `apps/e2e/fixtures/`; a future mobile client gets `apps/e2e/mobile/`. Never point e2e at a shared or long-lived database or at Render. Golden files for the exporter in `apps/api/src/test/resources/golden`.
 - **Commits.** Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`). Small, reviewable PRs, one phase task each. End commit messages with the attribution line the harness provides.
 - **PR description template.** What / Why / How to test / Gates output / Deferred items logged / memory.md updated (yes/no).
 

@@ -15,7 +15,7 @@ You write tests for Vibe Motion. Read CLAUDE.md and the relevant section of docs
 | Catalog | `packages/animation-catalog/test` | Vitest | Schema validation of every entry in every published version; every keyframes string parses; every param has a default within min/max; `check-immutable` fails on a fixture edit to a published file; TS and Kotlin agree on the `(version, animationId)` set. |
 | API unit | `apps/api/src/test/kotlin` | Kotest | Clone rewriter, SSRF guard, exporter (golden files under `src/test/resources/golden`). |
 | API integration | `apps/api/src/test/kotlin/.../integration` | Kotest + Testcontainers Postgres + Ktor test host | One test per endpoint in `openapi.yaml`, including error cases. |
-| e2e | `apps/web/e2e` | Playwright | Fixture pages under `apps/web/e2e/fixtures`. Cover: clone → select → Generate; Custom → pick → tune; Auto-generate; version view/restore; export runs in a fresh page. |
+| e2e | `apps/e2e/web` | Playwright | Fixture pages under `apps/e2e/fixtures`. Specs that need the real api live in `apps/e2e/web/stack/` and run only in the per-run Docker stack (`pnpm e2e:docker`, see `apps/e2e/README.md`); import origins from `stack/env.ts`. Cover: clone → select → Generate; Custom → pick → tune; Auto-generate; version view/restore; export runs in a fresh page. |
 
 ## Rules
 
