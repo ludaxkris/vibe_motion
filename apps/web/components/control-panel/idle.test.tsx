@@ -68,6 +68,27 @@ describe("IdlePanel", () => {
     expect(onSelectElement).toHaveBeenCalledWith("vm-3");
   });
 
+  it("names a row's animation from the version that row's assignment pinned", () => {
+    render(
+      <IdlePanel
+        assignments={{
+          "vm-3": {
+            animationId: "fade-in-up",
+            // A version this browser has no catalog for: the id is the honest
+            // label, rather than the *current* catalog's name for an entry
+            // this assignment was never authored against.
+            catalogVersion: "9.9.9",
+            trigger: "load",
+            params: { duration: "600ms", delay: "0ms" },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /fade-in-up on vm-3/ })).toBeInTheDocument();
+    expect(screen.queryByText("Fade In Up")).not.toBeInTheDocument();
+  });
+
   it("keeps Replay all disabled until the preview bridge exists", () => {
     render(<IdlePanel assignments={draftWith("vm-3", "fade-in-up")} />);
 

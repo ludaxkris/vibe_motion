@@ -11,6 +11,7 @@
 import {
   CURRENT_VERSION,
   getCatalog as getCatalogByVersion,
+  getEntry as getEntryByVersion,
   type CatalogEntry as CatalogPackageEntry,
 } from "animation-catalog";
 
@@ -35,9 +36,34 @@ export function getCatalogEntries(): readonly CatalogEntry[] {
   return catalog.entries;
 }
 
-/** One entry by id, or `undefined` when the id is not in the current catalog. */
+/**
+ * One entry by id, or `undefined` when the id is not in the current catalog.
+ *
+ * For the picker and anything else that *authors* new work. Anything rendering
+ * an existing assignment wants {@link getCatalogEntryAt} against the version
+ * that assignment pinned.
+ */
 export function getCatalogEntry(id: string): CatalogEntry | undefined {
   return catalog.entries.find((entry) => entry.id === id);
+}
+
+/**
+ * One entry by id, resolved against `catalogVersion` rather than the current
+ * catalog.
+ *
+ * Every assignment pins the catalog version it was authored with (CLAUDE.md
+ * rule 9), and versions differ: 1.1.0 gave every entry a `fillMode` param that
+ * 1.0.0 has none of. Rendering a 1.0.0 assignment's rows out of 1.1.0 would
+ * show a control for a param that animation never had — and would write a
+ * value the pinned version cannot validate. So the tuning panel, the unsaved
+ * guard and the idle list all resolve here, and only the picker (which is
+ * choosing something new) reads the current catalog.
+ */
+export function getCatalogEntryAt(
+  catalogVersion: string,
+  id: string,
+): CatalogEntry | undefined {
+  return getEntryByVersion(catalogVersion, id) as CatalogEntry | undefined;
 }
 
 /**

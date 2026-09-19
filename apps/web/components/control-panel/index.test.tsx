@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { CURRENT_CATALOG_VERSION } from "@/lib/catalog";
 import { initialEditorState, useEditorStore } from "@/lib/store";
 
 import { ControlPanel } from "./index";
@@ -74,6 +75,70 @@ describe("ControlPanel", () => {
     render(<ControlPanel />);
 
     expect(screen.getByText(/Save and Cancel live in the top bar/)).toBeInTheDocument();
+  });
+});
+
+describe("ControlPanel · pinned catalog version", () => {
+  /** A draft assignment on `vm-1` pinned to `catalogVersion`, mid-tuning. */
+  function tuningPinnedTo(catalogVersion: string, animationId = "fade-in") {
+    useEditorStore.setState({
+      panel: { status: "tuning", vmId: "vm-1", animationId },
+      draftState: {
+        "vm-1": {
+          animationId,
+          catalogVersion,
+          trigger: "load",
+          params: { duration: "600ms", delay: "0ms", easing: "ease-out" },
+        },
+      },
+    });
+  }
+
+  it("tunes a 1.0.0 assignment against 1.0.0, which has no fill mode", () => {
+    tuningPinnedTo("1.0.0");
+    render(<ControlPanel />);
+
+    expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
+    expect(screen.getByText("Duration")).toBeInTheDocument();
+    // `fillMode` arrived in 1.1.0; offering it here would write a param the
+    // pinned version cannot validate.
+    expect(screen.queryByText("Fill mode")).not.toBeInTheDocument();
+  });
+
+  it("tunes a current-version assignment against the current catalog", () => {
+    tuningPinnedTo(CURRENT_CATALOG_VERSION);
+    render(<ControlPanel />);
+
+    expect(screen.getByText("Fill mode")).toBeInTheDocument();
+  });
+
+  it("says so when the pinned version has no such entry", () => {
+    tuningPinnedTo("9.9.9");
+    render(<ControlPanel />);
+
+    expect(screen.getByTestId("panel-tuning-missing-entry")).toBeInTheDocument();
+  });
+
+  it("names the guarded animation from the version the assignment pinned", () => {
+    useEditorStore.setState({
+      panel: { status: "tuning", vmId: "vm-1", animationId: "fade-in" },
+      draftState: {
+        "vm-1": {
+          animationId: "fade-in",
+          catalogVersion: "9.9.9",
+          trigger: "load",
+          params: {},
+        },
+      },
+    });
+    render(<ControlPanel />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Save changes to vm-1?" });
+    // No 9.9.9 catalog to name it from, so the id stands in — rather than the
+    // current catalog's name for an entry this assignment never used.
+    expect(within(dialog).getByText("fade-in")).toBeInTheDocument();
   });
 });
 

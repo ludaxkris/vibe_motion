@@ -11,6 +11,7 @@ import {
   getCatalog,
   getCatalogEntries,
   getCatalogEntry,
+  getCatalogEntryAt,
 } from "@/lib/catalog";
 
 describe("catalog", () => {
@@ -43,6 +44,27 @@ describe("catalog", () => {
     expect(new Set(ids).size).toBe(ids.length);
     expect(getCatalogEntry(ids[0])?.id).toBe(ids[0]);
     expect(getCatalogEntry("no-such-animation")).toBeUndefined();
+  });
+});
+
+describe("getCatalogEntryAt", () => {
+  it("resolves against the version asked for, not the current one", () => {
+    // 1.1.0 added `fillMode` to every entry, so an assignment still pinned to
+    // 1.0.0 must not grow a row the version it was saved against never had.
+    const pinned = getCatalogEntryAt("1.0.0", "fade-in");
+    expect(pinned?.params.map((p) => p.key)).toEqual(["duration", "delay", "easing"]);
+
+    const current = getCatalogEntryAt(CURRENT_CATALOG_VERSION, "fade-in");
+    expect(current?.params.map((p) => p.key)).toContain("fillMode");
+  });
+
+  it("agrees with getCatalogEntry for the current version", () => {
+    expect(getCatalogEntryAt(CURRENT_CATALOG_VERSION, "pulse")).toEqual(getCatalogEntry("pulse"));
+  });
+
+  it("is undefined for an unknown version or an unknown id", () => {
+    expect(getCatalogEntryAt("9.9.9", "fade-in")).toBeUndefined();
+    expect(getCatalogEntryAt(CURRENT_CATALOG_VERSION, "no-such-animation")).toBeUndefined();
   });
 });
 

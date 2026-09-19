@@ -5,7 +5,7 @@ import { useState } from "react";
 import { UnsavedGuardDialog } from "@/components/dialogs/unsaved-guard-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Trigger } from "@/lib/api-client";
-import { ALL_CATEGORIES, getCatalogEntry } from "@/lib/catalog";
+import { ALL_CATEGORIES, getCatalogEntryAt } from "@/lib/catalog";
 import {
   selectSelectedElementUnsaved,
   selectSelectedVmId,
@@ -62,6 +62,12 @@ function ChoosingSection({ vmId }: { vmId: string }) {
  * PICK, which resolves the entry and creates the assignment together — but the
  * two failure modes are distinct (a catalog entry that has gone away vs. a
  * draft cleared out from under a mounted panel) and worth telling apart.
+ *
+ * The entry comes from the version the *assignment* pinned, not from the
+ * current catalog: catalog versions differ in their params (1.1.0 gave every
+ * entry a `fillMode` 1.0.0 has none of), and a row for a param the pinned
+ * version never had would write a value that version cannot validate
+ * (CLAUDE.md rule 9). That is also why the assignment is read before the entry.
  */
 function TuningSection({ vmId, animationId }: { vmId: string; animationId: string }) {
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
@@ -70,24 +76,25 @@ function TuningSection({ vmId, animationId }: { vmId: string; animationId: strin
   const removeDraftAssignment = useEditorStore((state) => state.removeDraftAssignment);
   const assignment = useEditorStore((state) => state.draftState[vmId]);
 
-  const entry = getCatalogEntry(animationId);
-  if (!entry) {
-    return (
-      <PanelCard data-testid="panel-tuning-missing-entry">
-        <PanelSection>
-          <p className="text-sm leading-body text-vm-ink-2">
-            This animation is no longer in the catalog.
-          </p>
-        </PanelSection>
-      </PanelCard>
-    );
-  }
   if (!assignment) {
     return (
       <PanelCard data-testid="panel-tuning-missing-draft">
         <PanelSection>
           <p className="text-sm leading-body text-vm-ink-2">
             No draft assignment for this element yet.
+          </p>
+        </PanelSection>
+      </PanelCard>
+    );
+  }
+
+  const entry = getCatalogEntryAt(assignment.catalogVersion, animationId);
+  if (!entry) {
+    return (
+      <PanelCard data-testid="panel-tuning-missing-entry">
+        <PanelSection>
+          <p className="text-sm leading-body text-vm-ink-2">
+            This animation is no longer in the catalog.
           </p>
         </PanelSection>
       </PanelCard>
@@ -155,7 +162,8 @@ export function ControlPanel({ currentVersionLabel }: { currentVersionLabel?: st
   const guardedVmId = selectedElementUnsaved ? selectedVmId : null;
   const guardedAssignment = guardedVmId === null ? undefined : draftState[guardedVmId];
   const guardedAnimationName = guardedAssignment
-    ? (getCatalogEntry(guardedAssignment.animationId)?.name ?? guardedAssignment.animationId)
+    ? (getCatalogEntryAt(guardedAssignment.catalogVersion, guardedAssignment.animationId)?.name ??
+      guardedAssignment.animationId)
     : undefined;
 
   return (

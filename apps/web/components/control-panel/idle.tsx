@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ElementTag } from "@/components/ui/element-tag";
 import { SectionLabel } from "@/components/ui/section-label";
 import type { Assignment, EditorStateMap } from "@/lib/api-client";
-import { getCatalogEntry } from "@/lib/catalog";
+import { getCatalogEntryAt } from "@/lib/catalog";
 
 import { PanelCard, PanelSection } from "./panel-card";
 
@@ -17,8 +17,15 @@ function assignmentMeta(assignment: Assignment): string {
     .join(" · ");
 }
 
+/**
+ * Resolved against the version the assignment pinned, never the current one:
+ * a row must read as what it actually is (CLAUDE.md rule 9).
+ */
 function animationName(assignment: Assignment): string {
-  return getCatalogEntry(assignment.animationId)?.name ?? assignment.animationId;
+  return (
+    getCatalogEntryAt(assignment.catalogVersion, assignment.animationId)?.name ??
+    assignment.animationId
+  );
 }
 
 /**
