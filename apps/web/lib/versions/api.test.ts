@@ -44,6 +44,24 @@ describe("saveVersion", () => {
       HttpResponse.json({ code: "project_busy", message: "busy" }, { status: 503, headers: { "Retry-After": "2" } })));
     expect(await saveVersion(p.id, body)).toEqual({ kind: "busy", retryAfterSeconds: 2 });
   });
+
+  it("maps an unmapped server error to failed", async () => {
+    const p = project();
+    const body = { parentVersionId: p.currentVersionId, catalogVersion: "1.1.0", diff: { set: { "vm-1": fade }, remove: [] } };
+
+    server.use(http.post(`${env.apiOrigin}/projects/:id/versions`, () =>
+      HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 })));
+    expect(await saveVersion(p.id, body)).toEqual({ kind: "failed", message: "boom" });
+  });
+
+  it("returns failed rather than throwing on a network error", async () => {
+    const p = project();
+    const body = { parentVersionId: p.currentVersionId, catalogVersion: "1.1.0", diff: { set: { "vm-1": fade }, remove: [] } };
+
+    server.use(http.post(`${env.apiOrigin}/projects/:id/versions`, () => HttpResponse.error()));
+    const outcome = await saveVersion(p.id, body);
+    expect(outcome.kind).toBe("failed");
+  });
 });
 
 describe("restoreVersion", () => {
