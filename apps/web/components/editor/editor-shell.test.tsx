@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { apiClient, type Assignment, type Project } from "@/lib/api-client";
 import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
 import { env } from "@/lib/env";
-import { readRecentProjects } from "@/lib/recent-projects";
+import { readRecentProjects, rememberRecentProject } from "@/lib/recent-projects";
 import { initialEditorState, selectSelectedVmId, useEditorStore } from "@/lib/store";
 import { server } from "@/mocks/server";
 
@@ -80,6 +80,28 @@ describe("EditorShell", () => {
     expect(await screen.findByText(/no project found/i)).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /start a new project/i });
     expect(link).toHaveAttribute("href", "/");
+  });
+
+  it("shows the same not-found screen for a projectId the API rejects as malformed", async () => {
+    // The service answers 400 `bad_request` for a path id that is not a uuid.
+    // To the reader who mistyped the link that is the same story as a 404, and
+    // "Could not load this project" with a Retry that can never work is not.
+    renderShell("not-a-uuid");
+
+    expect(await screen.findByText(/no project found/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /start a new project/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+  });
+
+  it("gives the screen a heading of its own, for a reader who navigates by them", async () => {
+    const project = await createProject();
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading).toHaveTextContent("example.com/pricing");
+    // The bar is a banner and cannot carry it, so it lives inside main.
+    expect(within(screen.getByRole("main")).getByRole("heading", { level: 1 })).toBe(heading);
   });
 
   it("shows an error state with retry on a server error", async () => {
@@ -230,6 +252,70 @@ describe("EditorShell", () => {
     fireEvent.keyDown(window, { key: "Escape" });
 
     expect(selectSelectedVmId(useEditorStore.getState())).toBe("vm-1");
+  });
+
+  it("Esc leaves a text field alone — the picker's search is where Esc clears the query", async () => {
+    const project = await createProject();
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+    const store = useEditorStore.getState();
+    store.setSelectedVmId("vm-1");
+    store.dispatchPanel({ type: "CHOOSE_CUSTOM" });
+
+    fireEvent.keyDown(await screen.findByRole("searchbox", { name: "Search animations" }), {
+      key: "Escape",
+    });
+
+    expect(selectSelectedVmId(useEditorStore.getState())).toBe("vm-1");
+  });
+
+  it("Esc that something nearer has already handled does not also deselect", async () => {
+    const project = await createProject();
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+    useEditorStore.getState().setSelectedVmId("vm-1");
+
+    // Stands in for a dialog or a popup closing on Esc: it claims the key on
+    // the way up, and the shell must not act on it a second time.
+    const claim = (event: Event) => event.preventDefault();
+    document.body.addEventListener("keydown", claim);
+    try {
+      fireEvent.keyDown(document.body, { key: "Escape" });
+    } finally {
+      document.body.removeEventListener("keydown", claim);
+    }
+
+    expect(selectSelectedVmId(useEditorStore.getState())).toBe("vm-1");
+  });
+
+  it("forgets a project it could not find, so the Entry screen stops offering it", async () => {
+    const missingId = "00000000-0000-0000-0000-000000000000";
+    rememberRecentProject({ id: missingId, title: "gone.test", sourceUrl: "https://gone.test/" });
+    rememberRecentProject({ id: "11111111-1111-1111-1111-111111111111", title: "kept.test", sourceUrl: "https://kept.test/" });
+
+    renderShell(missingId);
+    await screen.findByText(/no project found/i);
+
+    await waitFor(() => {
+      expect(readRecentProjects().map((p) => p.id)).toEqual([
+        "11111111-1111-1111-1111-111111111111",
+      ]);
+    });
+  });
+
+  it("keeps the recent list intact when the failure is not a missing project", async () => {
+    const project = await createProject();
+    rememberRecentProject({
+      id: project.id,
+      title: project.title,
+      sourceUrl: project.sourceUrl,
+    });
+    server.use(http.get(api("/projects/:projectId"), () => HttpResponse.json({}, { status: 500 })));
+
+    renderShell(project.id);
+    await screen.findByText(/could not load this project/i);
+
+    expect(readRecentProjects().map((p) => p.id)).toEqual([project.id]);
   });
 
   it("records the project under Recent projects once it loads", async () => {

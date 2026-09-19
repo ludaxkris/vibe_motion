@@ -9,7 +9,7 @@ import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { apiClient, type Project, type Version } from "@/lib/api-client";
 import { previewPageUrl } from "@/lib/preview-url";
-import { rememberRecentProject } from "@/lib/recent-projects";
+import { forgetRecentProject, rememberRecentProject } from "@/lib/recent-projects";
 import { hostAndPath } from "@/lib/source-url";
 import { useEditorStore, useUnsaved } from "@/lib/store";
 
@@ -45,6 +45,7 @@ async function fetchVersions(projectId: string): Promise<Version[]> {
 function EditorFrame({
   children,
   title,
+  heading,
   chip,
   status,
   actions,
@@ -52,6 +53,8 @@ function EditorFrame({
   children: ReactNode;
   /** `string`, not `ReactNode`: `TopBar` intersects it with the header's own `title` attribute. */
   title?: string;
+  /** The screen's `<h1>`, named for a reader who navigates by headings. */
+  heading?: string;
   chip?: string;
   /** Sits in the bar after the version chip — the unsaved indicator. */
   status?: ReactNode;
@@ -62,9 +65,26 @@ function EditorFrame({
       <TopBar title={title} chip={chip} actions={actions}>
         {status}
       </TopBar>
-      <main className="flex min-h-0 flex-1 flex-col bg-vm-canvas">{children}</main>
+      <main className="flex min-h-0 flex-1 flex-col bg-vm-canvas">
+        {/* The project's name is in the bar, which is a banner and so cannot
+            carry the page's heading (same shape as `/help`). Visually the
+            chrome already says where you are, so the heading is sr-only. */}
+        <h1 className="sr-only">{heading ?? "Editor"}</h1>
+        {children}
+      </main>
     </>
   );
+}
+
+/**
+ * Whether the key belongs to whatever the user is typing in. Esc inside the
+ * picker's search field clears the query; it must not also throw away the
+ * selection behind the panel.
+ */
+function isTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
 }
 
 /** The bar's 7px dot + caption, shown only while the draft differs from the saved version. */
@@ -146,14 +166,33 @@ export function EditorShell({ projectId }: { projectId: string }) {
   // prevent (docs/design/README.md, "On-page selection"). Listening on the
   // window rather than inside the iframe: the iframe is a separate browsing
   // context and the bridge (Phase 4) forwards its own keys.
+  //
+  // Being last in line, the shell takes Esc only when nothing nearer wanted
+  // it: a dialog or a popup that closed on the key calls `preventDefault`, and
+  // a text field is still being typed in.
   useEffect(() => {
     if (unsaved) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") dispatchPanel({ type: "DESELECT" });
+      if (event.key !== "Escape") return;
+      if (event.defaultPrevented) return;
+      if (isTextEntry(event.target)) return;
+      dispatchPanel({ type: "DESELECT" });
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [unsaved, dispatchPanel]);
+
+  // A 404 says the project is gone; a 400 says the id in the link was never a
+  // project id at all. Both leave the reader on the same dead link, so they
+  // get the same screen — and the id comes off this browser's recent list,
+  // which nothing else would ever clean up (there is no list endpoint).
+  const missing =
+    query.error instanceof ProjectFetchError &&
+    (query.error.status === 404 || query.error.status === 400);
+
+  useEffect(() => {
+    if (missing) forgetRecentProject(projectId);
+  }, [missing, projectId]);
 
   if (query.isPending) {
     return (
@@ -170,13 +209,10 @@ export function EditorShell({ projectId }: { projectId: string }) {
   }
 
   if (query.isError) {
-    const isNotFound =
-      query.error instanceof ProjectFetchError && query.error.status === 404;
-
     return (
       <EditorFrame actions={<HelpLink />}>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-          {isNotFound ? (
+          {missing ? (
             <>
               <p className="text-md text-vm-ink-2">No project found for this link.</p>
               <Link href="/" className="text-md font-medium text-vm-accent hover:underline">
@@ -202,6 +238,7 @@ export function EditorShell({ projectId }: { projectId: string }) {
   return (
     <EditorFrame
       title={hostAndPath(loaded.sourceUrl)}
+      heading={`Editing ${hostAndPath(loaded.sourceUrl)}`}
       chip={currentVersion ? `v${currentVersion.seq}` : undefined}
       status={unsaved ? <UnsavedIndicator /> : null}
       actions={
@@ -230,8 +267,18 @@ export function EditorShell({ projectId }: { projectId: string }) {
                 title="Cloned page preview"
                 src={previewPageUrl(projectId)}
                 // No `allow-scripts`: the postMessage bridge script arrives in
-                // Phase 4. `allow-same-origin` lets the fixture/cloned page's
-                // relative assets resolve.
+                // Phase 4. `allow-same-origin` keeps the frame on the API's
+                // origin instead of the opaque one a bare `sandbox` would give
+                // it — an opaque origin has no cookies, no storage and a null
+                // `Origin` header, so it cannot be a postMessage peer, and
+                // relative URLs in the cloned page would resolve against
+                // nothing rather than against the page's own base.
+                //
+                // Phase 4, when the bridge script arrives: never pair
+                // `allow-scripts` with `allow-same-origin` while the page is
+                // served from an origin of ours — together they let the framed
+                // page reach out and strip its own sandbox attribute. The
+                // bridge needs its page on a separate origin first.
                 sandbox="allow-same-origin"
                 className="size-full border-0 bg-vm-surface"
                 style={isDragging ? { pointerEvents: "none" } : undefined}
