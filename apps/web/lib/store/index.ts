@@ -16,7 +16,12 @@
  * instead they're plain selectors (`selectSelectedVmId`, `selectUnsaved`) —
  * read through `useEditorStore(selector)`, or through the `useUnsaved` hook
  * wrapper — that can never drift out of sync with the state they're computed
- * from.
+ * from. `guardOpen` (`selectGuardOpen`) is the Phase 4 addition to that list.
+ *
+ * Phase 4 also adds what the preview iframe reports (`hoverVmId`, `elements`)
+ * and the element-switch guard (`pendingSelectVmId`, `requestSelect`,
+ * `resolveGuard`); `createEditorStore()` hands out an independent instance so
+ * the bridge client's tests are not sharing the module-scope default.
  *
  * Live preview edits stay in `draftState` and never hit the API;
  * `currentVersionState` only changes when a version is saved, loaded or

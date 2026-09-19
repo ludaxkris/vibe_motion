@@ -42,16 +42,17 @@ naming rule in CLAUDE.md.
 
 ## How it is consumed
 
-Nothing imports this package yet — PR A is the package on its own.
-
-- **`apps/api`** (Phase 4 PR C): a Gradle `bridgeResources` Sync task copies `src/vm-bridge.js`
-  into the jar the way `catalogResources` copies the catalog, and `BridgeAssets.kt` parses
-  `BRIDGE_VERSION` out of the script instead of hand-syncing a Kotlin constant. Ktor serves it at
-  `/bridge/vm-bridge.js` and `BridgePageRenderer` injects
+- **`apps/api`**: a Gradle `bridgeResources` Sync task copies `src/vm-bridge.js` into the jar the
+  way `catalogResources` copies the catalog, and `BridgeAssets.kt` parses `BRIDGE_VERSION` out of
+  the script instead of hand-syncing a Kotlin constant. Ktor serves it at `/bridge/vm-bridge.js`
+  and `BridgePageRenderer` injects
   `<script src="/bridge/vm-bridge.js" data-vm-parent-origin="<WEB_ORIGIN>" defer>`.
-- **`apps/web`** (Phase 4 PRs B and C): imports the types and constants as TypeScript source —
-  `import type { AppliedAssignment } from "bridge"` — and its mock page route serves the very same
-  `src/vm-bridge.js` file, so mock-mode e2e exercises the script the API ships.
+- **`apps/web`**: imports the types and constants as TypeScript source —
+  `import type { AppliedAssignment } from "bridge"`, with `transpilePackages: ["bridge"]` in
+  `next.config.ts` because there is no `dist/` — and drives the channel from
+  `apps/web/lib/bridge` (`toApplied` builds the payloads, `createBridgeClient` is the shell half
+  of the protocol). Its mock page route serves the very same `src/vm-bridge.js` file, so mock-mode
+  e2e exercises the script the API ships.
 
 ### Why TS source and not `dist/`
 
