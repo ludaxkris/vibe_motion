@@ -158,6 +158,39 @@ test.describe("replay", () => {
     expect((await h.animations("vm-top"))[0].state).toBe("running");
   });
 
+  test("does not play a third time when the element arms while the forced replay runs", async ({ page }) => {
+    const h = await mountBridge(
+      page,
+      `<div class="box" data-vm-id="vm-top">top</div>
+       <div class="spacer"></div>
+       <div class="box" data-vm-id="vm-iv">in view</div>
+       <div class="spacer"></div>`,
+    );
+    const ivTop = await h.frame.evaluate(
+      () => document.querySelector('[data-vm-id="vm-iv"]')!.getBoundingClientRect().top + window.scrollY,
+    );
+    await h.send("apply", assignment("vm-iv", {
+      trigger: "in-view",
+      style: { "animation-duration": "800ms", "animation-fill-mode": "both" },
+    }));
+    await expect.poll(() => h.animations("vm-iv")).toMatchObject([{ time: 0, state: "paused" }]);
+    const before = await h.starts("vm-fade-v1-0-0");
+
+    // Click Replay on something below the fold, then scroll down to watch it.
+    await h.send("replay", { vmId: "vm-iv" });
+    await page.waitForTimeout(250);
+    await h.frame.evaluate((top) => window.scrollTo(0, top), ivTop - 200);
+
+    // Long enough for the arm play to finish and for a spurious third play to have started.
+    await page.waitForTimeout(1600);
+
+    // Exactly two: the forced play, and the `in-view` trigger legitimately arming on the way in.
+    expect(await h.starts("vm-fade-v1-0-0")).toBe(before + 2);
+    // And it is left armed, not held back at the first keyframe.
+    expect((await h.animations("vm-iv"))[0]).toMatchObject({ state: "finished" });
+    expect(await h.computed("vm-iv", "animation-play-state")).toBe("running");
+  });
+
   test("survives an apply that lands while the forced replay is running", async ({ page }) => {
     const h = await mountBridge(page, `<div class="box" data-vm-id="vm-a">A</div>`);
     const hover = { trigger: "hover" as const, style: { "animation-duration": "3s" } };

@@ -213,11 +213,13 @@
   function rebuildRules() {
     if (!runtimeSheet) return;
     var sheet = /** @type {CSSStyleSheet} */ (runtimeSheet);
-    keyframeRefs.forEach(function (entry) {
+    keyframeRefs.forEach(function (entry, name) {
       try {
         entry.rule = sheet.cssRules[sheet.insertRule(entry.css, sheet.cssRules.length)];
       } catch (error) {
-        /* A body that parsed once should parse again; if it does not, drop it silently. */
+        // Keeping the entry would make `acquireKeyframes` answer `true` for a name that is not
+        // in any sheet, so an apply would be acked OK while the animation resolved to nothing.
+        keyframeRefs.delete(name);
       }
     });
     baseRules.forEach(function (entry, vmId) {
@@ -228,7 +230,8 @@
         rule.style.cssText = entry.css;
         entry.rule = rule;
       } catch (error) {
-        /* Same. */
+        // Same: a stale handle here would make `setBaseRule` edit a rule nothing renders.
+        baseRules.delete(vmId);
       }
     });
   }
@@ -553,6 +556,21 @@
   /** Read by `forceStyleFlush` purely for its side effect on style resolution. */
   var styleFlushSink = "";
 
+  /**
+   * The first element of the batch that is really in the document.
+   *
+   * @param {ElementRecord[]} batch
+   * @returns {HTMLElement}
+   */
+  function flushAnchor(batch) {
+    for (var i = 0; i < batch.length; i += 1) {
+      var el = batch[i].el;
+      var connected = typeof el.isConnected === "boolean" ? el.isConnected : document.contains(el);
+      if (connected) return el;
+    }
+    return document.documentElement;
+  }
+
   /** @param {HTMLElement} el */
   function forceStyleFlush(el) {
     if (!window.getComputedStyle) return;
@@ -609,7 +627,12 @@
     for (var i = 0; i < batch.length; i += 1) {
       if (effective(batch[i])) setOwned(batch[i], "animation-name", "none", true);
     }
-    forceStyleFlush(batch[0].el);
+    // The flush resolves style for the whole document, so one is enough for the batch — but it
+    // has to be anchored on a node that is actually in the document. Resolving style on a
+    // detached node is a no-op in Blink, which would silently skip the flush for everyone and
+    // leave every `none` -> name pair to coalesce into nothing. The root is not a usable anchor
+    // either: reading its computed style does not update the animations of its descendants.
+    forceStyleFlush(flushAnchor(batch));
     for (var j = 0; j < batch.length; j += 1) render(batch[j]);
   }
 
@@ -1025,8 +1048,10 @@
     if (event.type === "animationcancel" && hasLiveAnimation(record.el, assignment.keyframesName)) return;
     record.replaying = false;
     // An in-view element that is still off-screen has to go back to a *new* animation paused at
-    // its first keyframe, not to the one that just finished (spec D3).
-    if (record.applied && record.applied.trigger === "in-view") rewind([record]);
+    // its first keyframe, not to the one that just finished (spec D3). One that armed while the
+    // forced play was running is a different matter: its normal arm state is "already playing",
+    // and rewinding it there would start a third play on top of the replay and the arm play.
+    if (record.applied && record.applied.trigger === "in-view" && !record.armed) rewind([record]);
     else render(record);
   }
 

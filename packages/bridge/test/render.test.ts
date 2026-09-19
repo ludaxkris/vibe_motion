@@ -374,6 +374,42 @@ describe("the runtime stylesheet survives its element being removed", () => {
     expect(h.keyframeNames()).toEqual(["vm-scale-in-v1-1-0"]);
     expect(h.runtimeCss()).not.toContain('[data-vm-id="vm-heading"]');
   });
+
+  it("forgets a rule it could not re-insert, so a later apply inserts it properly", () => {
+    const h = loadBridge(FIXTURE);
+    h.send({ type: "apply", payload: applied({ vmId: "vm-heading" }), seq: 1 });
+
+    const style = h.runtimeStyle() as HTMLStyleElement;
+    style.parentNode?.removeChild(style);
+
+    // Make the rebuild of this one body fail, the way a body the engine will not take twice
+    // would. Everything else, including the cursor rule, still goes in.
+    const insertRule = h.window.CSSStyleSheet.prototype.insertRule;
+    const spy = vi
+      .spyOn(h.window.CSSStyleSheet.prototype, "insertRule")
+      .mockImplementation(function (this: CSSStyleSheet, rule: string, index?: number) {
+        if (rule.indexOf("@keyframes vm-fade-in-up-v1-1-0") === 0) throw new Error("nope");
+        return insertRule.call(this, rule, index);
+      });
+
+    h.send({
+      type: "apply",
+      payload: applied({
+        vmId: "vm-button",
+        keyframesName: "vm-scale-in-v1-1-0",
+        keyframesCss: "@keyframes vm-scale-in-v1-1-0 { to { transform: none } }",
+      }),
+      seq: 2,
+    });
+    expect(h.keyframeNames()).toEqual(["vm-scale-in-v1-1-0"]);
+    spy.mockRestore();
+
+    // Keeping the dead entry would make this apply succeed with no keyframes behind it.
+    h.send({ type: "apply", payload: applied({ vmId: "vm-para" }), seq: 3 });
+
+    expect(h.lastAck()).toMatchObject({ seq: 3, ok: true });
+    expect(h.keyframeNames().sort()).toEqual(["vm-fade-in-up-v1-1-0", "vm-scale-in-v1-1-0"]);
+  });
 });
 
 describe("the armed group is whole", () => {

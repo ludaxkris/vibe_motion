@@ -306,6 +306,33 @@ describe("replay", () => {
     }
   });
 
+  it("flushes on the root, so a detached element in the batch cannot cost the others their restart", () => {
+    const body = Array.from({ length: 3 }, (_, i) => `<div data-vm-id="vm-box-${i}">box ${i}</div>`).join("");
+    const h = loadBridge(page(body));
+    for (let i = 0; i < 3; i += 1) {
+      h.send({ type: "apply", payload: applied({ vmId: `vm-box-${i}` }), seq: i + 1 });
+    }
+    // Anchoring the one flush on `batch[0].el` unconditionally would resolve style on a node
+    // that is not in an active document, which Blink skips entirely: nothing in the batch would
+    // restart. The anchor has to skip past it to something still in the document.
+    const detached = h.el("vm-box-0");
+    detached.parentNode?.removeChild(detached);
+    const flushed: Array<Element | null> = [];
+    const real = h.window.getComputedStyle.bind(h.window);
+    vi.spyOn(h.window, "getComputedStyle").mockImplementation(((el: Element) => {
+      flushed.push(el);
+      return real(el);
+    }) as typeof h.window.getComputedStyle);
+    const one = watchNameWrites(h, "vm-box-1");
+    const two = watchNameWrites(h, "vm-box-2");
+
+    h.send({ type: "replay", payload: { vmId: null }, seq: 4 });
+
+    expect(flushed).toEqual([h.el("vm-box-1")]);
+    expect(one).toEqual(["none", "vm-fade-in-up-v1-1-0"]);
+    expect(two).toEqual(["none", "vm-fade-in-up-v1-1-0"]);
+  });
+
   it("replays every assigned element when vmId is null", () => {
     const h = loadBridge(FIXTURE);
     h.send({ type: "apply", payload: applied({ vmId: "vm-heading" }), seq: 1 });
@@ -416,6 +443,23 @@ describe("replay", () => {
     h.animationEvent("vm-heading", { type: "animationcancel" });
 
     expect(h.el("vm-heading").style.getPropertyValue("animation-play-state")).toBe("running");
+  });
+
+  it("does not rewind an in-view element that armed while the forced replay ran", () => {
+    const h = loadBridge(hostPage);
+    h.send({ type: "apply", payload: applied(held), seq: 1 });
+    h.send({ type: "replay", payload: { vmId: "vm-heading" }, seq: 2 });
+    // The designer scrolls down to watch the replay, so the trigger arms on its own.
+    h.intersect("vm-heading", true);
+    const writes = watchNameWrites(h, "vm-heading");
+
+    h.animationEvent("vm-heading");
+
+    // Its normal arm state is now "playing", so there is nothing to rewind it to: a third
+    // `none` -> name pair here would be a third play the designer never asked for.
+    expect(writes).toEqual([]);
+    expect(h.el("vm-heading").style.getPropertyValue("animation-play-state")).toBe("running");
+    expect(h.el("vm-heading").style.getPropertyValue("animation-delay")).toBe("300ms");
   });
 
   it("leaves a naturally armed element armed after animationend", () => {

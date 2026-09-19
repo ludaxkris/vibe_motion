@@ -48,7 +48,13 @@ jobs:
       # the resolved Playwright version so a bump invalidates it. The web and e2e jobs do not
       # cache today; this is deliberately scoped to the bridge job.
       - id: pw-version
-        run: echo "version=$(node -p "require('./packages/bridge/node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+        # Assign first and assert: `echo "$(cmd)"` exits 0 even when the substitution fails, and
+        # an empty version silently degrades the key to `ms-playwright-Linux--chromium`, which
+        # keeps hitting after the next Playwright bump and restores the wrong browser revision.
+        run: |
+          version=$(node -p "require('./packages/bridge/node_modules/@playwright/test/package.json').version")
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         id: pw-cache
         with:
