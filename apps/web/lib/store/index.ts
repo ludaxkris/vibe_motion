@@ -22,7 +22,8 @@
  * `currentVersionState` only changes when a version is saved, loaded or
  * restored (Phase 6). No action in this module calls the API.
  */
-import { create } from "zustand";
+import type { ElementInfo } from "bridge";
+import { create, type StateCreator, type StoreApi, type UseBoundStore } from "zustand";
 
 import type { Assignment, EditorStateMap } from "@/lib/api-client";
 import { assignmentsEqual } from "@/lib/assignment";
@@ -41,6 +42,9 @@ import {
  */
 export type EditorMode = "editing" | "viewing";
 
+/** What the unsaved-changes guard on an element switch was answered with. */
+export type GuardOutcome = "discard" | "keep" | "saved";
+
 export type EditorState = {
   /** Control Panel state machine (idle / selected / choosing / tuning). */
   panel: PanelState;
@@ -49,6 +53,23 @@ export type EditorState = {
   /** Materialised state of the version the draft was forked from. */
   currentVersionState: EditorStateMap;
   mode: EditorMode;
+  /** Element the pointer is over inside the preview iframe (`element:hover`), or null. */
+  hoverVmId: string | null;
+  /**
+   * What the bridge has told us about the elements in the cloned page, keyed by
+   * `data-vm-id`. Metadata, not editor state: the selection ring's label and
+   * the panel's element name read `tag` from here, and nothing in it is ever
+   * saved. It fills in as elements are clicked, so every reader has to cope
+   * with a vmId that is not in it yet.
+   */
+  elements: Record<string, ElementInfo>;
+  /**
+   * The element a selection change is waiting on, parked here while the
+   * unsaved-changes guard asks what to do with the element being left
+   * (spec §5). Null whenever no guard is open — `selectGuardOpen` is exactly
+   * that test, which is why "the dialog is open" is not a second field.
+   */
+  pendingSelectVmId: string | null;
 };
 
 export type EditorActions = {
@@ -74,16 +95,46 @@ export type EditorActions = {
    */
   revertDraft: () => void;
   setMode: (mode: EditorMode) => void;
+  /** `element:hover` from the bridge; `null` when the pointer left every tagged element. */
+  setHoverVmId: (vmId: string | null) => void;
+  /** Record what the bridge reported about an element (`element:select`). */
+  rememberElement: (info: ElementInfo) => void;
+  /**
+   * Selection *asked for* from inside the iframe, which the guard may refuse —
+   * as opposed to {@link EditorActions.setSelectedVmId}, which is the editor's
+   * own UI moving the selection and always wins. Spec §5: same element is a
+   * no-op; a clean element lets the selection through; a dirty one holds it
+   * and opens the guard; a deselect (Escape, background click) while dirty is
+   * ignored outright, since there is nothing to ask about that the user could
+   * not answer by clicking an element.
+   */
+  requestSelect: (vmId: string | null) => void;
+  /**
+   * Answer the guard `requestSelect` opened. `discard` reverts *that one*
+   * element to the saved version (not `revertDraft`, which throws away the
+   * whole draft — the guard named one element, so it may only take one),
+   * `keep` drops the pending selection, `saved` assumes the Save flow already
+   * ran (Phase 6). All three end with the guard closed.
+   */
+  resolveGuard: (outcome: GuardOutcome) => void;
   reset: () => void;
 };
 
 export type EditorStore = EditorState & EditorActions;
+
+/** A plain store handle — what the framework-free bridge client takes. */
+export type EditorStoreApi = StoreApi<EditorStore>;
+/** What {@link createEditorStore} returns: callable as a hook, and an {@link EditorStoreApi}. */
+export type EditorStoreHook = UseBoundStore<StoreApi<EditorStore>>;
 
 export const initialEditorState: EditorState = {
   panel: initialPanelState,
   draftState: {},
   currentVersionState: {},
   mode: "editing",
+  hoverVmId: null,
+  elements: {},
+  pendingSelectVmId: null,
 };
 
 /** `data-vm-id` of the element selected in the preview iframe, or null when nothing is selected. */
@@ -138,6 +189,28 @@ export function selectGuardedVmId(state: EditorState): string | null {
 }
 
 /**
+ * Whether *this one* element has unsaved changes — added, changed or removed.
+ *
+ * `selectDirtyVmIds` answers the same question for the whole draft but
+ * allocates a set and an array to do it; the element-switch guard asks about
+ * one element on every click from inside the iframe, so it asks here. `null`
+ * (nothing selected) is never dirty.
+ */
+export function selectElementDirty(state: EditorState, vmId: string | null): boolean {
+  if (vmId === null) return false;
+  return !assignmentsEqual(state.draftState[vmId], state.currentVersionState[vmId]);
+}
+
+/**
+ * Whether the element-switch guard is open. Derived, for the reason in the
+ * module header: a `guardOpen` field next to `pendingSelectVmId` would be a
+ * second thing to keep true, and the two could disagree.
+ */
+export function selectGuardOpen(state: EditorState): boolean {
+  return state.pendingSelectVmId !== null;
+}
+
+/**
  * The machine is deliberately ignorant of `draftState`, so the store is what
  * tells `BACK` whether the element it is stepping out of the picker for
  * already has an assignment. Callers (`ChoosingPanel`'s "‹") just say `BACK`.
@@ -149,7 +222,7 @@ function withDraftAnimationId(state: EditorState, event: PanelEvent): PanelEvent
   return { ...event, draftAnimationId: state.draftState[vmId]?.animationId };
 }
 
-export const useEditorStore = create<EditorStore>((set, get) => ({
+const createEditorState: StateCreator<EditorStore> = (set, get) => ({
   ...initialEditorState,
 
   dispatchPanel: (event) =>
@@ -234,13 +307,82 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   setMode: (mode) => set({ mode }),
 
+  setHoverVmId: (vmId) =>
+    // Identity matters: the bridge only reports a *change* of hovered element,
+    // but the same vmId can arrive again after a re-`ready`, and a fresh
+    // snapshot would re-render every subscriber over nothing.
+    set((state) => (state.hoverVmId === vmId ? state : { hoverVmId: vmId })),
+
+  rememberElement: (info) =>
+    set((state) => ({ elements: { ...state.elements, [info.vmId]: info } })),
+
+  requestSelect: (vmId) => {
+    const state = get();
+    const current = selectSelectedVmId(state);
+    if (vmId === current) return;
+
+    if (!selectElementDirty(state, current)) {
+      state.setSelectedVmId(vmId);
+      return;
+    }
+
+    // Dirty, and the request is a deselect: Escape and a background click do
+    // nothing at all rather than raise a dialog the user did not ask for
+    // (spec §5). Dirty and another element: hold the selection and ask.
+    if (vmId === null) return;
+    set({ pendingSelectVmId: vmId });
+  },
+
+  resolveGuard: (outcome) => {
+    const state = get();
+    const pending = state.pendingSelectVmId;
+    if (pending === null) return;
+
+    if (outcome === "keep") {
+      set({ pendingSelectVmId: null });
+      return;
+    }
+
+    if (outcome === "discard") {
+      const vmId = selectSelectedVmId(state);
+      if (vmId !== null) {
+        const saved = state.currentVersionState[vmId];
+        const draftState = { ...state.draftState };
+        if (saved) draftState[vmId] = saved;
+        else delete draftState[vmId];
+        set({ draftState });
+      }
+    }
+
+    // Clear the guard before moving, so a subscriber that reacts to the
+    // selection (the bridge client) never sees a selection change with a
+    // dialog still nominally open.
+    set({ pendingSelectVmId: null });
+    get().setSelectedVmId(pending);
+  },
+
   reset: () => set({ ...initialEditorState }),
-}));
+});
+
+/**
+ * A fresh, independent store.
+ *
+ * `useEditorStore` below is the module-scope default instance every component
+ * reads (DT-026's first half: harmless while nothing writes during render).
+ * This factory exists so the bridge client's tests — and, when DT-090 lands, a
+ * React context provider — can hold a store of their own instead of resetting
+ * a shared one between cases.
+ */
+export function createEditorStore(): EditorStoreHook {
+  return create<EditorStore>()(createEditorState);
+}
+
+export const useEditorStore: EditorStoreHook = createEditorStore();
 
 /** `useEditorStore(selectUnsaved)`, as a named hook. */
 export function useUnsaved(): boolean {
   return useEditorStore(selectUnsaved);
 }
 
-export type { Assignment, EditorStateMap };
+export type { Assignment, EditorStateMap, ElementInfo };
 export { transition, type PanelEvent, type PanelState } from "./panel-machine";

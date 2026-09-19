@@ -31,6 +31,9 @@ importers:
       animation-catalog:
         specifier: workspace:*
         version: link:../../packages/animation-catalog
+      bridge:
+        specifier: workspace:*
+        version: link:../../packages/bridge
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
