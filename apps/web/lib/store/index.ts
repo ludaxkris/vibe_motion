@@ -148,22 +148,52 @@ export function selectSelectedVmId(state: EditorState): string | null {
 }
 
 /**
+ * One-entry memo for {@link selectDirtyVmIds}, keyed on the identity of the two
+ * maps it reads.
+ *
+ * Every action in this module replaces `draftState` / `currentVersionState`
+ * wholesale rather than mutating them, so their identity is a complete
+ * description of the answer. That makes this safe across store instances too:
+ * two `createEditorStore()`s alternating simply miss the cache.
+ *
+ * It exists because three panel subscribers (`selectUnsaved`,
+ * `selectDirtyVmIdCount`, `selectGuardedVmId`) run this on *every* store
+ * change — including each `setHoverVmId`, which on a 200-element page means a
+ * Set, an array and a deep comparison per hovered element, for no reader at
+ * all (DT-126).
+ */
+let dirtyCache: { draft: EditorStateMap; saved: EditorStateMap; vmIds: string[] } | null = null;
+
+/** Shared, so the clean case is also identity-stable. Never handed out mutable elsewhere. */
+const NO_DIRTY_VM_IDS: string[] = [];
+
+/**
  * Every element the draft has unsaved changes on: one the draft animated, one
  * the draft dropped, or one whose assignment moved. Derived on demand from the
  * two maps rather than mirrored as state, for the reason in the module header.
  *
- * It allocates, so components read one of the scalar selectors below rather
- * than subscribing to this directly (Zustand compares snapshots by identity,
- * and a fresh array every render is a fresh snapshot every render).
+ * **The returned array is cached and shared — callers must not mutate it.**
+ * Components read one of the scalar selectors below rather than subscribing to
+ * this directly (Zustand compares snapshots by identity, and a fresh array
+ * every render would be a fresh snapshot every render).
  */
 export function selectDirtyVmIds(state: EditorState): string[] {
-  const vmIds = new Set([
-    ...Object.keys(state.draftState),
-    ...Object.keys(state.currentVersionState),
-  ]);
-  return [...vmIds].filter(
-    (vmId) => !assignmentsEqual(state.draftState[vmId], state.currentVersionState[vmId]),
-  );
+  const { draftState, currentVersionState } = state;
+  if (dirtyCache && dirtyCache.draft === draftState && dirtyCache.saved === currentVersionState) {
+    return dirtyCache.vmIds;
+  }
+
+  // The common case by far — nothing saved and nothing drafted, or a draft that
+  // was just reverted — and it needs no comparison at all.
+  const vmIds =
+    draftState === currentVersionState
+      ? NO_DIRTY_VM_IDS
+      : [...new Set([...Object.keys(draftState), ...Object.keys(currentVersionState)])].filter(
+          (vmId) => !assignmentsEqual(draftState[vmId], currentVersionState[vmId]),
+        );
+
+  dirtyCache = { draft: draftState, saved: currentVersionState, vmIds };
+  return vmIds;
 }
 
 /** How many elements have unsaved changes — what the guard's generic copy counts. */

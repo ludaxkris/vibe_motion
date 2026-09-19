@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { UnsavedGuardDialog } from "@/components/dialogs/unsaved-guard-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,6 +17,7 @@ import {
   selectGuardedVmId,
   useEditorStore,
   useUnsaved,
+  type EditorState,
 } from "@/lib/store";
 
 import { ChoosingPanel } from "./choosing";
@@ -33,6 +34,39 @@ function PlaceholderTab({ children }: { children: string }) {
         <p className="text-sm leading-body text-vm-ink-2">{children}</p>
       </PanelSection>
     </PanelCard>
+  );
+}
+
+/**
+ * The idle list, connected, and mounted only while the panel is idle.
+ *
+ * `IdlePanel` is the one consumer of the whole `draftState`, so subscribing to
+ * it here rather than in `ControlPanel` means a slider tick — which replaces
+ * `draftState` on every frame — cannot re-render the tabs, the guard
+ * computations and the dialog behind the tuning form (DT-126).
+ */
+function IdleSection() {
+  const draftState = useEditorStore((state) => state.draftState);
+  const setSelectedVmId = useEditorStore((state) => state.setSelectedVmId);
+
+  return <IdlePanel assignments={draftState} onSelectElement={setSelectedVmId} />;
+}
+
+/**
+ * The animation on the one element the guard may name, by name, as a scalar.
+ *
+ * A selector that returned the assignment itself would be fine too (identity
+ * is stable), but the lookup belongs with the thing that needs it, and a
+ * string cannot accidentally become a fresh snapshot.
+ */
+function selectGuardedAnimationName(state: EditorState): string | undefined {
+  const vmId = selectGuardedVmId(state);
+  if (vmId === null) return undefined;
+  const assignment = state.draftState[vmId];
+  if (!assignment) return undefined;
+  return (
+    getCatalogEntryAt(assignment.catalogVersion, assignment.animationId)?.name ??
+    assignment.animationId
   );
 }
 
@@ -133,6 +167,34 @@ function TuningSection({
   const removeDraftAssignment = useEditorStore((state) => state.removeDraftAssignment);
   const assignment = useEditorStore((state) => state.draftState[vmId]);
 
+  // Stable across a drag, so the memoised rows only see the one value that
+  // moved (DT-126). The store actions are already stable identities.
+  const handleParamChange = useCallback(
+    (key: string, value: string) => updateDraftParam(vmId, key, value),
+    [updateDraftParam, vmId],
+  );
+  // A released slider replays the preview (spec §5) so the designer sees the
+  // value they landed on. It writes nothing: `onParamChange` already wrote
+  // this exact value on the last drag tick, and a second identical write would
+  // allocate a fresh draft, post a duplicate `apply` and re-render the form
+  // again — before the replay was allowed out.
+  const handleParamCommit = useMemo(
+    () => (onReplay ? () => onReplay(vmId) : undefined),
+    [onReplay, vmId],
+  );
+  const handleReplay = useMemo(
+    () => (onReplay ? () => onReplay(vmId) : undefined),
+    [onReplay, vmId],
+  );
+  const handleRemove = useCallback(() => {
+    removeDraftAssignment(vmId);
+    dispatchPanel({ type: "CLEAR" });
+  }, [removeDraftAssignment, dispatchPanel, vmId]);
+  const handleChangeAnimation = useCallback(
+    () => dispatchPanel({ type: "BACK" }),
+    [dispatchPanel],
+  );
+
   if (!assignment) {
     return (
       <PanelCard data-testid="panel-tuning-missing-draft">
@@ -164,22 +226,11 @@ function TuningSection({
       entry={entry}
       assignment={assignment}
       onTriggerChange={(trigger: Trigger) => setDraftAssignment(vmId, { ...assignment, trigger })}
-      onParamChange={(key, value) => updateDraftParam(vmId, key, value)}
-      // A released slider replays the preview (spec §5), so the designer sees
-      // the value they landed on rather than only its tail.
-      onParamCommit={
-        onReplay &&
-        ((key, value) => {
-          updateDraftParam(vmId, key, value);
-          onReplay(vmId);
-        })
-      }
-      onReplay={onReplay && (() => onReplay(vmId))}
-      onChangeAnimation={() => dispatchPanel({ type: "BACK" })}
-      onRemove={() => {
-        removeDraftAssignment(vmId);
-        dispatchPanel({ type: "CLEAR" });
-      }}
+      onParamChange={handleParamChange}
+      onParamCommit={handleParamCommit}
+      onReplay={handleReplay}
+      onChangeAnimation={handleChangeAnimation}
+      onRemove={handleRemove}
     />
   );
 }
@@ -216,9 +267,7 @@ export function ControlPanel({
   onReplay?: (vmId: string) => void;
 }) {
   const panel = useEditorStore((state) => state.panel);
-  const draftState = useEditorStore((state) => state.draftState);
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
-  const setSelectedVmId = useEditorStore((state) => state.setSelectedVmId);
   const revertDraft = useEditorStore((state) => state.revertDraft);
   const unsaved = useUnsaved();
 
@@ -238,11 +287,8 @@ export function ControlPanel({
   // and counts them. `selectGuardedVmId` is where both conditions live.
   const guardedVmId = useEditorStore(selectGuardedVmId);
   const unsavedElementCount = useEditorStore(selectDirtyVmIdCount);
-  const guardedAssignment = guardedVmId === null ? undefined : draftState[guardedVmId];
-  const guardedAnimationName = guardedAssignment
-    ? (getCatalogEntryAt(guardedAssignment.catalogVersion, guardedAssignment.animationId)?.name ??
-      guardedAssignment.animationId)
-    : undefined;
+  // Scalars, not the draft map: this panel must not wake up on a slider tick.
+  const guardedAnimationName = useEditorStore(selectGuardedAnimationName);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -277,9 +323,7 @@ export function ControlPanel({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3">
           <TabsContent value="animate">
-            {panel.status === "idle" && (
-              <IdlePanel assignments={draftState} onSelectElement={setSelectedVmId} />
-            )}
+            {panel.status === "idle" && <IdleSection />}
             {panel.status === "selected" && (
               <SelectedPanel
                 vmId={panel.vmId}

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ElementTag } from "@/components/ui/element-tag";
@@ -75,6 +75,15 @@ function ParamRow({ param, children }: { param: CatalogParam; children: ReactNod
   );
 }
 
+/**
+ * Callbacks take the param key rather than being bound to it, so one stable
+ * function serves every row. A per-row closure would be a new prop on every
+ * render of the panel and would defeat {@link ParamRowFor}'s memo — which is
+ * the whole point: a slider tick must re-render one row, not all of them
+ * (DT-126).
+ */
+type ParamCallback = (key: string, value: string) => void;
+
 function ParamControlFor({
   param,
   value,
@@ -83,19 +92,21 @@ function ParamControlFor({
 }: {
   param: CatalogParam;
   value: string;
-  onChange: (value: string) => void;
+  onChange?: ParamCallback;
   /** The drag is over and the value has settled (spec §5: that is when the preview replays). */
-  onCommit?: (value: string) => void;
+  onCommit?: ParamCallback;
 }) {
   // `value` goes in so the option list is guaranteed to contain it: a control
   // that cannot show what it is bound to would render with nothing selected.
   const control = paramControl(param, value);
   const label = paramLabel(param);
+  const write = (next: string) => onChange?.(param.key, next);
+  const settle = (next: string) => onCommit?.(param.key, next);
 
   if (control.kind === "slider") {
     const { amount, unit } = splitValue(value);
     const asValue = (next: number) => joinValue(next, unit || splitValue(param.default).unit);
-    const commit = (next: number) => onChange(asValue(next));
+    const writeAmount = (next: number) => write(asValue(next));
 
     return (
       <>
@@ -108,13 +119,13 @@ function ParamControlFor({
           value={[amount]}
           onValueChange={(next) => {
             const nextAmount = Array.isArray(next) ? (next[0] ?? amount) : next;
-            commit(nextAmount);
+            writeAmount(nextAmount);
           }}
           // Pointer up (or the keyboard's equivalent): the value the designer
           // settled on, which is the moment to replay it on the page.
           onValueCommitted={(next) => {
-            const settled = Array.isArray(next) ? (next[0] ?? amount) : next;
-            onCommit?.(asValue(settled));
+            const committed = Array.isArray(next) ? (next[0] ?? amount) : next;
+            settle(asValue(committed));
           }}
         />
         <NumberField
@@ -126,7 +137,7 @@ function ParamControlFor({
           max={control.max}
           step={control.step}
           unit={control.unit}
-          onCommit={commit}
+          onCommit={writeAmount}
         />
       </>
     );
@@ -139,7 +150,7 @@ function ParamControlFor({
         aria-label={label}
         options={control.options}
         value={value}
-        onValueChange={onChange}
+        onValueChange={write}
         // Only short labels reach a segmented, so the segments share the row
         // evenly and nothing has to be clipped to fit.
         className="min-w-0 flex-1 [&>*]:min-w-0 [&>*]:px-1"
@@ -154,7 +165,7 @@ function ParamControlFor({
         aria-label={label}
         className="flex-1"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => write(event.target.value)}
       />
     );
   }
@@ -165,7 +176,7 @@ function ParamControlFor({
       <Select
         value={value}
         onValueChange={(next) => {
-          if (typeof next === "string") onChange(next);
+          if (typeof next === "string") write(next);
         }}
       >
         <SelectTrigger
@@ -187,6 +198,31 @@ function ParamControlFor({
     </>
   );
 }
+
+/**
+ * One param row, memoised.
+ *
+ * `param` comes from the catalog entry and `value` from the one key this row
+ * owns, so a tick on another param leaves every prop identical and React skips
+ * the row entirely — including its `Select` option lists and the easing SVG.
+ */
+const ParamRowFor = memo(function ParamRowFor({
+  param,
+  value,
+  onChange,
+  onCommit,
+}: {
+  param: CatalogParam;
+  value: string;
+  onChange?: ParamCallback;
+  onCommit?: ParamCallback;
+}) {
+  return (
+    <ParamRow param={param}>
+      <ParamControlFor param={param} value={value} onChange={onChange} onCommit={onCommit} />
+    </ParamRow>
+  );
+});
 
 /**
  * Tuning an element's animation (`docs/design/README.md` "2. Editor",
@@ -225,6 +261,13 @@ export function TuningPanel({
   /** Restart the animation in the preview iframe. Absent until the bridge is mounted. */
   onReplay?: () => void;
 }) {
+  // Rebuilt only when the entry does: `Segmented` is not memoised, but a fresh
+  // array every tick would also defeat anything that memoised it later.
+  const triggerOptions = useMemo(
+    () => entry.triggers.map((trigger) => ({ value: trigger, label: TRIGGER_LABELS[trigger] })),
+    [entry],
+  );
+
   return (
     <PanelCard data-testid="panel-tuning">
       <PanelSection>
@@ -239,10 +282,7 @@ export function TuningPanel({
         <SectionLabel>Trigger</SectionLabel>
         <Segmented
           aria-label="Trigger"
-          options={entry.triggers.map((trigger) => ({
-            value: trigger,
-            label: TRIGGER_LABELS[trigger],
-          }))}
+          options={triggerOptions}
           value={assignment.trigger}
           onValueChange={(next) => onTriggerChange?.(next as Trigger)}
         />
@@ -250,14 +290,13 @@ export function TuningPanel({
 
       <PanelSection className="gap-3.5">
         {entry.params.map((param) => (
-          <ParamRow key={param.key} param={param}>
-            <ParamControlFor
-              param={param}
-              value={assignment.params[param.key] ?? param.default}
-              onChange={(value) => onParamChange?.(param.key, value)}
-              onCommit={(value) => onParamCommit?.(param.key, value)}
-            />
-          </ParamRow>
+          <ParamRowFor
+            key={param.key}
+            param={param}
+            value={assignment.params[param.key] ?? param.default}
+            onChange={onParamChange}
+            onCommit={onParamCommit}
+          />
         ))}
       </PanelSection>
 

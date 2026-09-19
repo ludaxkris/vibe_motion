@@ -16,6 +16,18 @@ import {
   useEditorStore,
 } from "./index";
 
+/** A catalog-default assignment, the way `PICK` builds one. */
+function assignmentFor(animationId: string) {
+  const entry = getCatalogEntry(animationId);
+  if (!entry) throw new Error(`no catalog entry ${animationId}`);
+  return {
+    animationId: entry.id,
+    catalogVersion: CURRENT_CATALOG_VERSION,
+    trigger: entry.defaultTrigger ?? entry.triggers[0],
+    params: resolveCatalogParams(entry),
+  };
+}
+
 beforeEach(() => {
   useEditorStore.setState({ ...initialEditorState });
 });
@@ -676,5 +688,60 @@ describe("resolveGuard", () => {
     store.getState().resolveGuard("discard");
 
     expect(selectSelectedVmId(store.getState())).toBe("vm-1");
+  });
+});
+
+describe("selectDirtyVmIds cost", () => {
+  it("answers from cache while the two maps it compares are unchanged", () => {
+    const store = createEditorStore();
+    store.getState().setDraftAssignment("vm-1", assignmentFor("fade-in"));
+
+    const first = selectDirtyVmIds(store.getState());
+    expect(first).toEqual(["vm-1"]);
+
+    // A hover report changes the state object but neither map. The panel has
+    // three subscribers computing this on every store change, so recomputing
+    // here means a Set, an array and a deep compare per hovered element, for
+    // no reader (DT-126).
+    store.getState().setHoverVmId("vm-9");
+    expect(selectDirtyVmIds(store.getState())).toBe(first);
+
+    store.getState().rememberElement({
+      vmId: "vm-2",
+      tag: "p",
+      role: null,
+      textPreview: "",
+      rect: { x: 0, y: 0, width: 1, height: 1 },
+      pageRect: { x: 0, y: 0, width: 1, height: 1 },
+      order: 0,
+      visible: true,
+    });
+    expect(selectDirtyVmIds(store.getState())).toBe(first);
+  });
+
+  it("recomputes as soon as either map moves", () => {
+    const store = createEditorStore();
+    store.getState().setDraftAssignment("vm-1", assignmentFor("fade-in"));
+    const first = selectDirtyVmIds(store.getState());
+
+    store.getState().setDraftAssignment("vm-2", assignmentFor("pulse"));
+    const second = selectDirtyVmIds(store.getState());
+
+    expect(second).not.toBe(first);
+    expect([...second].sort()).toEqual(["vm-1", "vm-2"]);
+
+    store.setState({ currentVersionState: { ...store.getState().draftState } });
+    expect(selectDirtyVmIds(store.getState())).toEqual([]);
+  });
+
+  it("is still correct when two stores interleave", () => {
+    const a = createEditorStore();
+    const b = createEditorStore();
+    a.getState().setDraftAssignment("vm-a", assignmentFor("fade-in"));
+    b.getState().setDraftAssignment("vm-b", assignmentFor("pulse"));
+
+    expect(selectDirtyVmIds(a.getState())).toEqual(["vm-a"]);
+    expect(selectDirtyVmIds(b.getState())).toEqual(["vm-b"]);
+    expect(selectDirtyVmIds(a.getState())).toEqual(["vm-a"]);
   });
 });
