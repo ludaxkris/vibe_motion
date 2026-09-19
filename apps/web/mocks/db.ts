@@ -12,10 +12,10 @@ import { CURRENT_VERSION as CURRENT_CATALOG_VERSION, getEntry } from "animation-
 import type { CatalogEntry } from "animation-catalog";
 
 import type {
+  ApiError,
   Assignment,
   Diff,
   EditorStateMap,
-  Error as ApiError,
   ExportBundle,
   Project,
   StaleParentError,

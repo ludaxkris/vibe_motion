@@ -13,10 +13,10 @@ import { CATALOGS, CATALOG_VERSIONS, CURRENT_VERSION, getCatalog } from "animati
 import { HttpResponse, http } from "msw";
 
 import type {
+  ApiError,
   Catalog,
   CreateVersionRequest,
   Diff,
-  Error as ApiError,
   ExportBundle,
   Health,
   Project,

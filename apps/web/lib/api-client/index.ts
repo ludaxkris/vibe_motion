@@ -22,7 +22,13 @@ export type Catalog = components["schemas"]["Catalog"];
 export type CatalogEntry = components["schemas"]["CatalogEntry"];
 export type CatalogParam = components["schemas"]["CatalogParam"];
 export type Trigger = components["schemas"]["Trigger"];
-export type Error = components["schemas"]["Error"];
+/**
+ * The contract's error body. Named `ApiError` rather than `Error`: an export
+ * called `Error` shadows the global in any module that imports it, so every
+ * importer had to rename it at the import site anyway — and one that forgot
+ * would silently type `new Error(...)` against a plain `{ code, message }`.
+ */
+export type ApiError = components["schemas"]["Error"];
 export type StaleParentError = components["schemas"]["StaleParentError"];
 export type ExportBundle = components["schemas"]["ExportBundle"];
 export type CreateVersionRequest = components["schemas"]["CreateVersionRequest"];
