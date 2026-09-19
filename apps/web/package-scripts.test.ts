@@ -21,7 +21,7 @@ const scripts: Record<string, string> = JSON.parse(
 const CATALOG_BUILD = "pnpm --filter animation-catalog build";
 
 describe("web package scripts", () => {
-  it.each(["dev", "build", "typecheck", "test", "e2e"])(
+  it.each(["dev", "build", "lint", "typecheck", "test", "e2e"])(
     "%s builds the animation-catalog package first",
     (script) => {
       expect(scripts[script]).toBeDefined();

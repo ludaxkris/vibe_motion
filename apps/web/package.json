@@ -8,6 +8,7 @@
     "prebuild": "pnpm --filter animation-catalog build",
     "build": "next build",
     "start": "next start -p ${PORT:-3000}",
+    "prelint": "pnpm --filter animation-catalog build",
     "lint": "eslint .",
     "pretypecheck": "pnpm --filter animation-catalog build",
     "typecheck": "next typegen && tsc --noEmit",
