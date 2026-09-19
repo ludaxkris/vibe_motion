@@ -13,10 +13,12 @@ const entry = (id: string): CatalogEntry => {
   return found;
 };
 
-/** Plays on load. */
+/** Defaults to the `load` trigger. */
 const fadeInUp = entry("fade-in-up");
-/** Plays on hover only. */
+/** Defaults to the `hover` trigger: it replays on hover as well. */
 const hoverLift = entry("hover-lift");
+/** Runs forever until something stops it. */
+const pulse = entry("pulse");
 
 function stubReducedMotion(matches: boolean) {
   vi.stubGlobal(
@@ -25,17 +27,15 @@ function stubReducedMotion(matches: boolean) {
   );
 }
 
-/** Hands back the queued frame callbacks so a replay can be stepped by hand. */
-function stubAnimationFrames() {
-  const frames: FrameRequestCallback[] = [];
-  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-    frames.push(callback);
-    return frames.length;
-  });
-  return () => {
-    const queued = frames.splice(0, frames.length);
-    for (const callback of queued) callback(0);
-  };
+/**
+ * jsdom defines no `AnimationEvent`, so React falls back to the vendor-
+ * prefixed name when it registers the listener behind `onAnimationEnd` — and
+ * a plain `animationend` event reaches nothing. Send both.
+ */
+function endAnimation(element: HTMLElement) {
+  for (const type of ["animationend", "webkitAnimationEnd"]) {
+    fireEvent(element, new Event(type, { bubbles: true }));
+  }
 }
 
 function renderCard(
@@ -48,26 +48,15 @@ function renderCard(
   );
   return {
     ...view,
-    card: screen.getByTestId("catalog-card"),
     stage: screen.getByTestId("catalog-card-stage"),
-    block: screen.getByTestId("catalog-card-demo"),
     replay: screen.getByRole("button", { name: `Replay ${props.entry.name}` }),
+    // A replay mounts a fresh block, so this is always read anew.
+    demo: () => screen.getByTestId("catalog-card-demo"),
   };
 }
 
 function styleOf(element: HTMLElement): string {
   return element.getAttribute("style") ?? "";
-}
-
-/**
- * jsdom defines no `AnimationEvent`, so React falls back to the vendor-
- * prefixed name when it registers the listener behind `onAnimationEnd` — and
- * a plain `animationend` event reaches nothing. Send both.
- */
-function endAnimation(element: HTMLElement) {
-  for (const type of ["animationend", "webkitAnimationEnd"]) {
-    fireEvent(element, new Event(type, { bubbles: true }));
-  }
 }
 
 afterEach(() => {
@@ -83,87 +72,133 @@ describe("CatalogCard", () => {
   });
 
   it("plays the entry's own keyframes on mount", () => {
-    const { block } = renderCard({ entry: fadeInUp });
+    const { demo } = renderCard({ entry: fadeInUp });
 
-    expect(styleOf(block)).toContain(
+    expect(styleOf(demo())).toContain(
       `animation-name: ${keyframesName(fadeInUp.id, CURRENT_CATALOG_VERSION)}`,
     );
-    expect(styleOf(block)).toContain("animation-duration: 600ms");
-    expect(styleOf(block)).toContain("--vm-distance: 24px");
+    expect(styleOf(demo())).toContain("animation-duration: 600ms");
+    expect(styleOf(demo())).toContain("--vm-distance: 24px");
   });
 
-  it("replays by dropping the animation name and restoring it on the next frame", () => {
-    const runFrames = stubAnimationFrames();
-    const { block, replay } = renderCard({ entry: fadeInUp });
-    const name = keyframesName(fadeInUp.id, CURRENT_CATALOG_VERSION);
+  it("plays a hover-trigger entry on mount too — the page is a gallery", () => {
+    const { demo } = renderCard({ entry: hoverLift });
 
-    fireEvent.click(replay);
-    expect(styleOf(block)).toContain("animation-name: none");
-
-    runFrames();
-    expect(styleOf(block)).toContain(`animation-name: ${name}`);
-  });
-
-  it("holds a hover-trigger entry still until the demo is hovered", () => {
-    const { stage, block } = renderCard({ entry: hoverLift });
-
-    expect(screen.getByText("Hover to play")).toBeInTheDocument();
-    expect(styleOf(block)).not.toContain("animation-name");
-
-    fireEvent.mouseEnter(stage);
-    expect(styleOf(block)).toContain(
+    expect(styleOf(demo())).toContain(
       `animation-name: ${keyframesName(hoverLift.id, CURRENT_CATALOG_VERSION)}`,
     );
-
-    fireEvent.mouseLeave(stage);
-    expect(styleOf(block)).not.toContain("animation-name");
+    // Hovering does nothing for a reader who asked for less motion, so the
+    // hint is not offered to them either.
+    expect(screen.getByText("Hover or focus to replay")).toHaveClass("motion-reduce:hidden");
   });
 
-  it("plays a hover-trigger demo from the keyboard, when its replay button takes focus", () => {
-    const { block, replay } = renderCard({ entry: hoverLift });
+  it("offers no hover hint where hovering does nothing", () => {
+    renderCard({ entry: fadeInUp });
 
-    fireEvent.focus(replay);
-    expect(styleOf(block)).toContain("animation-name");
-
-    fireEvent.blur(replay);
-    expect(styleOf(block)).not.toContain("animation-name");
+    expect(screen.queryByText("Hover or focus to replay")).not.toBeInTheDocument();
   });
 
-  it("plays a hover-trigger entry when its replay button is pressed", () => {
-    const { block, replay } = renderCard({ entry: hoverLift });
+  it("replays on ↻ by mounting a fresh block", () => {
+    const { demo, replay } = renderCard({ entry: fadeInUp });
+    const before = demo();
 
     fireEvent.click(replay);
-    expect(styleOf(block)).toContain("animation-name");
 
-    // The run ends where the hover would have ended it.
-    endAnimation(block);
-    expect(styleOf(block)).not.toContain("animation-name");
+    expect(demo()).not.toBe(before);
+    expect(styleOf(demo())).toContain(
+      `animation-name: ${keyframesName(fadeInUp.id, CURRENT_CATALOG_VERSION)}`,
+    );
   });
 
-  it("autoplays nothing under prefers-reduced-motion, but still replays on request", () => {
-    stubReducedMotion(true);
-    const { block, stage, replay } = renderCard({ entry: fadeInUp });
+  it("marks a ↻ run as asked for, until it ends", () => {
+    // The mark is what lets the run through the stylesheet's reduced-motion
+    // rule; see components/help/reduced-motion.ts.
+    const { demo, replay } = renderCard({ entry: fadeInUp });
 
-    expect(styleOf(block)).not.toContain("animation-name");
+    expect(demo()).toHaveAttribute("data-vm-demo");
+    expect(demo()).not.toHaveAttribute("data-vm-replayed");
 
-    // Hovering is not a request to play; pressing ↻ is.
+    fireEvent.click(replay);
+    expect(demo()).toHaveAttribute("data-vm-replayed");
+
+    endAnimation(demo());
+    expect(demo()).not.toHaveAttribute("data-vm-replayed");
+  });
+
+  it("replays a hover-trigger entry on hover and on focus, without calling it explicit", () => {
+    const { demo, stage, replay } = renderCard({ entry: hoverLift });
+    const onMount = demo();
+
     fireEvent.mouseEnter(stage);
-    expect(styleOf(block)).not.toContain("animation-name");
+    expect(demo()).not.toBe(onMount);
+    // Hovering is not a request to play: under reduced motion it stays quiet.
+    expect(demo()).not.toHaveAttribute("data-vm-replayed");
 
-    fireEvent.click(replay);
-    expect(styleOf(block)).toContain("animation-name");
+    const afterHover = demo();
+    fireEvent.focus(replay);
+    expect(demo()).not.toBe(afterHover);
+    expect(demo()).not.toHaveAttribute("data-vm-replayed");
   });
 
-  it("replays when the replay token changes, hover-trigger entries included", () => {
-    const { block, rerender } = renderCard({ entry: hoverLift, replayToken: 0 });
+  it("leaves an entry that does not trigger on hover alone when hovered", () => {
+    const { demo, stage } = renderCard({ entry: fadeInUp });
+    const onMount = demo();
 
-    expect(styleOf(block)).not.toContain("animation-name");
+    fireEvent.mouseEnter(stage);
+
+    expect(demo()).toBe(onMount);
+  });
+
+  it("survives a hover and a ↻ racing in the same frame", () => {
+    const { demo, stage, replay } = renderCard({ entry: hoverLift });
+
+    fireEvent.mouseEnter(stage);
+    fireEvent.click(replay);
+    fireEvent.mouseLeave(stage);
+
+    const before = demo();
+    fireEvent.click(replay);
+    expect(demo()).not.toBe(before);
+    expect(styleOf(demo())).toContain("animation-name");
+  });
+
+  it("caps an endless animation at one run when motion is unwelcome", () => {
+    stubReducedMotion(true);
+    const { demo } = renderCard({ entry: pulse });
+
+    // Still driven by the catalog's keyframes — only the repeat is capped, so
+    // an explicit ↻ always ends.
+    expect(styleOf(demo())).toContain("animation-iteration-count: 1");
+  });
+
+  it("keeps the catalog's own repeat when motion is welcome", () => {
+    const { demo } = renderCard({ entry: pulse });
+
+    expect(styleOf(demo())).toContain("animation-iteration-count: infinite");
+  });
+
+  it("leaves suppressing autoplay to the stylesheet, not to hydration", () => {
+    // The server cannot know the preference, so the inline style is
+    // unconditional and `[data-vm-demo]:not([data-vm-replayed])` does the
+    // suppressing — no flash of motion before the JS lands.
+    stubReducedMotion(true);
+    const { demo } = renderCard({ entry: fadeInUp });
+
+    expect(styleOf(demo())).toContain("animation-name");
+    expect(demo()).toHaveAttribute("data-vm-demo");
+  });
+
+  it("replays when the replay token changes, and counts that as explicit", () => {
+    const { demo, rerender } = renderCard({ entry: hoverLift, replayToken: 0 });
+    const before = demo();
 
     rerender(
       <ul>
         <CatalogCard entry={hoverLift} catalogVersion={CURRENT_CATALOG_VERSION} replayToken={1} />
       </ul>,
     );
-    expect(styleOf(block)).toContain("animation-name");
+
+    expect(demo()).not.toBe(before);
+    expect(demo()).toHaveAttribute("data-vm-replayed");
   });
 });

@@ -1,31 +1,11 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { CURRENT_CATALOG_VERSION, catalogCategories, getCatalogEntries } from "@/lib/catalog";
 
 import { CATEGORY_BLURBS, HelpScreen } from "./help-screen";
 
 const entries = getCatalogEntries();
-
-function stubReducedMotion(matches: boolean) {
-  vi.stubGlobal(
-    "matchMedia",
-    vi.fn(() => ({ matches, addEventListener: () => {}, removeEventListener: () => {} })),
-  );
-}
-
-/** Hands back the queued frame callbacks so a replay can be stepped by hand. */
-function stubAnimationFrames() {
-  const frames: FrameRequestCallback[] = [];
-  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-    frames.push(callback);
-    return frames.length;
-  });
-  return () => {
-    const queued = frames.splice(0, frames.length);
-    for (const callback of queued) callback(0);
-  };
-}
 
 function renderHelp() {
   render(<HelpScreen entries={entries} catalogVersion={CURRENT_CATALOG_VERSION} />);
@@ -35,10 +15,6 @@ function search(): HTMLElement {
   return screen.getByRole("searchbox", { name: "Search animations" });
 }
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
 describe("HelpScreen", () => {
   it("shows the whole current catalog, one card per entry", () => {
     renderHelp();
@@ -46,10 +22,10 @@ describe("HelpScreen", () => {
     expect(screen.getAllByTestId("catalog-card")).toHaveLength(entries.length);
   });
 
-  it("names the screen in the top bar and pins the catalog version", () => {
+  it("names the screen in the top bar, in the bar's own white, and pins the version", () => {
     renderHelp();
 
-    expect(screen.getByText("Animations")).toBeInTheDocument();
+    expect(screen.getByText("Animations")).toHaveClass("text-vm-bar-ink");
     expect(screen.getByText(`catalog ${CURRENT_CATALOG_VERSION}`)).toBeInTheDocument();
   });
 
@@ -75,6 +51,14 @@ describe("HelpScreen", () => {
     expect(within(entrance).getByText(CATEGORY_BLURBS.entrance)).toBeInTheDocument();
   });
 
+  it("names each section by its own heading", () => {
+    renderHelp();
+
+    const entrance = screen.getByRole("region", { name: "Entrance" });
+    const heading = within(entrance).getByRole("heading", { level: 2, name: "Entrance" });
+    expect(entrance).toHaveAttribute("aria-labelledby", heading.id);
+  });
+
   it("narrows to one section when its chip is pressed", () => {
     renderHelp();
 
@@ -96,8 +80,16 @@ describe("HelpScreen", () => {
     expect(screen.getByRole("button", { name: "All 7" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Entrance 5" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Exit 2" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Attention 0" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Attention" })).not.toBeInTheDocument();
+  });
+
+  it("stops offering a category the search has emptied", () => {
+    renderHelp();
+
+    fireEvent.change(search(), { target: { value: "fade" } });
+
+    expect(screen.getByRole("button", { name: "Attention 0" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Entrance 5" })).toBeEnabled();
   });
 
   it("says so when nothing matches", () => {
@@ -106,48 +98,51 @@ describe("HelpScreen", () => {
     fireEvent.change(search(), { target: { value: "zzz" } });
 
     expect(screen.queryAllByTestId("catalog-card")).toHaveLength(0);
-    expect(screen.getByText("No animations match \u201czzz\u201d.")).toBeInTheDocument();
+    expect(screen.getByText("No animations match “zzz”.")).toBeInTheDocument();
   });
 
-  it("replays every visible card, hover-trigger ones included", () => {
-    const runFrames = stubAnimationFrames();
+  it("names the category in the empty copy when one is pressed", () => {
     renderHelp();
 
-    const styleOf = (element: HTMLElement) => element.getAttribute("style") ?? "";
-    const first = screen.getAllByTestId("catalog-card-demo")[0];
-    // Fade In plays on load; Hover Lift waits to be pointed at.
-    expect(styleOf(first)).toContain("animation-name");
-    const hoverDemo = within(
-      screen.getByRole("region", { name: "Hover" }),
-    ).getAllByTestId("catalog-card-demo")[0];
-    expect(styleOf(hoverDemo)).not.toContain("animation-name");
+    fireEvent.click(screen.getByRole("button", { name: "Attention 5" }));
+    fireEvent.change(search(), { target: { value: "fade" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Replay all" }));
-
-    expect(styleOf(first)).toContain("animation-name: none");
-    expect(styleOf(hoverDemo)).toContain("animation-name");
-
-    runFrames();
-    expect(styleOf(first)).not.toContain("animation-name: none");
-  });
-
-  it("autoplays nothing under prefers-reduced-motion, and says why", () => {
-    stubReducedMotion(true);
-    renderHelp();
-
-    for (const demo of screen.getAllByTestId("catalog-card-demo")) {
-      expect(demo.getAttribute("style") ?? "").not.toContain("animation-name");
-    }
     expect(
-      screen.getByText(
-        "Your system asks for reduced motion, so nothing plays on its own. Replay a card to see it move.",
-      ),
+      screen.getByText("No attention animations match “fade”."),
     ).toBeInTheDocument();
   });
 
-  it("keeps the note away when motion is welcome", () => {
+  it("replays every visible card, hover-trigger ones included", () => {
     renderHelp();
 
-    expect(screen.queryByText(/reduced motion/)).not.toBeInTheDocument();
+    const before = screen.getAllByTestId("catalog-card-demo");
+    const hoverSection = screen.getByRole("region", { name: "Hover" });
+    const hoverDemoBefore = within(hoverSection).getAllByTestId("catalog-card-demo")[0];
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay all" }));
+
+    const after = screen.getAllByTestId("catalog-card-demo");
+    expect(after).toHaveLength(before.length);
+    expect(after[0]).not.toBe(before[0]);
+    // "Replay all" is the user asking, so every card is let through the
+    // stylesheet's reduced-motion rule for the length of the run.
+    expect(after[0]).toHaveAttribute("data-vm-replayed");
+
+    const hoverDemoAfter = within(
+      screen.getByRole("region", { name: "Hover" }),
+    ).getAllByTestId("catalog-card-demo")[0];
+    expect(hoverDemoAfter).not.toBe(hoverDemoBefore);
+    expect(hoverDemoAfter).toHaveAttribute("data-vm-replayed");
+  });
+
+  it("ships the reduced-motion note in the HTML, for the media query to reveal", () => {
+    // Not behind a client hook: a note that only appears after hydration is a
+    // note the reader has already stopped needing.
+    renderHelp();
+
+    const note = screen.getByText(
+      "Your system asks for reduced motion, so nothing plays on its own. Replay a card to see it move.",
+    );
+    expect(note).toHaveClass("hidden", "motion-reduce:block");
   });
 });

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { HelpScreen } from "@/components/help/help-screen";
+import { REDUCED_MOTION_DEMO_CSS } from "@/components/help/reduced-motion";
 import { CURRENT_CATALOG_VERSION, catalogKeyframes, getCatalogEntries } from "@/lib/catalog";
 
 export const metadata: Metadata = {
@@ -26,8 +27,15 @@ export default function HelpPage() {
 
   return (
     <>
+      {/* Everything in here comes from the catalog and from this repo, never
+          from a user or a cloned page. That matters because `<style>` is raw
+          text while React escapes `<`, `>` and `&` in a text child: a catalog
+          string carrying one would arrive as `&lt;` and corrupt the CSS.
+          `app/help/page.test.tsx` holds the catalog to that. */}
       <style id="vm-runtime">
-        {catalogKeyframes(entries.map((entry) => [entry, CURRENT_CATALOG_VERSION] as const))}
+        {`${catalogKeyframes(
+          entries.map((entry) => [entry, CURRENT_CATALOG_VERSION] as const),
+        )}\n\n${REDUCED_MOTION_DEMO_CSS}`}
       </style>
       <HelpScreen entries={entries} catalogVersion={CURRENT_CATALOG_VERSION} />
     </>

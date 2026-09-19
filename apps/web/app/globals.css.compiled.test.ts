@@ -76,6 +76,16 @@ describe("compiled globals.css", () => {
     expect(css).toMatch(/animate-vm-indeterminate\s*\{[^}]*animation:\s*vm-indeterminate/);
   });
 
+  it("reveals /help's reduced-motion note through the motion-reduce variant", () => {
+    // The note ships hidden in the server HTML and the media query shows it,
+    // so it never trails the thing it explains (components/help/reduced-
+    // motion.ts). A variant Tailwind declined to emit would leave it hidden
+    // for exactly the readers it is written for.
+    expect(css).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{\s*\.motion-reduce\\:block\s*\{\s*display:\s*block;/,
+    );
+  });
+
   it("generates the wrapper focus ring the slider thumb, Input and NumberField use", () => {
     expect(css).toContain(String.raw`.has-\[input\:focus-visible\]\:focus-ring`);
   });

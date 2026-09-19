@@ -93,6 +93,34 @@ test("help page plays the whole catalog", async ({ page }) => {
     "animation-name",
     /^vm-/,
   );
+
+  // The note is in the HTML for everyone; only the media query shows it.
+  await expect(page.getByText("Your system asks for reduced motion")).toBeHidden();
+});
+
+test.describe("when the reader asks for less motion", () => {
+  test.use({ reducedMotion: "reduce" });
+
+  test("help page holds every demo still until it is asked", async ({ page }) => {
+    await page.goto("/help");
+
+    // Suppressed by the page's own stylesheet, so this holds from the first
+    // paint — before any JavaScript could have read the preference.
+    await expect(page.getByTestId("catalog-card-demo").first()).toHaveCSS(
+      "animation-name",
+      "none",
+    );
+    await expect(page.getByText("Your system asks for reduced motion")).toBeVisible();
+
+    // Spin runs 2s and is capped to one pass here, so this is not racing the
+    // animation's own end.
+    await page.getByRole("searchbox", { name: "Search animations" }).fill("spin");
+    await page.getByRole("button", { name: "Replay Spin" }).click();
+
+    const demo = page.getByTestId("catalog-card-demo").first();
+    await expect(demo).toHaveCSS("animation-name", /^vm-/);
+    await expect(demo).toHaveCSS("animation-iteration-count", "1");
+  });
 });
 
 test("the /dev gallery renders every state at the handoff's widths", async ({ page }) => {
