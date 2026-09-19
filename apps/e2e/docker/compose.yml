@@ -1,0 +1,101 @@
+# Vibe Motion — full-stack e2e stack. Do not run this directly: use `pnpm e2e:docker`
+# (scripts/e2e-docker.sh), which gives every run its own compose project, network and image tags
+# so any number of worktrees / agents can run e2e at the same time without touching each other.
+#
+# Nothing here publishes a host port or sets a container_name: the Playwright runner lives inside
+# the stack's network and reaches the services by name, which is what makes stacks collision-free.
+#
+# Origins are fixed *inside* every stack (http://web:3000, http://api:8080), so the web image —
+# which bakes NEXT_PUBLIC_API_ORIGIN in at build time — is identical for every run and caches.
+#
+# The network uses a subnet outside every range SsrfGuard refuses (see ../README.md, "Why 11.x"):
+# the api under test is the unmodified production image, guard included, and it still has to be
+# able to clone the fixture pages.
+
+name: ${VM_E2E_PROJECT:?run via scripts/e2e-docker.sh}
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: vibe_motion
+      POSTGRES_USER: vibe_motion
+      POSTGRES_PASSWORD: vibe_motion
+    tmpfs:
+      - /var/lib/postgresql/data # every stack starts from an empty database and leaves nothing behind
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vibe_motion -d vibe_motion"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    image: vm-e2e-api:${VM_E2E_TAG:?}
+    build:
+      context: ../../..
+      dockerfile: apps/api/Dockerfile # the image Render builds
+    environment:
+      DATABASE_URL: postgresql://vibe_motion:vibe_motion@db:5432/vibe_motion
+      PORT: "8080"
+      WEB_ORIGIN: http://web:3000
+      APP_VERSION: e2e-${VM_E2E_TAG}
+      # Same values as render.yaml; keep in step.
+      CLONE_MAX_BYTES: "10485760"
+      CLONE_TIMEOUT_MS: "15000"
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75 -XX:+UseSerialGC"
+    mem_limit: 512m # Render starter
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    image: vm-e2e-web:${VM_E2E_TAG:?}
+    build:
+      context: ../../..
+      dockerfile: apps/e2e/docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_ORIGIN: http://api:8080
+    environment:
+      PORT: "3000"
+      NEXT_TELEMETRY_DISABLED: "1"
+    mem_limit: 512m # Render starter
+
+  fixtures:
+    image: nginx:1.29-alpine
+    volumes:
+      - ../fixtures:/usr/share/nginx/html:ro
+    networks:
+      default:
+        aliases:
+          # Must not end in a suffix SsrfGuard treats as local (.localhost, .internal, .local).
+          - fixtures.vm-e2e.test
+
+  runner:
+    image: vm-e2e-runner:${VM_E2E_TAG:?}
+    build:
+      context: ../../..
+      dockerfile: apps/e2e/docker/runner.Dockerfile
+      args:
+        PLAYWRIGHT_VERSION: ${VM_E2E_PLAYWRIGHT_VERSION:?}
+    environment:
+      CI: ${CI:-}
+      E2E_WEB_ORIGIN: http://web:3000
+      E2E_API_ORIGIN: http://api:8080
+      E2E_FIXTURE_ORIGIN: http://fixtures.vm-e2e.test
+    shm_size: 1gb # Chromium needs more than Docker's 64 MB /dev/shm; keeps IPC private to the stack
+    # Host uid, so the report files in the bind mount are the caller's, not root's (Linux).
+    user: "${VM_E2E_UID:?}:${VM_E2E_GID:?}"
+    volumes:
+      - ${VM_E2E_OUT:?}:/out
+    depends_on: [api, web, fixtures]
+
+networks:
+  default:
+    # Hermetic: no route out. A fixture that references the public internet fails here, loudly,
+    # instead of making the suite depend on someone else's uptime.
+    internal: true
+    # A daemon-wide IPv6 default would give fixtures a unique-local AAAA, which the guard refuses.
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: ${VM_E2E_SUBNET:?}

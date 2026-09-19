@@ -23,7 +23,7 @@ baseline/<name>.png                         # main-branch baselines, updated onl
 
 1. **Identify the PR.** `gh pr view --json number,headRefName,headRefOid -q '.number, .headRefName, .headRefOid'` from the working branch. If there is no PR yet, stop and say so; screenshots are attached to PRs.
 2. **Make sure the app is running.** Check `curl -s localhost:3000/api/health` and `curl -s localhost:8080/health`. If either is down, start them in the background (`pnpm dev` from root; `./gradlew run` in `apps/api` with `DATABASE_URL` from `.env.local`) and wait for health. Report if you had to start them.
-3. **Capture** into your scratchpad directory, never into the working tree. Use `apps/web/e2e/screenshots.ts` once it exists (Phase 3); until then, write a one-off Playwright script in the scratchpad with `chromium`, viewport `1440×900`, plus `390×844` for the help page. Standard set unless asked otherwise:
+3. **Capture** into your scratchpad directory, never into the working tree. Use `apps/e2e/web/screenshots.ts` once it exists (Phase 3); until then, write a one-off Playwright script in the scratchpad with `chromium`, viewport `1440×900`, plus `390×844` for the help page. Standard set unless asked otherwise:
    - `home` — `/` with empty URL field
    - `editor-idle` — `/p/<fixture project>`, nothing selected
    - `editor-selected` — element highlighted, panel showing Generate / Custom

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Vibe Motion quality gates. This is what CI runs and what every agent runs
-// before marking a PR ready. Usage: node scripts/gates.mjs [web|api|catalog|e2e|all]
+// before marking a PR ready. Usage: node scripts/gates.mjs [web|api|catalog|e2e|e2e-docker|all]
 //
 // Every gate runs even if an earlier one fails, so a single run reports the
 // full picture. Exit code is non-zero if any gate failed.
@@ -31,12 +31,15 @@ const gates = [
   { group: "api", name: "api check (ktlint + kotest)", cmd: "./gradlew", args: ["check", "--no-daemon", "--console=plain"], cwd: "apps/api" },
   { group: "api", name: "api docker build", cmd: "docker", args: ["build", "-q", "-f", "apps/api/Dockerfile", "-t", "vibe-motion-api:gate", "."], requires: "docker" },
   // ---- e2e -----------------------------------------------------------------
-  { group: "e2e", name: "web e2e (playwright)", cmd: "pnpm", args: ["--filter", "web", "e2e"] },
+  { group: "e2e", name: "e2e typecheck", cmd: "pnpm", args: ["--filter", "e2e", "typecheck"] },
+  { group: "e2e", name: "web e2e (playwright)", cmd: "pnpm", args: ["--filter", "e2e", "test"] },
+  // Full stack (db + api image + production web build) in a throwaway, per-run Docker stack.
+  { group: "e2e-docker", name: "full-stack e2e (docker)", cmd: "scripts/e2e-docker.sh", args: [], requires: "docker" },
 ];
 
 const selected = gates.filter((g) => group === "all" || g.group === group);
 if (selected.length === 0) {
-  console.error(`Unknown gate group "${group}". Use web | api | catalog | e2e | all.`);
+  console.error(`Unknown gate group "${group}". Use web | api | catalog | e2e | e2e-docker | all.`);
   process.exit(2);
 }
 

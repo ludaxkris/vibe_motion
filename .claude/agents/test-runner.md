@@ -20,7 +20,7 @@ You run tests for Vibe Motion. You do not modify source code, tests, or configur
    pnpm --filter web lint && pnpm --filter web typecheck && pnpm --filter web test && pnpm --filter web build
    pnpm --filter animation-catalog validate
    (cd apps/api && ./gradlew check)
-   pnpm --filter web e2e
+   pnpm e2e
    ```
 4. Do not retry flaky tests silently. If a test fails, re-run only that test once, and report both outcomes.
 5. Extract failing test names and the first relevant error lines from the log.

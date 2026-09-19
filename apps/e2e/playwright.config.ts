@@ -5,7 +5,10 @@ const baseURL = `http://localhost:${PORT}`;
 const isCI = Boolean(process.env.CI);
 
 export default defineConfig({
-  testDir: "./e2e",
+  // One directory per client under test; mobile/ joins web/ when there is a mobile client.
+  testDir: "./web",
+  // Full-stack specs need the Docker stack (api + Postgres + fixtures): `pnpm e2e:docker`.
+  testIgnore: "**/stack/**",
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
@@ -18,7 +21,7 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     // Explicit port so an ambient PORT (Render sets one) cannot move the server.
-    command: `pnpm exec next dev --port ${PORT}`,
+    command: `pnpm --filter web exec next dev --port ${PORT}`,
     url: baseURL,
     reuseExistingServer: !isCI,
     timeout: 120_000,
