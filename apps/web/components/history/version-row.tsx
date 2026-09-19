@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+
 import { cn } from "cn";
 
 import { ChangeRow } from "@/components/dialogs/save-dialog";
@@ -52,6 +54,7 @@ export function VersionRow({
   restoring = false,
 }: VersionRowProps) {
   const label = `v${version.seq}`;
+  const regionId = useId();
 
   return (
     <li
@@ -65,6 +68,7 @@ export function VersionRow({
         type="button"
         onClick={() => onView(version.id)}
         aria-expanded={isViewing}
+        aria-controls={regionId}
         className="flex items-start gap-2.5 text-left"
       >
         <span
@@ -89,7 +93,7 @@ export function VersionRow({
       </button>
 
       {isViewing ? (
-        <div className="ml-[34px] flex flex-col gap-2.5">
+        <div id={regionId} className="ml-[34px] flex flex-col gap-2.5">
           {rows.length > 0 ? (
             <ul className="flex flex-col gap-1.5">
               {rows.map((row) => (

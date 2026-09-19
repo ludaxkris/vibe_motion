@@ -18,6 +18,8 @@ export type ConflictDialogContentProps = {
   onCancel: () => void;
   /** Supplied by the modal wrapper so the popup can point `aria-labelledby` here. */
   titleId?: string;
+  /** Supplied by the modal wrapper so the popup can point `aria-describedby` here. */
+  descriptionId?: string;
 };
 
 /**
@@ -31,9 +33,11 @@ export function ConflictDialogContent({
   onDiscard,
   onCancel,
   titleId,
+  descriptionId,
 }: ConflictDialogContentProps) {
   const generated = useId();
   const headingId = titleId ?? `${generated}-title`;
+  const bodyId = descriptionId ?? `${generated}-description`;
 
   return (
     <div data-testid="conflict-dialog" className="flex flex-col gap-3">
@@ -41,8 +45,15 @@ export function ConflictDialogContent({
         v{theirs.seq} was saved somewhere else
       </p>
 
-      <p className="text-md leading-body text-vm-ink-2">
-        Someone saved <b className="font-medium text-vm-ink">{theirs.label}</b> as v{theirs.seq}{" "}
+      <p id={bodyId} className="text-md leading-body text-vm-ink-2">
+        {theirs.label ? (
+          <>
+            Someone saved <b className="font-medium text-vm-ink">{theirs.label}</b> as v
+            {theirs.seq}{" "}
+          </>
+        ) : (
+          <>Someone saved v{theirs.seq} </>
+        )}
         while you were editing. Discard your changes, keep editing here, or apply your changes on
         top of it.
       </p>
@@ -76,6 +87,7 @@ export function ConflictDialog({
 }: ConflictDialogContentProps & { open: boolean }) {
   const id = useId();
   const titleId = `${id}-title`;
+  const descriptionId = `${id}-description`;
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : content.onCancel())}>
@@ -83,8 +95,9 @@ export function ConflictDialog({
         showCloseButton={false}
         className={UNSAVED_GUARD_DIALOG_WIDTH}
         aria-labelledby={titleId}
+        aria-describedby={descriptionId}
       >
-        <ConflictDialogContent {...content} titleId={titleId} />
+        <ConflictDialogContent {...content} titleId={titleId} descriptionId={descriptionId} />
       </DialogContent>
     </Dialog>
   );

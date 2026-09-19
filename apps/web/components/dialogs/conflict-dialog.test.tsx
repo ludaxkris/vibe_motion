@@ -37,6 +37,13 @@ describe("ConflictDialogContent", () => {
     );
   });
 
+  it("does not double-space the body when theirs.label is empty", () => {
+    render(<ConflictDialogContent theirs={{ ...THEIRS, label: "" }} {...callbacks()} />);
+
+    expect(screen.getByText(/^Someone saved v6 while you were editing\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Someone saved {2}/)).not.toBeInTheDocument();
+  });
+
   it("fires each action's own callback", () => {
     const handlers = callbacks();
     render(<ConflictDialogContent theirs={THEIRS} {...handlers} />);
@@ -64,6 +71,15 @@ describe("ConflictDialog", () => {
     render(<ConflictDialog open={false} theirs={THEIRS} {...callbacks()} />);
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("points aria-describedby at the body paragraph, like the unsaved guard dialog", () => {
+    render(<ConflictDialog open theirs={THEIRS} {...callbacks()} />);
+
+    const dialog = screen.getByRole("dialog");
+    const describedBy = dialog.getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(/Someone saved/);
   });
 
   it("treats dismissing the modal as Keep editing", () => {

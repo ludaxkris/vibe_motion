@@ -164,6 +164,24 @@ describe("VersionRow", () => {
     expect(screen.getByText("Current · 2h ago · 42 elements")).toBeInTheDocument();
   });
 
+  it("points aria-controls at the expanded region's own id", () => {
+    render(
+      <VersionRow
+        version={version()}
+        rows={ROWS}
+        isCurrent={false}
+        isViewing
+        now={NOW}
+        {...callbacks()}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: /^v5/ });
+    const controlsId = button.getAttribute("aria-controls");
+    expect(controlsId).toBeTruthy();
+    expect(document.getElementById(controlsId as string)).not.toBeNull();
+  });
+
   it("disables Restore while restoring", () => {
     render(
       <VersionRow
