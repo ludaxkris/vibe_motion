@@ -21,7 +21,15 @@ export function Segmented({
   className,
   ...props
 }: Omit<RadioGroup.Props, "value" | "onValueChange"> & {
-  options: readonly { value: string; label: string }[]
+  options: readonly {
+    value: string
+    label: string
+    /**
+     * What the segment is called when the label alone does not say it — the
+     * Repeat row's ∞ is a picture, and "Infinite" is the word for it.
+     */
+    ariaLabel?: string
+  }[]
   value: string
   onValueChange?: (value: string) => void
   /** The Repeat row (1 / 2 / 3 / ∞) sits in a tighter box. */
@@ -45,6 +53,10 @@ export function Segmented({
         <Radio.Root
           key={option.value}
           value={option.value}
+          aria-label={option.ariaLabel}
+          // Segments share the row's width, so a long label can still be cut
+          // short by its box; the native tooltip is how it stays readable.
+          title={option.ariaLabel ?? option.label}
           className={cn(
             "flex-1 rounded-sm text-center text-sm font-normal text-vm-ink-2 select-none",
             "transition-colors duration-(--dur-fast) ease-standard",

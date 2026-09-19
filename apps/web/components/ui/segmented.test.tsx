@@ -85,6 +85,41 @@ describe("Segmented", () => {
     expect(screen.getByRole("radio", { name: "1" })).toHaveClass("py-1");
   });
 
+  it("names a glyph segment out loud, and keeps the glyph on screen", () => {
+    render(
+      <Segmented
+        aria-label="Repeat"
+        dense
+        options={[
+          { value: "1", label: "1" },
+          { value: "infinite", label: "∞", ariaLabel: "Infinite" },
+        ]}
+        value="1"
+      />,
+    );
+
+    const infinite = screen.getByRole("radio", { name: "Infinite" });
+    expect(infinite).toHaveTextContent("∞");
+    expect(screen.queryByRole("radio", { name: "∞" })).not.toBeInTheDocument();
+  });
+
+  it("titles every segment, so a label the box clips is still discoverable", () => {
+    render(
+      <Segmented
+        aria-label="Repeat"
+        options={[
+          { value: "1", label: "1" },
+          { value: "infinite", label: "∞", ariaLabel: "Infinite" },
+        ]}
+        value="1"
+      />,
+    );
+
+    expect(screen.getByRole("radio", { name: "1" })).toHaveAttribute("title", "1");
+    // The tooltip says the word, not the glyph — "∞" would tell no one anything.
+    expect(screen.getByRole("radio", { name: "Infinite" })).toHaveAttribute("title", "Infinite");
+  });
+
   it("does not respond when disabled", () => {
     const onValueChange = vi.fn();
     render(
