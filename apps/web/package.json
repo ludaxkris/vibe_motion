@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "pnpm --filter animation-catalog build",
     "dev": "next dev --port 3000",
     "prebuild": "pnpm --filter animation-catalog build",
     "build": "next build",
@@ -12,6 +13,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "pretest": "pnpm --filter animation-catalog build",
     "test": "vitest run",
+    "pree2e": "pnpm --filter animation-catalog build",
     "e2e": "playwright test",
     "gen:client": "node scripts/gen-client.mjs"
   },
