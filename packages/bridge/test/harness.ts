@@ -47,6 +47,11 @@ export type SendOptions = {
   origin?: string;
   /** `MessageEvent.source`; defaults to the stub standing in for `window.parent`. */
   source?: unknown;
+  /**
+   * Deliver `payload` exactly as given: `undefined` leaves the envelope with no `payload` key at
+   * all and `null` stays `null`. Without this, `send` turns a missing payload into `{}`.
+   */
+  rawPayload?: boolean;
 };
 
 export type FakeObserver = {
@@ -251,8 +256,9 @@ export function loadBridge(
       const data: Record<string, unknown> = {
         source: msg.source === undefined ? MESSAGE_SOURCE : msg.source,
         type: msg.type,
-        payload: msg.payload === undefined ? {} : msg.payload,
       };
+      if (!sendOpts.rawPayload) data.payload = msg.payload === undefined ? {} : msg.payload;
+      else if (msg.payload !== undefined) data.payload = msg.payload;
       if (msg.seq !== undefined) data.seq = msg.seq;
       const event = new window.MessageEvent("message", {
         data,
