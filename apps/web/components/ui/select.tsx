@@ -30,10 +30,13 @@ function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
 function SelectTrigger({
   className,
   size = "default",
+  icon,
   children,
   ...props
 }: SelectPrimitive.Trigger.Props & {
   size?: "sm" | "default"
+  /** Replaces the default chevron — the handoff's "▾" glyph. Decorative. */
+  icon?: React.ReactNode
 }) {
   return (
     <SelectPrimitive.Trigger
@@ -48,7 +51,13 @@ function SelectTrigger({
       {children}
       <SelectPrimitive.Icon
         render={
-          <ChevronDownIcon className="pointer-events-none size-4 text-muted-foreground" />
+          icon == null ? (
+            <ChevronDownIcon className="pointer-events-none size-4 text-muted-foreground" />
+          ) : (
+            <span aria-hidden="true" className="pointer-events-none text-vm-ink-3">
+              {icon}
+            </span>
+          )
         }
       />
     </SelectPrimitive.Trigger>

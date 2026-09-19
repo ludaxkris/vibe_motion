@@ -1,18 +1,39 @@
 /**
- * Editor store (placeholder).
+ * Editor store.
  *
  * Shape follows docs/architecture.md §4: the shell keeps
- * `selectedVmId · draftState · currentVersionState · unsaved · mode` in one
- * Zustand store, which the Control Panel and the bridge client both read.
+ * `draftState · currentVersionState · mode` in one Zustand store, plus the
+ * Control Panel's `panel` state machine, which the Control Panel and the
+ * bridge client both read.
  *
- * Phase 0 defines the types and an empty store only. The real actions land with
- * the bridge (Phase 4), the Control Panel flows (Phase 5) and version history
- * (Phase 6). Live preview edits stay in `draftState` and never hit the API;
- * `currentVersionState` only changes when a version is saved, loaded or restored.
+ * `selectedVmId` and `unsaved` are *derived*, not stored: `selectedVmId` is a
+ * pure function of `panel`, and `unsaved` (like the set of elements it is the
+ * emptiness of) a deep comparison of `draftState` against
+ * `currentVersionState`. Mirroring them as their own state fields
+ * would require every action that can change either input to remember to
+ * recompute them — `currentVersionState` will get its own writers in Phase 6
+ * (save/load/restore) that have no reason to know about `unsaved` — so
+ * instead they're plain selectors (`selectSelectedVmId`, `selectUnsaved`) —
+ * read through `useEditorStore(selector)`, or through the `useUnsaved` hook
+ * wrapper — that can never drift out of sync with the state they're computed
+ * from.
+ *
+ * Live preview edits stay in `draftState` and never hit the API;
+ * `currentVersionState` only changes when a version is saved, loaded or
+ * restored (Phase 6). No action in this module calls the API.
  */
 import { create } from "zustand";
 
 import type { Assignment, EditorStateMap } from "@/lib/api-client";
+import { assignmentsEqual } from "@/lib/assignment";
+import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
+
+import {
+  initialPanelState,
+  transition,
+  type PanelEvent,
+  type PanelState,
+} from "./panel-machine";
 
 /**
  * `editing` — the draft is live and the user can change it.
@@ -21,19 +42,37 @@ import type { Assignment, EditorStateMap } from "@/lib/api-client";
 export type EditorMode = "editing" | "viewing";
 
 export type EditorState = {
-  /** `data-vm-id` of the element selected in the preview iframe, or null when nothing is selected. */
-  selectedVmId: string | null;
+  /** Control Panel state machine (idle / selected / choosing / tuning). */
+  panel: PanelState;
   /** Client-side draft: what the iframe currently shows. Never persisted until Save. */
   draftState: EditorStateMap;
   /** Materialised state of the version the draft was forked from. */
   currentVersionState: EditorStateMap;
-  /** True when `draftState` differs from `currentVersionState`. */
-  unsaved: boolean;
   mode: EditorMode;
 };
 
 export type EditorActions = {
+  /** Advance the Control Panel state machine. `PICK` also creates the draft assignment (catalog defaults, pinned `catalogVersion`). */
+  dispatchPanel: (event: PanelEvent) => void;
+  /**
+   * Thin wrapper over `dispatchPanel`: `vmId === null` is a `DESELECT`,
+   * otherwise a `SELECT` that looks up whether `vmId` already has a draft
+   * assignment (landing on `tuning` instead of `selected` when it does).
+   */
   setSelectedVmId: (vmId: string | null) => void;
+  /** Replace the draft assignment for `vmId` outright (e.g. changing its trigger). */
+  setDraftAssignment: (vmId: string, assignment: Assignment) => void;
+  /** Merge one param value into `vmId`'s draft assignment. No-op if `vmId` has no draft assignment. */
+  updateDraftParam: (vmId: string, key: string, value: string) => void;
+  /** Drop the draft assignment for `vmId`. */
+  removeDraftAssignment: (vmId: string) => void;
+  /**
+   * The top bar's Cancel: throw the draft away and go back to the current
+   * version's state. The Control Panel follows the element it was on —
+   * `tuning` when that element still has an assignment afterwards, `selected`
+   * when the revert took it away (docs/design/README.md, "Interactions").
+   */
+  revertDraft: () => void;
   setMode: (mode: EditorMode) => void;
   reset: () => void;
 };
@@ -41,18 +80,167 @@ export type EditorActions = {
 export type EditorStore = EditorState & EditorActions;
 
 export const initialEditorState: EditorState = {
-  selectedVmId: null,
+  panel: initialPanelState,
   draftState: {},
   currentVersionState: {},
-  unsaved: false,
   mode: "editing",
 };
 
-export const useEditorStore = create<EditorStore>((set) => ({
+/** `data-vm-id` of the element selected in the preview iframe, or null when nothing is selected. */
+export function selectSelectedVmId(state: EditorState): string | null {
+  return state.panel.status === "idle" ? null : state.panel.vmId;
+}
+
+/**
+ * Every element the draft has unsaved changes on: one the draft animated, one
+ * the draft dropped, or one whose assignment moved. Derived on demand from the
+ * two maps rather than mirrored as state, for the reason in the module header.
+ *
+ * It allocates, so components read one of the scalar selectors below rather
+ * than subscribing to this directly (Zustand compares snapshots by identity,
+ * and a fresh array every render is a fresh snapshot every render).
+ */
+export function selectDirtyVmIds(state: EditorState): string[] {
+  const vmIds = new Set([
+    ...Object.keys(state.draftState),
+    ...Object.keys(state.currentVersionState),
+  ]);
+  return [...vmIds].filter(
+    (vmId) => !assignmentsEqual(state.draftState[vmId], state.currentVersionState[vmId]),
+  );
+}
+
+/** How many elements have unsaved changes — what the guard's generic copy counts. */
+export function selectDirtyVmIdCount(state: EditorState): number {
+  return selectDirtyVmIds(state).length;
+}
+
+/** True when `draftState` differs from `currentVersionState`. */
+export function selectUnsaved(state: EditorState): boolean {
+  return selectDirtyVmIds(state).length > 0;
+}
+
+/**
+ * The one element the unsaved guard is allowed to name, or null for the
+ * generic question (`docs/design/README.md` "3. Dialogs & toast").
+ *
+ * Two conditions, and both matter. The element has to be the *selected* one,
+ * or "Save changes to h1?" points at whatever the user last clicked rather
+ * than at what they changed. And it has to be the *only* dirty one, because
+ * Discard calls `revertDraft()`, which throws the whole draft away — naming
+ * one element while silently reverting three would declare a smaller loss
+ * than the button delivers.
+ */
+export function selectGuardedVmId(state: EditorState): string | null {
+  const dirty = selectDirtyVmIds(state);
+  if (dirty.length !== 1) return null;
+  return dirty[0] === selectSelectedVmId(state) ? dirty[0] : null;
+}
+
+/**
+ * The machine is deliberately ignorant of `draftState`, so the store is what
+ * tells `BACK` whether the element it is stepping out of the picker for
+ * already has an assignment. Callers (`ChoosingPanel`'s "‹") just say `BACK`.
+ */
+function withDraftAnimationId(state: EditorState, event: PanelEvent): PanelEvent {
+  if (event.type !== "BACK" || event.draftAnimationId !== undefined) return event;
+  const vmId = selectSelectedVmId(state);
+  if (vmId === null) return event;
+  return { ...event, draftAnimationId: state.draftState[vmId]?.animationId };
+}
+
+export const useEditorStore = create<EditorStore>((set, get) => ({
   ...initialEditorState,
-  setSelectedVmId: (selectedVmId) => set({ selectedVmId }),
+
+  dispatchPanel: (event) =>
+    set((state) => {
+      const panel = transition(state.panel, withDraftAnimationId(state, event));
+      if (panel === state.panel) return state;
+
+      // PICK's job is purely to choose an animation; creating the draft
+      // assignment it implies (catalog defaults, pinned catalogVersion, the
+      // entry's defaultTrigger) lives here so every caller of PICK gets it,
+      // matching "PICK creates the draft assignment" in the task brief.
+      if (event.type === "PICK" && panel.status === "tuning") {
+        // …except when the card picked is the one already applied. That is a
+        // navigation back into tuning, not a new choice, and overwriting it
+        // with catalog defaults would throw away everything the user tuned.
+        if (state.draftState[panel.vmId]?.animationId === event.animationId) {
+          return { panel };
+        }
+
+        const entry = getCatalogEntry(event.animationId);
+        if (entry) {
+          const assignment: Assignment = {
+            animationId: entry.id,
+            catalogVersion: CURRENT_CATALOG_VERSION,
+            trigger: entry.defaultTrigger ?? entry.triggers[0],
+            params: resolveCatalogParams(entry),
+          };
+          return { panel, draftState: { ...state.draftState, [panel.vmId]: assignment } };
+        }
+      }
+
+      return { panel };
+    }),
+
+  setSelectedVmId: (vmId) => {
+    const { draftState, dispatchPanel } = get();
+    if (vmId === null) {
+      dispatchPanel({ type: "DESELECT" });
+      return;
+    }
+    dispatchPanel({ type: "SELECT", vmId, draftAnimationId: draftState[vmId]?.animationId });
+  },
+
+  setDraftAssignment: (vmId, assignment) =>
+    set((state) => ({ draftState: { ...state.draftState, [vmId]: assignment } })),
+
+  updateDraftParam: (vmId, key, value) =>
+    set((state) => {
+      const existing = state.draftState[vmId];
+      if (!existing) return state;
+      return {
+        draftState: {
+          ...state.draftState,
+          [vmId]: { ...existing, params: { ...existing.params, [key]: value } },
+        },
+      };
+    }),
+
+  removeDraftAssignment: (vmId) =>
+    set((state) => {
+      if (!(vmId in state.draftState)) return state;
+      const draftState = { ...state.draftState };
+      delete draftState[vmId];
+      return { draftState };
+    }),
+
+  revertDraft: () =>
+    set((state) => {
+      const draftState = { ...state.currentVersionState };
+      const vmId = selectSelectedVmId(state);
+
+      // Through the machine, not around it: `REVERT` is what decides where the
+      // panel lands (and keeps `panel` identical when it does not move, so
+      // subscribers that only read `panel` are not re-rendered).
+      const panel = transition(state.panel, {
+        type: "REVERT",
+        draftAnimationId: vmId === null ? undefined : draftState[vmId]?.animationId,
+      });
+
+      return { draftState, panel };
+    }),
+
   setMode: (mode) => set({ mode }),
+
   reset: () => set({ ...initialEditorState }),
 }));
 
+/** `useEditorStore(selectUnsaved)`, as a named hook. */
+export function useUnsaved(): boolean {
+  return useEditorStore(selectUnsaved);
+}
+
 export type { Assignment, EditorStateMap };
+export { transition, type PanelEvent, type PanelState } from "./panel-machine";

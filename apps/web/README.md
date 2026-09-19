@@ -54,8 +54,10 @@ lib/env.ts               the only reader of process.env
 lib/catalog.ts           build-time read of packages/animation-catalog/versions/1.0.0.json
 lib/api-client/          generated types + typed openapi-fetch client
 lib/store/               Zustand editor store (placeholder, shape from docs/architecture.md §4)
-e2e/                     Playwright specs
+mocks/                   MSW handlers + in-memory store, mounted only when NEXT_PUBLIC_API_MOCKING=enabled
 ```
+
+Playwright specs for this app live in [`apps/e2e/web/`](../e2e/README.md), never here.
 
 Conventions (see [CLAUDE.md](../../CLAUDE.md)): Server Components by default, `"use client"` only
 where interactivity demands it, Tailwind + shadcn/ui, no CSS modules, and everything injected into a
