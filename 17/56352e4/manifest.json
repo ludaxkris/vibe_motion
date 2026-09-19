@@ -1,0 +1,12 @@
+{
+  "branch": "feat/5-panel-auto-state",
+  "sha": "56352e4",
+  "viewport": "1440x900 (panels), 390x844 (help)",
+  "names": [
+    "dev-frame-panel-auto-result-1440x900.png",
+    "dev-frame-panel-tuning-from-auto-1440x900.png",
+    "dev-frame-panel-tuning-distance-1440x900.png",
+    "help-390x844.png"
+  ],
+  "diffs": {}
+}
