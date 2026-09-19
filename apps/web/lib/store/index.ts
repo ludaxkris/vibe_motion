@@ -128,12 +128,24 @@ export function selectSelectedElementUnsaved(state: EditorState): boolean {
   return !assignmentsEqual(state.draftState[vmId], state.currentVersionState[vmId]);
 }
 
+/**
+ * The machine is deliberately ignorant of `draftState`, so the store is what
+ * tells `BACK` whether the element it is stepping out of the picker for
+ * already has an assignment. Callers (`ChoosingPanel`'s "‹") just say `BACK`.
+ */
+function withDraftAnimationId(state: EditorState, event: PanelEvent): PanelEvent {
+  if (event.type !== "BACK" || event.draftAnimationId !== undefined) return event;
+  const vmId = selectSelectedVmId(state);
+  if (vmId === null) return event;
+  return { ...event, draftAnimationId: state.draftState[vmId]?.animationId };
+}
+
 export const useEditorStore = create<EditorStore>((set, get) => ({
   ...initialEditorState,
 
   dispatchPanel: (event) =>
     set((state) => {
-      const panel = transition(state.panel, event);
+      const panel = transition(state.panel, withDraftAnimationId(state, event));
       if (panel === state.panel) return state;
 
       // PICK's job is purely to choose an animation; creating the draft
@@ -141,6 +153,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // entry's defaultTrigger) lives here so every caller of PICK gets it,
       // matching "PICK creates the draft assignment" in the task brief.
       if (event.type === "PICK" && panel.status === "tuning") {
+        // …except when the card picked is the one already applied. That is a
+        // navigation back into tuning, not a new choice, and overwriting it
+        // with catalog defaults would throw away everything the user tuned.
+        if (state.draftState[panel.vmId]?.animationId === event.animationId) {
+          return { panel };
+        }
+
         const entry = getCatalogEntry(event.animationId);
         if (entry) {
           const assignment: Assignment = {
@@ -191,24 +210,17 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   revertDraft: () =>
     set((state) => {
       const draftState = { ...state.currentVersionState };
-      const { panel } = state;
-      if (panel.status === "idle") return { draftState, panel };
+      const vmId = selectSelectedVmId(state);
 
-      const assignment = draftState[panel.vmId];
-      const next: PanelState = assignment
-        ? { status: "tuning", vmId: panel.vmId, animationId: assignment.animationId }
-        : { status: "selected", vmId: panel.vmId };
+      // Through the machine, not around it: `REVERT` is what decides where the
+      // panel lands (and keeps `panel` identical when it does not move, so
+      // subscribers that only read `panel` are not re-rendered).
+      const panel = transition(state.panel, {
+        type: "REVERT",
+        draftAnimationId: vmId === null ? undefined : draftState[vmId]?.animationId,
+      });
 
-      // Keep the same object when the state is unchanged, so subscribers that
-      // only read `panel` are not re-rendered by a revert that did not move
-      // the panel (the machine's own no-op-by-identity rule).
-      const unchanged =
-        panel.status === next.status &&
-        panel.vmId === next.vmId &&
-        (next.status !== "tuning" ||
-          (panel.status === "tuning" && panel.animationId === next.animationId));
-
-      return { draftState, panel: unchanged ? panel : next };
+      return { draftState, panel };
     }),
 
   setMode: (mode) => set({ mode }),

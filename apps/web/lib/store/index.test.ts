@@ -236,6 +236,67 @@ describe("useEditorStore panel/draft integration", () => {
     expect(state.panel).toEqual({ status: "choosing", vmId: "vm-1" });
     expect(state.draftState["vm-1"]).toBeDefined();
   });
+
+  it("Change then ‹ returns to tuning, not to an empty `selected`", () => {
+    useEditorStore.getState().setSelectedVmId("vm-1");
+    useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in" });
+    useEditorStore.getState().updateDraftParam("vm-1", "duration", "900ms");
+
+    // "Change" → the picker, then "‹" out of it again.
+    useEditorStore.getState().dispatchPanel({ type: "BACK" });
+    useEditorStore.getState().dispatchPanel({ type: "BACK" });
+
+    const state = useEditorStore.getState();
+    expect(state.panel).toEqual({ status: "tuning", vmId: "vm-1", animationId: "fade-in" });
+    expect(state.draftState["vm-1"].params.duration).toBe("900ms");
+  });
+
+  it("‹ out of the picker lands on `selected` when the element has nothing on it", () => {
+    useEditorStore.getState().setSelectedVmId("vm-1");
+    useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
+
+    useEditorStore.getState().dispatchPanel({ type: "BACK" });
+
+    expect(useEditorStore.getState().panel).toEqual({ status: "selected", vmId: "vm-1" });
+  });
+
+  it("re-picking the animation already applied keeps every tuned value", () => {
+    useEditorStore.getState().setSelectedVmId("vm-1");
+    useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in" });
+    useEditorStore.getState().updateDraftParam("vm-1", "duration", "900ms");
+    useEditorStore.getState().setDraftAssignment("vm-1", {
+      ...useEditorStore.getState().draftState["vm-1"],
+      trigger: "hover",
+    });
+
+    useEditorStore.getState().dispatchPanel({ type: "BACK" });
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in" });
+
+    const state = useEditorStore.getState();
+    expect(state.panel).toEqual({ status: "tuning", vmId: "vm-1", animationId: "fade-in" });
+    expect(state.draftState["vm-1"].params.duration).toBe("900ms");
+    expect(state.draftState["vm-1"].trigger).toBe("hover");
+  });
+
+  it("picking a different animation does start from the catalog's defaults", () => {
+    useEditorStore.getState().setSelectedVmId("vm-1");
+    useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in" });
+    useEditorStore.getState().updateDraftParam("vm-1", "duration", "900ms");
+
+    useEditorStore.getState().dispatchPanel({ type: "BACK" });
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in-up" });
+
+    const entry = getCatalogEntry("fade-in-up")!;
+    expect(useEditorStore.getState().draftState["vm-1"]).toEqual({
+      animationId: "fade-in-up",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: entry.defaultTrigger,
+      params: resolveCatalogParams(entry),
+    });
+  });
 });
 
 describe("selectSelectedElementUnsaved", () => {

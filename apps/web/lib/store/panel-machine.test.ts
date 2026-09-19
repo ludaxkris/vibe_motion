@@ -15,7 +15,10 @@ const events: Record<string, PanelEvent> = {
   CHOOSE_CUSTOM: { type: "CHOOSE_CUSTOM" },
   PICK: { type: "PICK", animationId: "scale-in" },
   BACK: { type: "BACK" },
+  BACK_WITH_DRAFT: { type: "BACK", draftAnimationId: "fade-in" },
   CLEAR: { type: "CLEAR" },
+  REVERT: { type: "REVERT" },
+  REVERT_WITH_DRAFT: { type: "REVERT", draftAnimationId: "fade-in" },
 };
 
 describe("transition", () => {
@@ -42,8 +45,17 @@ describe("transition", () => {
     it("BACK is a no-op", () => {
       expect(transition(idle, events.BACK)).toBe(idle);
     });
+    it("BACK carrying a draft is still a no-op (nothing is selected)", () => {
+      expect(transition(idle, events.BACK_WITH_DRAFT)).toBe(idle);
+    });
     it("CLEAR is a no-op", () => {
       expect(transition(idle, events.CLEAR)).toBe(idle);
+    });
+    it("REVERT is a no-op", () => {
+      expect(transition(idle, events.REVERT)).toBe(idle);
+    });
+    it("REVERT carrying a draft is still a no-op (nothing is selected)", () => {
+      expect(transition(idle, events.REVERT_WITH_DRAFT)).toBe(idle);
     });
   });
 
@@ -69,8 +81,17 @@ describe("transition", () => {
     it("BACK is a no-op (nothing below selected)", () => {
       expect(transition(selectedA, events.BACK)).toBe(selectedA);
     });
+    it("BACK carrying a draft is still a no-op (only the picker steps back)", () => {
+      expect(transition(selectedA, events.BACK_WITH_DRAFT)).toBe(selectedA);
+    });
     it("CLEAR is a no-op (identity — already selected, nothing to clear back from)", () => {
       expect(transition(selectedA, events.CLEAR)).toBe(selectedA);
+    });
+    it("REVERT with no draft left is a no-op (identity — already there)", () => {
+      expect(transition(selectedA, events.REVERT)).toBe(selectedA);
+    });
+    it("REVERT that restores an assignment -> tuning", () => {
+      expect(transition(selectedA, events.REVERT_WITH_DRAFT)).toEqual(tuningA);
     });
   });
 
@@ -97,11 +118,22 @@ describe("transition", () => {
         animationId: "scale-in",
       });
     });
-    it("BACK -> selected", () => {
+    it("BACK -> selected when the element has no draft assignment", () => {
       expect(transition(choosingA, events.BACK)).toEqual(selectedA);
+    });
+    it("BACK -> tuning when the element already has one", () => {
+      // Otherwise "Change" then "‹" strands an animated element on a panel
+      // that says "No animation yet".
+      expect(transition(choosingA, events.BACK_WITH_DRAFT)).toEqual(tuningA);
     });
     it("CLEAR -> selected", () => {
       expect(transition(choosingA, events.CLEAR)).toEqual(selectedA);
+    });
+    it("REVERT -> selected when the revert took the assignment away", () => {
+      expect(transition(choosingA, events.REVERT)).toEqual(selectedA);
+    });
+    it("REVERT -> tuning when the saved version still has one", () => {
+      expect(transition(choosingA, events.REVERT_WITH_DRAFT)).toEqual(tuningA);
     });
   });
 
@@ -132,8 +164,25 @@ describe("transition", () => {
     it("BACK -> choosing", () => {
       expect(transition(tuningA, events.BACK)).toEqual(choosingA);
     });
+    it("BACK -> choosing even carrying a draft (the picker is the step back)", () => {
+      expect(transition(tuningA, events.BACK_WITH_DRAFT)).toEqual(choosingA);
+    });
     it("CLEAR -> selected", () => {
       expect(transition(tuningA, events.CLEAR)).toEqual(selectedA);
+    });
+    it("REVERT -> selected when the revert took the assignment away", () => {
+      expect(transition(tuningA, events.REVERT)).toEqual(selectedA);
+    });
+    it("REVERT onto the same animation is a no-op (identity)", () => {
+      expect(transition(tuningA, events.REVERT_WITH_DRAFT)).toBe(tuningA);
+    });
+    it("REVERT onto a different animation -> tuning that one", () => {
+      const event: PanelEvent = { type: "REVERT", draftAnimationId: "scale-in" };
+      expect(transition(tuningA, event)).toEqual({
+        status: "tuning",
+        vmId: "a",
+        animationId: "scale-in",
+      });
     });
   });
 
@@ -142,5 +191,11 @@ describe("transition", () => {
     expect(afterFirstBack).toEqual(choosingA);
     const afterSecondBack = transition(afterFirstBack, events.BACK);
     expect(afterSecondBack).toEqual(selectedA);
+  });
+
+  it("Change then ‹ returns to tuning the animation the element still has", () => {
+    const afterChange = transition(tuningA, events.BACK);
+    expect(afterChange).toEqual(choosingA);
+    expect(transition(afterChange, events.BACK_WITH_DRAFT)).toEqual(tuningA);
   });
 });

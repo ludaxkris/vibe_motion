@@ -53,6 +53,37 @@ describe("ControlPanel", () => {
     });
   });
 
+  it("Change then ‹ comes back to tuning, not to 'No animation yet'", () => {
+    const store = useEditorStore.getState();
+    store.dispatchPanel({ type: "SELECT", vmId: "vm-1" });
+    store.dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    store.dispatchPanel({ type: "PICK", animationId: "fade-in" });
+    render(<ControlPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    expect(screen.getByTestId("panel-choosing")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
+    expect(screen.queryByText(/No animation yet/)).not.toBeInTheDocument();
+  });
+
+  it("re-picking the card already applied keeps what was tuned", () => {
+    const store = useEditorStore.getState();
+    store.dispatchPanel({ type: "SELECT", vmId: "vm-1" });
+    store.dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    store.dispatchPanel({ type: "PICK", animationId: "fade-in" });
+    store.updateDraftParam("vm-1", "duration", "900ms");
+    render(<ControlPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fade In" }));
+
+    expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
+    expect(useEditorStore.getState().draftState["vm-1"].params.duration).toBe("900ms");
+  });
+
   it("carries the handoff's three folder tabs, Animate first", () => {
     render(<ControlPanel />);
 
