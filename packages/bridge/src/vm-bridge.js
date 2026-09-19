@@ -19,7 +19,7 @@
   "use strict";
 
   /** Parsed out of this file by the API at build time; never hand-synced into Kotlin. */
-  var BRIDGE_VERSION = "1.0.1";
+  var BRIDGE_VERSION = "1.1.1";
   var MESSAGE_SOURCE = "vibe-motion";
   var PROTOCOL_VERSION = 1;
   /** Kept in sync with IN_VIEW_THRESHOLD in src/protocol.ts; the Phase 7 exporter uses it too. */
@@ -29,6 +29,9 @@
   var VM_ID_RE = /^vm-[a-z0-9-]+$/;
   var KEYFRAMES_NAME_RE = /^vm-[a-z0-9-]+$/;
   var STYLE_KEY_RE = /^(animation-(?!name$)[a-z-]+|--vm-[a-z0-9-]+)$/;
+  /** `elements:query` default and ceiling for `limit`; same values as src/protocol.ts. */
+  var ELEMENTS_QUERY_LIMIT = 200;
+  var ELEMENTS_QUERY_MAX = 500;
 
   var ID_ATTR = "data-vm-id";
   var ID_SELECTOR = "[data-vm-id]";
@@ -94,6 +97,26 @@
     } catch (error) {
       /* A blocked postMessage must not break the page the designer is looking at. */
     }
+  }
+
+  /**
+   * @param {unknown} x
+   * @returns {x is number}
+   */
+  function isFiniteNumber(x) {
+    return typeof x === "number" && isFinite(x);
+  }
+
+  /**
+   * `role` is a space-separated fallback list (`role="button link"`), so match by token.
+   *
+   * @param {Element} el
+   */
+  function hasButtonRole(el) {
+    var role = el.getAttribute("role");
+    if (!role) return false;
+    var tokens = role.toLowerCase().split(/\s+/);
+    return tokens.indexOf("button") !== -1;
   }
 
   function now() {
@@ -949,7 +972,17 @@
    */
   function elementInfo(vmId) {
     var el = elements.get(vmId);
-    if (!el) return null;
+    return el ? elementInfoFor(vmId, el) : null;
+  }
+
+  /**
+   * `elementInfo` for a caller that already holds the element (`elements:query` walks the map).
+   *
+   * @param {string} vmId
+   * @param {Element} el
+   * @returns {import("./protocol").ElementInfo}
+   */
+  function elementInfoFor(vmId, el) {
     var rect = el.getBoundingClientRect();
     var computed = window.getComputedStyle ? window.getComputedStyle(el) : null;
     var text = (el.textContent || "").replace(/\s+/g, " ").trim();
@@ -1162,9 +1195,10 @@
   /**
    * Shell -> bridge handlers. A handler returns nothing when it succeeded, or a failure with the
    * `ack` error code. Types that are not in here are ignored on purpose, so the shell can add
-   * message types (`mode`, `elements:query`) before every frame in the wild serves a new bridge.
+   * message types (`mode`) before every frame in the wild serves a new bridge. The second argument
+   * is the envelope `seq`, for the one handler (`elements:query`) whose answer has to carry it.
    *
-   * @type {Record<string, (payload: any) => { ok: boolean; error?: string; unknownVmIds?: string[] } | void>}
+   * @type {Record<string, (payload: any, seq?: number) => { ok: boolean; error?: string; unknownVmIds?: string[] } | void>}
    */
   var HANDLERS = {
     hello: function () {
@@ -1300,6 +1334,74 @@
         }
       }
     },
+
+    /**
+     * Element discovery for the Phase 5 agent (spec §3). Read-only: one loop of measurements and
+     * not a single style write, so the whole query costs at most one layout pass.
+     */
+    "elements:query": function (payload, seq) {
+      // Without a usable `seq` the shell could not tell which query a list answers: post nothing.
+      // `NaN` counts as unusable too, because `NaN !== NaN` can never be matched to a pending query.
+      if (!isFiniteNumber(seq)) return;
+      var invalid = { ok: false, error: "invalid-payload" };
+      var p = payload === undefined || payload === null ? {} : payload;
+      if (typeof p !== "object" || Array.isArray(p)) return invalid;
+      var f = p.filter === undefined ? {} : p.filter;
+      if (!f || typeof f !== "object" || Array.isArray(f)) return invalid;
+      if (f.minWidth !== undefined && !isFiniteNumber(f.minWidth)) return invalid;
+      if (f.minHeight !== undefined && !isFiniteNumber(f.minHeight)) return invalid;
+      // `NaN` would survive the clamp below and turn the limit off, hence the explicit check.
+      if (p.limit !== undefined && !isFiniteNumber(p.limit)) return invalid;
+      var limit = Math.max(
+        1,
+        Math.min(ELEMENTS_QUERY_MAX, p.limit === undefined ? ELEMENTS_QUERY_LIMIT : Math.floor(p.limit)),
+      );
+
+      // Lower-cased once, as a lookup. An empty `tags` is a filter nothing passes, not "no filter".
+      var tags = /** @type {Record<string, boolean> | null} */ (null);
+      if (f.tags !== undefined) {
+        if (!Array.isArray(f.tags)) return invalid;
+        tags = Object.create(null);
+        for (var t = 0; t < f.tags.length; t += 1) {
+          if (typeof f.tags[t] !== "string") return invalid;
+          /** @type {Record<string, boolean>} */ (tags)[f.tags[t].toLowerCase()] = true;
+        }
+      }
+      var tagFilter = tags;
+      var wantsButtonRole = !!tagFilter && tagFilter.button === true;
+      var minWidth = /** @type {number | undefined} */ (f.minWidth);
+      var minHeight = /** @type {number | undefined} */ (f.minHeight);
+
+      var list = /** @type {import("./protocol").ElementInfo[]} */ ([]);
+      var truncated = false;
+      // `buildElementMap` inserts in document order and a Map iterates in insertion order: no sort,
+      // no copy of the keys, no second lookup per element.
+      var entries = elements.entries();
+      for (var step = entries.next(); !step.done; step = entries.next()) {
+        var vmId = step.value[0];
+        var el = step.value[1];
+        // The clone tags every element under <body>, and `elementInfo` reads `textContent` (the
+        // whole subtree, for a wrapper). So tag and role are checked first, and an element that
+        // does not match is never measured and its text is never read.
+        if (tagFilter && !tagFilter[el.tagName.toLowerCase()] && !(wantsButtonRole && hasButtonRole(el))) continue;
+        var info = elementInfoFor(vmId, el);
+        if (!info.visible) continue;
+        if (minWidth !== undefined && info.rect.width < minWidth) continue;
+        if (minHeight !== undefined && info.rect.height < minHeight) continue;
+        if (list.length === limit) {
+          truncated = true;
+          break;
+        }
+        list.push(info);
+      }
+      // Before the ack (spec §3): a shell awaiting the ack already holds the list when it lands.
+      post("elements:list", {
+        seq: seq,
+        elements: list,
+        truncated: truncated,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+      });
+    },
   };
 
   /** @param {MessageEvent} event */
@@ -1318,7 +1420,7 @@
     var started = now();
     var result = null;
     try {
-      result = handler(data.payload) || null;
+      result = handler(data.payload, data.seq) || null;
     } catch (error) {
       // A malformed payload must never leave the frame wedged.
       result = { ok: false, error: "invalid-payload" };
@@ -1326,7 +1428,8 @@
     // The overlay may be sitting on a box that just changed size; the measurement itself lands
     // in a frame, outside `ack.ms`.
     if (hoveredVmId || selectedVmId) scheduleOverlaySync();
-    if (typeof data.seq === "number") {
+    // Finite, not just a number: an `ack { seq: NaN }` can never be matched (`NaN !== NaN`).
+    if (isFiniteNumber(data.seq)) {
       var ack = /** @type {{ seq: number; ms: number; ok: boolean; error?: string; unknownVmIds?: string[] }} */ ({
         seq: data.seq,
         ms: now() - started,

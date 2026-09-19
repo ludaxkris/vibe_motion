@@ -445,3 +445,218 @@ test("the selection ring marks the resting box, not the box mid-animation", asyn
   const settled = await h.rect("[data-vm-overlay-ring]");
   expect(Math.abs(settled.y - resting.y)).toBeLessThanOrEqual(1);
 });
+
+// ---------------------------------------------------------------------------------------------
+// elements:query -> elements:list (Phase 5, bridge 1.1.0)
+// ---------------------------------------------------------------------------------------------
+
+type ListedElement = {
+  vmId: string;
+  tag: string;
+  role: string | null;
+  order: number;
+  visible: boolean;
+  rect: { x: number; y: number; width: number; height: number };
+  pageRect: { x: number; y: number; width: number; height: number };
+};
+type ElementsList = {
+  seq: number;
+  elements: ListedElement[];
+  truncated: boolean;
+  viewport: { width: number; height: number };
+};
+
+/** The filter the Phase 5 shell always sends (plan D4 / D6). */
+const PHASE_5_FILTER = {
+  tags: ["h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote", "img", "picture", "video", "figure", "article", "button", "a"],
+  minWidth: 40,
+  minHeight: 40,
+};
+
+test.describe("elements:query", () => {
+  test("lists measured, visible elements in document order, with the frame's viewport", async ({ page }) => {
+    const h = await mountBridge(
+      page,
+      `<h1 class="box" data-vm-id="vm-title">Title</h1>
+       <div class="box" data-vm-id="vm-gone" style="display:none">gone</div>
+       <div class="box" data-vm-id="vm-ghost" style="visibility:hidden">ghost</div>
+       <span data-vm-id="vm-tiny" style="display:inline-block;width:10px;height:10px"></span>
+       <div class="box" data-vm-id="vm-card"><p data-vm-id="vm-copy" style="margin:0;height:50px">Copy</p></div>
+       <div class="spacer"></div>
+       <div class="box" data-vm-id="vm-below" role="button">below the fold</div>`,
+    );
+
+    const ack = await h.send("elements:query", { filter: { minWidth: 40, minHeight: 40 } });
+    expect(ack.ok).toBe(true);
+
+    const all = await h.messages();
+    const lists = all.filter((m) => m.type === "elements:list");
+    expect(lists).toHaveLength(1);
+    const list = lists[0].payload as unknown as ElementsList;
+
+    // The list lands before its ack, and carries the ack's seq.
+    const listAt = all.findIndex((m) => m.type === "elements:list");
+    const ackAt = all.findIndex((m) => m.type === "ack" && m.payload.seq === ack.seq);
+    expect(listAt).toBeLessThan(ackAt);
+    expect(list.seq).toBe(ack.seq);
+
+    expect(list.elements.map((e) => e.vmId)).toEqual(["vm-title", "vm-card", "vm-copy", "vm-below"]);
+    expect(list.truncated).toBe(false);
+    // The harness iframe is 800x600.
+    expect(list.viewport).toEqual({ width: 800, height: 600 });
+
+    const orders = list.elements.map((e) => e.order);
+    expect([...orders].sort((a, b) => a - b)).toEqual(orders);
+    for (const e of list.elements) {
+      expect(e.visible).toBe(true);
+      expect(e.pageRect.width).toBeGreaterThanOrEqual(40);
+      expect(e.pageRect.height).toBeGreaterThanOrEqual(40);
+    }
+    const ys = list.elements.map((e) => e.pageRect.y);
+    expect(ys[0]).toBeGreaterThan(0);
+    expect(ys[3]).toBeGreaterThan(list.viewport.height); // below the fold: what `viewport` is for
+    expect(await h.rect('[data-vm-id="vm-title"]')).toMatchObject({
+      width: Math.round(list.elements[0].rect.width),
+      height: Math.round(list.elements[0].rect.height),
+    });
+  });
+
+  test("pageRect is scroll-independent", async ({ page }) => {
+    const h = await mountBridge(
+      page,
+      `<div class="spacer"></div><h2 class="box" data-vm-id="vm-deep">deep</h2><div class="spacer"></div>`,
+    );
+    await h.send("elements:query", { filter: { tags: ["h2"] } });
+    await h.frame.evaluate(() => window.scrollTo(0, 1500));
+    await h.send("elements:query", { filter: { tags: ["h2"] } });
+
+    const [before, after] = (await h.messages("elements:list")).map(
+      (m) => (m.payload as unknown as ElementsList).elements[0],
+    );
+    expect(after.pageRect).toEqual(before.pageRect);
+    expect(after.rect.y).toBe(before.rect.y - 1500);
+  });
+
+  test("answers the Phase 5 query on a 2,000-element page inside the 50 ms budget (p95), with no writes", async ({ page }) => {
+    // What a clone looks like: every element under <body> tagged, targets buried in wrappers.
+    // The copy sits inside <article> wrappers, one around the whole page and one per section:
+    // `article` is in the Phase 5 filter and `elementInfo` reads a matched element's whole
+    // subtree `textContent`, so this is the worst case that filter permits.
+    const sentence = "The quick brown fox jumps over the lazy dog while the designer tunes an easing curve. ";
+    const paragraph = sentence.repeat(11); // ~950 chars
+    let n = 0;
+    const id = () => `data-vm-id="vm-e${(n += 1)}"`;
+    let sections = "";
+    for (let s = 0; s < 40; s += 1) {
+      let items = "";
+      for (let i = 0; i < 10; i += 1) {
+        items += `<li ${id()} style="min-height:44px"><span ${id()}>Item ${i}</span> <a ${id()} href="#" style="display:inline-block;padding:14px 20px">Link ${s}-${i}</a></li>`;
+      }
+      let paras = "";
+      for (let p = 0; p < 8; p += 1) paras += `<div ${id()}><p ${id()}>${paragraph}</p></div>`;
+      sections += `<article ${id()}><div ${id()}><div ${id()}>
+        <h2 ${id()} style="min-height:44px">Section ${s}</h2>
+        <ul ${id()}>${items}</ul>
+        ${paras}
+        <button ${id()} style="width:120px;height:44px">Go</button>
+        <div ${id()} role="button" style="width:120px;height:44px">Also go</div>
+      </div></div></article>`;
+    }
+    const body = `<article ${id()}>${sections}</article>`;
+    expect(n).toBeGreaterThanOrEqual(2000);
+    expect(body.length).toBeGreaterThanOrEqual(300_000);
+
+    // Installed from <head>, so before the (deferred) bridge script registers its own `message`
+    // listener: listeners on the same target run in registration order, so this one runs first,
+    // in the SAME event dispatch as the bridge's handler. When `__dirty` is set it invalidates
+    // the whole page's layout in the very task that answers the query. No frame can be rendered,
+    // and so no layout flushed, between the write and the measurement: every dirty sample pays
+    // for the one layout pass a query is allowed to cost. (A write made from a separate
+    // Playwright round trip only costs the query a layout when no frame happens to land first.)
+    // The MutationObserver sees any DOM or inline-style write; the test's own write is dropped
+    // from its count on the spot.
+    const head = `<script>
+      window.__mutations = 0; window.__dirty = false; window.__dirtied = 0;
+      (function () {
+        var observer = new MutationObserver(function (records) { window.__mutations += records.length; });
+        window.__resetMutations = function () { observer.takeRecords(); window.__mutations = 0; };
+        observer.observe(document.documentElement, { attributes: true, childList: true, characterData: true, subtree: true });
+        var step = 0;
+        window.addEventListener("message", function (event) {
+          if (!window.__dirty || !event.data || event.data.type !== "elements:query") return;
+          // A width the page has never had, far from the last one, so the lines re-break and
+          // no cached layout result can be reused.
+          step += 1;
+          document.body.style.width = (500 + ((step * 37) % 281)) + "px";
+          observer.takeRecords();
+          window.__dirtied += 1;
+        });
+      })();
+    </script>`;
+
+    const h = await mountBridge(page, body, head);
+    const ready = (await h.messages("ready"))[0].payload;
+    expect(ready.elementCount).toBe(n);
+    // `elements:query` shipped in 1.1.0; the patch digit moves with every bridge release, so this
+    // is the numeric ">= 1.1.0" compare the README tells consumers to do, not a string equality.
+    const [major, minor] = String(ready.bridgeVersion).split(".").map(Number);
+    expect(major > 1 || (major === 1 && minor >= 1), `bridgeVersion ${ready.bridgeVersion}`).toBe(true);
+    // Parsing the page and the bridge's own start-up (overlay, runtime sheet) are not the query's.
+    await h.frame.evaluate(() => (window as unknown as { __resetMutations: () => void }).__resetMutations());
+
+    const setDirty = (on: boolean) =>
+      h.frame.evaluate((value) => {
+        (window as unknown as { __dirty: boolean }).__dirty = value;
+      }, on);
+
+    const RUNS = 40;
+    const measure = async (payload: unknown) => {
+      const samples: number[] = [];
+      for (let i = 0; i < RUNS; i += 1) samples.push((await h.send("elements:query", payload)).ms);
+      return samples;
+    };
+    const p95 = (samples: number[]) => [...samples].sort((x, y) => x - y)[Math.ceil(samples.length * 0.95) - 1];
+    const describeSamples = (label: string, samples: number[]) => {
+      const sorted = [...samples].sort((x, y) => x - y);
+      const line = `elements:query ack.ms, ${n} elements, ${label}: median=${sorted[Math.floor(RUNS / 2)].toFixed(1)} p95=${p95(samples).toFixed(1)} max=${sorted[RUNS - 1].toFixed(1)}`;
+      test.info().annotations.push({ type: "perf", description: line });
+      console.log(line);
+      if (process.env.VM_PERF_RAW) console.log(samples.map((x) => x.toFixed(1)).join(" "));
+    };
+
+    // What the shell sends; then the most a tag-filtered query can cost: the ceiling limit, which
+    // walks further down the page, and sizes nothing reaches, so every element is scanned.
+    const scenarios: Array<[string, unknown]> = [
+      ["limit 200", { filter: PHASE_5_FILTER, limit: 200 }],
+      ["limit 500", { filter: PHASE_5_FILTER, limit: 500 }],
+      ["full scan (nothing wide enough)", { filter: { ...PHASE_5_FILTER, minWidth: 5000 } }],
+    ];
+    const results: Array<[string, number[]]> = [];
+    for (const [label, payload] of scenarios) {
+      await setDirty(false);
+      results.push([`${label}, clean layout`, await measure(payload)]);
+      await setDirty(true);
+      results.push([`${label}, dirty layout`, await measure(payload)]);
+    }
+    await setDirty(false);
+    for (const [label, samples] of results) describeSamples(label, samples);
+
+    // The dirtying really ran once per dirty sample, and nothing else wrote anything.
+    expect(await h.frame.evaluate(() => (window as unknown as { __dirtied: number }).__dirtied)).toBe(RUNS * scenarios.length);
+    expect(await h.frame.evaluate(() => (window as unknown as { __mutations: number }).__mutations)).toBe(0);
+
+    const list = (await h.messages("elements:list"))[0].payload as unknown as ElementsList;
+    expect(list.elements).toHaveLength(200);
+    expect(list.truncated).toBe(true);
+    for (const e of list.elements) {
+      const roleButton = e.tag === "div" && (e.role ?? "").split(/\s+/).includes("button");
+      expect(PHASE_5_FILTER.tags.includes(e.tag) || roleButton, `${e.vmId} <${e.tag} role=${e.role}>`).toBe(true);
+    }
+    expect(list.elements.some((e) => e.tag === "h2")).toBe(true);
+    expect(list.elements.some((e) => e.tag === "article")).toBe(true);
+    expect(list.elements.some((e) => e.tag === "div" && e.role === "button")).toBe(true);
+
+    // p95, not max, for the reason spec §6 gives for the slider budget: CI is noisy.
+    for (const [label, samples] of results) expect(p95(samples), label).toBeLessThan(50);
+  });
+});

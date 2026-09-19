@@ -12,18 +12,48 @@ It is a shared contract (CLAUDE.md rule 6): additive changes only.
 | File | What |
 |---|---|
 | `src/vm-bridge.js` | The bridge itself. One IIFE, `"use strict"`, `// @ts-check`, no imports, no exports, **no build step**. |
-| `src/protocol.ts` | Message types, `AppliedAssignment`, `ElementInfo`, the validation regexes, `IN_VIEW_THRESHOLD`, `BULK_APPLY_LIMIT`. |
+| `src/protocol.ts` | Message types, `AppliedAssignment`, `ElementInfo`, the validation regexes, `IN_VIEW_THRESHOLD`, `BULK_APPLY_LIMIT`, `ELEMENTS_QUERY_LIMIT` / `ELEMENTS_QUERY_MAX`. |
 | `test/harness.ts` | `loadBridge(html)` — builds a JSDOM, stubs `window.parent`, evaluates the script and hands back a controllable frame (fake `IntersectionObserver`, fake `requestAnimationFrame`, recorded posts). |
 | `e2e/harness.ts` | `mountBridge(page, body)` — the same script in a real browser: the test page is the shell on one origin, the framed page is the clone on another, and a third origin hosts a frame that tries to talk to the bridge. Everything is fulfilled by `page.route`, so there is no app and no API to start. |
 
 `vm-bridge.js` is a **plain classic script**, not a module. It is loaded into someone else's page
 under a CSP of `script-src 'self'; connect-src 'none'`: no `eval`, no injected inline script, no
 network call. It cannot `import` `protocol.ts`, so it duplicates the three validation regexes and
-`typecheck` (tsc with `checkJs`) checks it against the JSDoc types; `test/render.test.ts` asserts
-the two copies of the regexes are byte-identical.
+the shared constants, and `typecheck` (tsc with `checkJs`) checks it against the JSDoc types;
+`test/protocol.test.ts` ("parity with the bridge script") and `test/render.test.ts` assert the
+two copies are identical.
 
 The bridge is a **dumb renderer** (spec D1): the shell computes every byte of CSS and sends it in
 an `AppliedAssignment`. The bridge never reads the catalog and never builds a keyframes name.
+
+### Element discovery (`elements:query` → `elements:list`, bridge ≥ 1.1.0)
+
+The one read-only message pair, added for Phase 5's agent (spec §3, "`elements:query` rules").
+The shell sends `{ filter?: { tags?, minWidth?, minHeight? }, limit? }` **with a `seq`** and gets
+back `elements:list { seq, elements: ElementInfo[], truncated, viewport }`, then the ack.
+
+- **Send a finite `seq`.** Without one nothing is posted, not even an ack. Type the outgoing
+  message as `ElementsQueryEnvelope` and the compiler enforces it. A bridge older than 1.1.0
+  ignores the type entirely, so check `ready.bridgeVersion` first (numeric semver compare, not a
+  string compare) and time out rather than wait. `PROTOCOL_VERSION` only moves on breaking changes.
+- **Always send `tags`.** The tag/role filter runs before any measurement, and it is what the
+  50 ms budget is about: a clone tags every element under `<body>` and `textPreview` reads the
+  whole subtree's `textContent`, so an untagged query costs O(elements + text × depth) and
+  `limit` does not bound it (it caps results, not the scan).
+- `tags` entries must be strings and are lower-cased; `tags: []` matches **nothing** (omit `tags`
+  for "any tag"); `"button"` also matches an element whose `role` tokens include `button`
+  (`role="button link"`).
+- Listed = `visible === true`, which means a non-zero box that is not `visibility:hidden` /
+  `display:none`. It does not mean on screen: `opacity: 0`, off-canvas and clipped elements are
+  still listed. Document order.
+- Rects are the transformed box. An `in-view` element the bridge is holding on its first keyframe
+  measures in that pose (displaced, or zero-height and so unlisted). Re-querying a page that has
+  assignments applied? Prefer the `ElementInfo` you remembered (the Phase 5 shell does).
+- `limit` defaults to `ELEMENTS_QUERY_LIMIT` (200), clamped to `[1, ELEMENTS_QUERY_MAX]` (500).
+- `invalid-payload`, no list: a string / number / array payload, a non-object or array `filter`,
+  non-array `tags` or a non-string entry, any non-finite number. Missing or `null` payload = `{}`.
+- The handler writes nothing, selection or not. `e2e/` holds p95 `ack.ms` under 50 ms on a
+  2,000-element page with layout invalidated in the same task as each query.
 
 Everything it injects into the page is prefixed:
 
@@ -90,11 +120,13 @@ three wrong while every jsdom test passed. So `e2e/` exists for exactly that cla
 | the selection ring tracks a nested scroller | `getBoundingClientRect()` returns zeros |
 | a message from a third origin is never acked | needs three real origins |
 | `baseStyles` and `keyframesCss` cannot escape their rules | needs a real CSS parser |
+| `elements:query` returns real rects, skips `display:none`, reports the viewport, and meets its 50 ms budget on 2,000 elements | `getBoundingClientRect()` returns zeros, so jsdom tests stub it per element |
 
 Still unproven anywhere, and worth knowing:
 
-- `ElementInfo.rect` / `pageRect` / `visible` are exercised but never meaningfully asserted
-  (`visible` is always `false` under jsdom).
+- `ElementInfo.rect` / `pageRect` / `visible` on `element:hover` / `element:select` are exercised
+  but never meaningfully asserted (`visible` is always `false` under jsdom). The same function
+  builds `elements:list`, where `e2e/` does assert them.
 - Where the overlay boxes actually land: which element they are drawn around is asserted through
   `data-vm-hovered` / `data-vm-selected` and the ring's rect is checked in `e2e/`, but the 6px
   offset and the label position are not.

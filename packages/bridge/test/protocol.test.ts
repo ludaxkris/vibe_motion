@@ -8,6 +8,8 @@ import { FIXTURE, applied as appliedFixture, destroyAll, loadBridge } from "./ha
 
 import {
   BULK_APPLY_LIMIT,
+  ELEMENTS_QUERY_LIMIT,
+  ELEMENTS_QUERY_MAX,
   IN_VIEW_THRESHOLD,
   KEYFRAMES_NAME_RE,
   MESSAGE_SOURCE,
@@ -17,7 +19,7 @@ import {
   isEnvelope,
   validateApplied,
 } from "../src/protocol";
-import type { AppliedAssignment } from "../src/protocol";
+import type { AppliedAssignment, ElementsQueryEnvelope } from "../src/protocol";
 
 const applied = appliedFixture;
 
@@ -86,6 +88,10 @@ describe("parity with the bridge script", () => {
     expect(source).toContain(`var VM_ID_RE = /${VM_ID_RE.source}/;`);
     expect(source).toContain(`var KEYFRAMES_NAME_RE = /${KEYFRAMES_NAME_RE.source}/;`);
     expect(source).toContain(`var STYLE_KEY_RE = /${STYLE_KEY_RE.source}/;`);
+    expect(source).toContain(`var ELEMENTS_QUERY_LIMIT = ${ELEMENTS_QUERY_LIMIT};`);
+    expect(source).toContain(`var ELEMENTS_QUERY_MAX = ${ELEMENTS_QUERY_MAX};`);
+    expect(ELEMENTS_QUERY_LIMIT).toBe(200);
+    expect(ELEMENTS_QUERY_MAX).toBe(500);
   });
 
   it("declares BRIDGE_VERSION on one line the API can regex out", () => {
@@ -163,5 +169,15 @@ describe("id regexes", () => {
     expect(VM_ID_RE.test("vm-Heading")).toBe(false);
     expect(KEYFRAMES_NAME_RE.test("vm-fade-in-up-v1-1-0")).toBe(true);
     expect(KEYFRAMES_NAME_RE.test("fade-in")).toBe(false);
+  });
+});
+
+describe("ElementsQueryEnvelope", () => {
+  it("makes the seq mandatory at compile time", () => {
+    const ok: ElementsQueryEnvelope = { source: MESSAGE_SOURCE, type: "elements:query", payload: {}, seq: 1 };
+    // @ts-expect-error a query without a seq is answered with silence, so the type refuses it
+    const missing: ElementsQueryEnvelope = { source: MESSAGE_SOURCE, type: "elements:query", payload: {} };
+    expect(ok.seq).toBe(1);
+    expect(missing.type).toBe("elements:query");
   });
 });
