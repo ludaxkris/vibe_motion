@@ -136,6 +136,7 @@ Still unproven anywhere, and worth knowing:
 
 ## Known limits
 
+- **Elements with no offset box (`<svg>`, MathML).** They are not `HTMLElement`s, so the layout-box path cannot serve them. Their ring is always measured live: during an animation it follows the animated box (a spinning logo's ring breathes with the rotation) instead of marking the resting box. It is never empty and it tracks scroll and layout.
 - **Duplicate `data-vm-id` in a clone.** The element map keeps the first element with a given
   vmId, so inline styles land only on that one, but the `[data-vm-id="…"] { … }` base-styles rule
   matches every copy, and `clear` restores only the first. The clone pipeline is what should

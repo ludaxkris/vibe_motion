@@ -534,6 +534,60 @@ test("the ring tracks page and nested scrolling while an infinite animation runs
   await assertAdrift(h, "vm-deep", { y: resting.y - pageY - 40, height: resting.height });
 });
 
+test("an <svg> has no offset box: its ring stays visible and tracks scroll, selected before or during a spin", async ({ page }) => {
+  // The clone pipeline gives `<svg>` a data-vm-id (it is an opaque, selectable target), and a
+  // spinning logo is the canonical use. SVGSVGElement is not an HTMLElement: offsetLeft/Top/
+  // Width/Height/offsetParent are all undefined, so the layout-box path cannot serve it. The
+  // ring falls back to the live bounding box: it follows the spin's box, but it is never empty
+  // and never frozen.
+  const h = await mountBridge(
+    page,
+    `<div class="spacer" style="height:200px"></div>
+     <svg data-vm-id="vm-logo" width="180" height="90" viewBox="0 0 180 90" style="display:block">
+       <rect width="180" height="90" fill="#7c5cff"></rect>
+     </svg>
+     <div class="spacer"></div>`,
+  );
+  const spin = assignment("vm-logo", {
+    keyframesName: "vm-spin-v1-1-0",
+    keyframesCss: "@keyframes vm-spin-v1-1-0 { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }",
+    style: {
+      "animation-duration": "4000ms",
+      "animation-iteration-count": "infinite",
+      "animation-timing-function": "linear",
+    },
+    animationId: "spin",
+    catalogVersion: "1.1.0",
+  });
+
+  // Selected first, then animated, then scrolled: the ring must move with the page.
+  await h.send("select", { vmId: "vm-logo", label: "svg" });
+  await h.send("apply", spin);
+  await page.waitForTimeout(150);
+  expect(await h.animations("vm-logo")).toMatchObject([{ name: "vm-spin-v1-1-0", state: "running" }]);
+  const before = await h.rect(RING);
+  expect(before.width, "the ring is not empty").toBeGreaterThan(0);
+  await h.frame.evaluate(() => window.scrollBy(0, 120));
+  await expect
+    .poll(async () => {
+      const ring = await h.rect(RING);
+      const live = await h.rect('[data-vm-id="vm-logo"]');
+      return Math.abs(ring.y - live.y) < 12 && ring.width > 0 && ring.y < before.y - 60;
+    }, { timeout: 2_000, message: "ring follows the svg after a scroll" })
+    .toBe(true);
+
+  // Selected while it is ALREADY spinning: the ring appears on the element, not at 0,0 size 0.
+  await h.send("select", { vmId: null });
+  await h.send("select", { vmId: "vm-logo", label: "svg" });
+  await expect
+    .poll(async () => {
+      const ring = await h.rect(RING);
+      const live = await h.rect('[data-vm-id="vm-logo"]');
+      return ring.width > 0 && ring.height > 0 && Math.abs(ring.y - live.y) < 12 && Math.abs(ring.x - live.x) < 12;
+    }, { timeout: 2_000, message: "ring sits on the spinning svg" })
+    .toBe(true);
+});
+
 test("the ring follows a reflow above it and a viewport resize while an infinite animation runs", async ({ page }) => {
   const h = await mountBridge(
     page,

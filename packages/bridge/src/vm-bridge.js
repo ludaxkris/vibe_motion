@@ -975,12 +975,18 @@
       state.vmId = null;
       return;
     }
-    var layout = layoutBox(el);
+    // Only an HTMLElement has an offset box. An `<svg>` (a first-class target: the clone gives it
+    // a data-vm-id, and a spinning logo is the canonical use) reports every `offset*` as
+    // undefined, so `layoutBox()` would be an empty box at the origin. Such an element is always
+    // measured live: its ring follows the animated box rather than the resting one, but it is
+    // never empty and it tracks scroll and layout like any other.
+    var hasOffsetBox = typeof (/** @type {HTMLElement} */ (el).offsetWidth) === "number";
+    var layout = hasOffsetBox ? layoutBox(el) : { left: 0, top: 0, width: 0, height: 0 };
     var left;
     var top;
     var width;
     var height;
-    if (isMidOwnAnimation(vmId)) {
+    if (hasOffsetBox && isMidOwnAnimation(vmId)) {
       // A correction measured against some *other* element says nothing about this one. Dropping
       // it leaves `layoutBox()` uncorrected, which is still the resting box — that is how an
       // element selected while it is already animating gets a ring in the right place at once,
