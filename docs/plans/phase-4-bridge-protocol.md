@@ -56,7 +56,7 @@ Senders always pass an explicit `targetOrigin`; `"*"` is forbidden on both sides
 | `element:select` | `ElementInfo` | Capture-phase `click` on or inside a tagged element (nearest ancestor-or-self with `data-vm-id`). The click is always `preventDefault`-ed and never navigates. It is a request: the ring does not move until the shell sends `select` (D10). |
 | `element:deselect` | `{ reason: "escape" \| "background" }` | `Escape` keydown inside the frame, or a click that resolves to no tagged element. The shell decides whether to honour it. |
 | `ack` | `{ seq: number; ms: number; ok: boolean; error?: "unknown-element" \| "invalid-payload"; unknownVmIds?: string[] }` | After handling any message that carried `seq`. `state:load` with a valid payload always acks `ok: true` and carries `unknownVmIds`, the vmIds it could not place (empty when there were none): a bulk load is not fatal when the page has moved on, so it applies what it can and names the rest. A single `apply`, `clear`, `select` or `replay` naming an element the page does not have still acks `ok: false, error: "unknown-element"`. |
-| `elements:list` *(reserved, Phase 5)* | `{ seq: number; elements: ElementInfo[]; truncated: boolean }` | Answer to `elements:query`. |
+| `elements:list` *(bridge ≥ 1.1.0)* | `{ seq: number; elements: ElementInfo[]; truncated: boolean; viewport: { width: number; height: number } }` | Answer to `elements:query`, posted **before** that query's `ack`. `seq` is the query's envelope `seq`. `viewport` is the frame's `innerWidth` / `innerHeight`, so the receiver can tell above-the-fold (`pageRect.y < viewport.height`) from below. Rules under "`elements:query` rules" below. |
 
 ```ts
 type Rect = { x: number; y: number; width: number; height: number };
@@ -85,7 +85,7 @@ type ElementInfo = {
 | `preview:clear` | `{}` | Removes the preview and re-renders the element from its applied assignment, if any. |
 | `state:load` | `{ assignments: AppliedAssignment[] }` | Clears every assignment and preview, then applies the list in one batch (one stylesheet rebuild). Used after `ready`, on Cancel, for bulk changes, and by version viewing in Phase 6. |
 | `mode` *(reserved, Phase 6)* | `{ mode: "edit" \| "view" }` | `view`: no hover outline, no crosshair, no select events. |
-| `elements:query` *(reserved, Phase 5)* | `{ filter?: { tags?: string[]; minWidth?: number; minHeight?: number }; limit?: number }` | One read-only layout pass; answered by `elements:list`. |
+| `elements:query` *(bridge ≥ 1.1.0)* | `{ filter?: { tags?: string[]; minWidth?: number; minHeight?: number }; limit?: number }` | One read-only layout pass; answered by `elements:list`, then the normal `ack`. Rules under "`elements:query` rules" below. |
 
 ```ts
 type AppliedAssignment = {
@@ -100,6 +100,20 @@ type AppliedAssignment = {
   params: Record<string, string>;     // informational
 };
 ```
+
+#### `elements:query` rules
+
+Added in Phase 5 (`docs/plans/phase-5-agent-flows.md` §3). Additive: `PROTOCOL_VERSION` stays `1` and `BRIDGE_VERSION` becomes `1.1.0`. A bridge older than `1.1.0` ignores the type like any unknown one (no list, no ack), so the shell checks `ready.bridgeVersion` before it asks.
+
+- `elements:query` must carry a finite envelope `seq`; without one (missing, not a number, `NaN`, `Infinity`) the bridge acks nothing and posts nothing, because the answer could not be correlated (`NaN !== NaN`). With one it posts `elements:list` (payload `seq` = envelope `seq`) and then the normal `ack`. `protocol.ts` exports `ElementsQueryEnvelope`, the envelope type with `seq` mandatory. (Since 1.1.0 no message with a non-finite `seq` is acked, for the same reason; the message itself is still handled.)
+- Elements are listed in document order. `filter.tags` are tag names, lower-cased by the bridge before matching; every entry must be a string. `tags: []` is a filter nothing passes (`ok: true`, empty list), not "no filter"; omit `tags` for that. An element matches a filter that contains `"button"` when its `role` attribute, read as a whitespace-separated token list, contains `button` (`role="button link"` matches). `minWidth` / `minHeight` compare against the border box (`getBoundingClientRect`). `limit` defaults to `ELEMENTS_QUERY_LIMIT = 200` and is clamped to `[1, ELEMENTS_QUERY_MAX = 500]` (a fractional limit is floored); `truncated` is true when more matched.
+- Only elements with `visible === true` are listed, and `visible` means exactly: a non-zero box, and a computed style that is neither `visibility: hidden` nor `display: none`. It does **not** mean the designer can see the element: `opacity: 0`, an off-canvas drawer, an `.sr-only` label at `left: -9999px` and an element clipped by an ancestor all still count. Overlay nodes are never listed (they are not tagged).
+- Rects are the **transformed** box, as `getBoundingClientRect` reports it. An element the bridge is holding on its first keyframe (`in-view`, not yet armed, D3) is measured in that pose: a slide-in measures displaced by its distance, a flip or a scale-from-zero can measure zero-height and so drop out as not visible. A caller that re-queries a page with assignments applied should prefer the `ElementInfo` it remembered from before they were applied (the Phase 5 shell does).
+- Malformed payload → `ack { ok: false, error: "invalid-payload" }` and no list: a payload that is a string, a number or an array; a `filter` that is not a plain object (arrays included); `tags` that is not an array or has a non-string entry; sizes or a limit that fail `typeof x === "number" && isFinite(x)` (`NaN` would otherwise disable the limit). A missing or `null` payload is an empty query.
+- One layout pass: every `getBoundingClientRect` happens in one loop with no style writes in between; the handler writes nothing at all, with or without a selection (the overlay re-sync the bridge schedules after every message runs in a later frame, outside the handler and outside `ack.ms`). `filter.tags` is checked against `el.tagName` / `role` **before** the element is measured, so a non-matching element is never measured and its `textContent` is never read. This matters because the clone tags *every* element under `<body>`: the filter, not the limit, is what selects targets.
+- **Cost.** `limit` caps the results, not the scan. A query without `tags` measures every tagged element and reads every wrapper's whole-subtree `textContent`: O(elements + total text × depth), outside the §6 budget. The shell must not send an untagged query on a large page.
+
+**Versioning.** Feature detection is by `ready.bridgeVersion`, compared numerically as semver (`"1.10.0" > "1.2.0"`; a string compare gets that wrong). `PROTOCOL_VERSION` changes only for breaking changes; additive messages like this pair bump `BRIDGE_VERSION` alone.
 
 The shell builds an `AppliedAssignment` from a draft `Assignment` with `getEntry(assignment.catalogVersion, assignment.animationId)` from the `animation-catalog` package and `apps/web/lib/runtime-css`. An assignment whose pinned version or id cannot be resolved is **not sent**; the shell reports it in the panel. Each assignment resolves against its own pin, so a draft that mixes catalog versions renders correctly.
 
@@ -134,6 +148,7 @@ The overlay container and everything in it is excluded from hit-testing and from
 |---|---|---|
 | Param change (slider tick) | shell-side round trip (store set → `ack` received) p95 < 16 ms; max `ack.ms` < 4 ms | inline `setProperty` calls only, no stylesheet write, no layout read. Measured in Playwright with 120 rAF-paced `updateDraftParam` ticks under CDP 4× CPU throttling. p95, not max, because CI is noisy. |
 | `state:load`, 200 assignments | `ack.ms` < 50 ms | one stylesheet text write; style writes batched; no per-assignment layout read |
+| `elements:query`, **tag-filtered** (the Phase 5 filter: `h1`–`h6`, `p`, `li`, `blockquote`, `img`, `picture`, `video`, `figure`, `article`, `button`, `a`; min 40×40), 2,000-element page | p95 `ack.ms` < 50 ms with guaranteed-dirty layout, zero style writes | tag/role pre-filter before any measurement; one read-only loop. Measured in `packages/bridge/e2e` on a generated page (2,121 tagged elements, the ~300 KB of text inside nested `<article>` wrappers, which the filter matches) at `limit` 200, at the 500 ceiling, and with sizes nothing reaches (full scan), 40 runs each clean and 40 with the whole page's layout invalidated in the same task as the query, so no frame can flush it first. p95, not max, because CI is noisy. A `MutationObserver` asserts no write. An untagged query is outside this budget (§3). |
 | Element lookup | O(1) | the bridge builds a `Map<vmId, Element>` once at `ready`; no attribute-selector scans per message |
 | Hover | no message unless the target vmId changes; overlay moves in rAF | avoids flooding `postMessage` on mouse move |
 | `in-view` | one shared `IntersectionObserver` for all in-view assignments | threshold is the exported constant `IN_VIEW_THRESHOLD = 0.2` in `protocol.ts`, reused by the Phase 7 exporter |
@@ -155,7 +170,7 @@ Phase 7's exporter must render what the designer saw. Where the editor deliberat
 
 ## 7. Out of scope for Phase 4
 
-Generate and Auto-generate (Phase 5; `elements:query` is only reserved here), the Save flow and the guards on leaving the editor, viewing a version and exporting (Phase 6; `mode` is only reserved here; the element-switch guard **is** in Phase 4, §5), multi-origin allow-lists, serving clones from a dedicated sandbox origin (needed once the API has auth cookies), keyboard navigation of the catalog list, and any message that writes to the API.
+Generate and Auto-generate (Phase 5), the Save flow and the guards on leaving the editor, viewing a version and exporting (Phase 6; `mode` is only reserved here; the element-switch guard **is** in Phase 4, §5), multi-origin allow-lists, serving clones from a dedicated sandbox origin (needed once the API has auth cookies), keyboard navigation of the catalog list, and any message that writes to the API.
 
 ## 8. Sequencing constraint
 
