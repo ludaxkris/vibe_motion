@@ -85,7 +85,7 @@ describe("useRestoreVersion", () => {
 
     const body = {
       parentVersionId: p.currentVersionId, catalogVersion: "1.1.0",
-      diff: { set: { "vm-1": { animationId: "fade-in", catalogVersion: "1.1.0", trigger: "load", params: {} } }, remove: [] },
+      diff: { set: { "vm-1": { animationId: "fade-in", catalogVersion: "1.1.0", trigger: "load" as const, params: {} } }, remove: [] as string[] },
     };
     await act(async () => {
       await result.current.save.mutateAsync(body);
