@@ -32,14 +32,28 @@ The one read-only message pair, added for Phase 5's agent (spec §3, "`elements:
 The shell sends `{ filter?: { tags?, minWidth?, minHeight? }, limit? }` **with a `seq`** and gets
 back `elements:list { seq, elements: ElementInfo[], truncated, viewport }`, then the ack.
 
-- Visible elements only, in document order; `"button"` in `tags` also matches `role="button"`.
+- **Send a finite `seq`.** Without one nothing is posted, not even an ack. Type the outgoing
+  message as `ElementsQueryEnvelope` and the compiler enforces it. A bridge older than 1.1.0
+  ignores the type entirely, so check `ready.bridgeVersion` first (numeric semver compare, not a
+  string compare) and time out rather than wait. `PROTOCOL_VERSION` only moves on breaking changes.
+- **Always send `tags`.** The tag/role filter runs before any measurement, and it is what the
+  50 ms budget is about: a clone tags every element under `<body>` and `textPreview` reads the
+  whole subtree's `textContent`, so an untagged query costs O(elements + text × depth) and
+  `limit` does not bound it (it caps results, not the scan).
+- `tags` entries must be strings and are lower-cased; `tags: []` matches **nothing** (omit `tags`
+  for "any tag"); `"button"` also matches an element whose `role` tokens include `button`
+  (`role="button link"`).
+- Listed = `visible === true`, which means a non-zero box that is not `visibility:hidden` /
+  `display:none`. It does not mean on screen: `opacity: 0`, off-canvas and clipped elements are
+  still listed. Document order.
+- Rects are the transformed box. An `in-view` element the bridge is holding on its first keyframe
+  measures in that pose (displaced, or zero-height and so unlisted). Re-querying a page that has
+  assignments applied? Prefer the `ElementInfo` you remembered (the Phase 5 shell does).
 - `limit` defaults to `ELEMENTS_QUERY_LIMIT` (200), clamped to `[1, ELEMENTS_QUERY_MAX]` (500).
-- Non-finite numbers, a non-object `filter` or non-array `tags` → `invalid-payload`, no list.
-- No `seq` → nothing is posted. A bridge older than 1.1.0 ignores the type entirely, so check
-  `ready.bridgeVersion` first and time out rather than wait.
-- The tag/role filter runs **before** any measurement: a clone tags every element under
-  `<body>`, and `ElementInfo.textPreview` reads `textContent`, so always send `tags`.
-- The handler writes nothing. `e2e/` holds it to `ack.ms` < 50 ms on a 2,000-element page.
+- `invalid-payload`, no list: a string / number / array payload, a non-object or array `filter`,
+  non-array `tags` or a non-string entry, any non-finite number. Missing or `null` payload = `{}`.
+- The handler writes nothing, selection or not. `e2e/` holds p95 `ack.ms` under 50 ms on a
+  2,000-element page with layout invalidated in the same task as each query.
 
 Everything it injects into the page is prefixed:
 
