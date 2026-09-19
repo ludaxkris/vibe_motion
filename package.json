@@ -16,7 +16,7 @@
     "gates:catalog": "node scripts/gates.mjs catalog",
     "gates:bridge": "node scripts/gates.mjs bridge",
     "gates:e2e": "node scripts/gates.mjs e2e",
-    "e2e": "pnpm --filter e2e test",
+    "e2e": "node scripts/e2e.mjs",
     "e2e:docker": "scripts/e2e-docker.sh"
   }
 }

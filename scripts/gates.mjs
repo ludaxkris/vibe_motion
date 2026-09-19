@@ -6,10 +6,11 @@
 // full picture. Exit code is non-zero if any gate failed.
 
 import { spawnSync } from "node:child_process";
-import { createServer } from "node:net";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { freePort } from "./free-port.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const group = process.argv[2] ?? "all";
@@ -57,20 +58,6 @@ function have(bin) {
   return spawnSync(process.platform === "win32" ? "where" : "which", [bin], { stdio: "ignore" }).status === 0;
 }
 
-// An OS-assigned port that was free a moment ago. Worktrees run gates side by side on one
-// machine, so the web e2e gate must not depend on (or attach to) a fixed :3000 (DT-113).
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.unref();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const { port } = server.address();
-      server.close(() => resolve(port));
-    });
-  });
-}
-
 const results = [];
 for (const g of selected) {
   const cwd = path.join(root, g.cwd ?? ".");
@@ -85,10 +72,17 @@ for (const g of selected) {
   } else {
     console.log(`\n[1m▶ ${g.name}[0m  (${[g.cmd, ...g.args].join(" ")})`);
     const env = { ...process.env };
-    // Respect a port the caller pinned; CI keeps the default (one job per runner).
-    if (g.freePort && !env[g.freePort] && !env.CI) {
-      env[g.freePort] = String(await freePort());
-      console.log(`  ${g.freePort}=${env[g.freePort]}`);
+    // Worktrees run gates side by side on one machine, so the web e2e gate must not depend on
+    // (or attach to) a fixed :3000 (DT-113). A caller-pinned port is respected; GitHub's runners
+    // are one job each and keep the default.
+    if (g.freePort && !env[g.freePort] && !env.GITHUB_ACTIONS) {
+      try {
+        env[g.freePort] = String(await freePort());
+        console.log(`  ${g.freePort}=${env[g.freePort]}`);
+      } catch (error) {
+        // Never lose the summary of the gates that already ran over a failed probe.
+        note = `no free port: ${error.message}`;
+      }
     }
     const r = spawnSync(g.cmd, g.args, { cwd, stdio: "inherit", env, shell: false });
     status = r.status === 0 ? "PASS" : "FAIL";
