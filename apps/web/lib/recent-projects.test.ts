@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   RECENT_PROJECTS_KEY,
   RECENT_PROJECTS_LIMIT,
+  forgetRecentProject,
   formatRelativeTime,
   getRecentProjectsSnapshot,
   getServerRecentProjects,
@@ -162,6 +163,53 @@ describe("rememberRecentProject", () => {
       expect(() =>
         rememberRecentProject({ id: "proj_1", title: "a", sourceUrl: "https://a.test" }),
       ).not.toThrow();
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+});
+
+describe("forgetRecentProject", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("removes just that project and keeps the rest in order", () => {
+    rememberRecentProject({ id: "proj_1", title: "a", sourceUrl: "https://a.test" }, AT("2025-09-01T10:00:00Z"));
+    rememberRecentProject({ id: "proj_2", title: "b", sourceUrl: "https://b.test" }, AT("2025-09-02T10:00:00Z"));
+    rememberRecentProject({ id: "proj_3", title: "c", sourceUrl: "https://c.test" }, AT("2025-09-03T10:00:00Z"));
+
+    expect(forgetRecentProject("proj_2").map((p) => p.id)).toEqual(["proj_3", "proj_1"]);
+    expect(readRecentProjects().map((p) => p.id)).toEqual(["proj_3", "proj_1"]);
+  });
+
+  it("is a no-op for an id that is not in the store", () => {
+    rememberRecentProject({ id: "proj_1", title: "a", sourceUrl: "https://a.test" });
+
+    expect(forgetRecentProject("proj_missing").map((p) => p.id)).toEqual(["proj_1"]);
+    expect(readRecentProjects().map((p) => p.id)).toEqual(["proj_1"]);
+  });
+
+  it("tells subscribers, so an open Entry screen drops the row straight away", () => {
+    rememberRecentProject({ id: "proj_1", title: "a", sourceUrl: "https://a.test" });
+    const listener = vi.fn();
+    const unsubscribe = subscribeRecentProjects(listener);
+    try {
+      forgetRecentProject("proj_1");
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(getRecentProjectsSnapshot()).toEqual([]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("survives a storage that refuses to be written", () => {
+    rememberRecentProject({ id: "proj_1", title: "a", sourceUrl: "https://a.test" });
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    try {
+      expect(() => forgetRecentProject("proj_1")).not.toThrow();
     } finally {
       setItem.mockRestore();
     }

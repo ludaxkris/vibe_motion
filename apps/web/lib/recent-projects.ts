@@ -122,6 +122,30 @@ export function rememberRecentProject(
   return next;
 }
 
+/**
+ * Drops `id` from the store and returns the new list.
+ *
+ * Called when a project turns out not to be there any more (the editor got a
+ * 404, or the link was malformed): a row that only ever leads to "No project
+ * found for this link" is worse than no row, and nothing else would ever clean
+ * it up — there is no list endpoint to reconcile against.
+ */
+export function forgetRecentProject(id: string): RecentProject[] {
+  const current = readRecentProjects();
+  const next = current.filter((project) => project.id !== id);
+  if (next.length === current.length) return current;
+
+  const store = storage();
+  try {
+    store?.setItem(RECENT_PROJECTS_KEY, JSON.stringify(next));
+  } catch {
+    // Best-effort, as in `rememberRecentProject`.
+  }
+  for (const listener of listeners) listener();
+
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 // As an external store, so the screen reads it with `useSyncExternalStore`
 // rather than an effect: `localStorage` is not available while the page is
