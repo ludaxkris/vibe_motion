@@ -319,15 +319,15 @@ test("state:load inserts one rule per distinct keyframes body and reads no layou
     if (!iframe) throw new Error("no preview iframe");
     iframe.src = `${iframe.src}?vmExtraElements=200`;
   });
-  await page.waitForFunction(
-    () =>
-      (window as unknown as { __vmReloaded?: boolean }).__vmReloaded === true ||
-      document.querySelector<HTMLIFrameElement>('iframe[title="Cloned page preview"]') !== null,
-  );
   await expect(
     page.frameLocator('iframe[title="Cloned page preview"]').locator('[data-vm-id="vm-extra-200"]'),
   ).toBeAttached();
   const reloaded = previewFrame(page);
+  // The reload re-handshakes, and `ready` makes the client re-send
+  // `state:load` *and* `select`. Wait for that pair to land: the probe reads
+  // the frame's last handled message, so anything still in flight would be
+  // measured instead of the `state:load` under test.
+  await expect.poll(() => receivedTypes(reloaded)).toContain("select");
   await armFrameProbe(reloaded);
 
   // All four exist in catalog 1.1.0 and none of them carries `baseStyles`: a
@@ -451,6 +451,13 @@ test("a param change round-trips inside one frame, and the bridge's handler well
         await channelTick();
       }
 
+      // The warm-up's last `channelTick` left a preview up, and the client
+      // ends an active preview before an `apply` that would land under it
+      // (spec §5) — which would put a second ack, and a second message, inside
+      // the first measured tick. End it deliberately instead.
+      client.clearPreview();
+      await client.whenIdle();
+
       // The two paths are measured in separate phases so that their acks do
       // not mix: §6's `ack.ms` budget is the *param change* one, and a
       // preview's ack is a different, heavier handler.
@@ -463,6 +470,8 @@ test("a param change round-trips inside one frame, and the bridge's handler well
       const channel: number[] = [];
       for (let tick = 0; tick < measured; tick += 1) channel.push(await channelTick());
       const previewAcks = window.__vmAcks.slice();
+      // Every tick of this phase is one `preview` and nothing else: the draft
+      // is untouched, so no `apply` and no `preview:clear` can be interleaved.
 
       client.clearPreview();
       await client.whenIdle();
@@ -478,6 +487,7 @@ test("a param change round-trips inside one frame, and the bridge's handler well
   // One `apply` per tick and nothing else: the selection never changes during
   // the loop, so `sendSelection` posts nothing.
   expect(measured.applyAcks).toHaveLength(MEASURED_TICKS);
+  expect(measured.previewAcks).toHaveLength(MEASURED_TICKS);
 
   report("shell-side round trip, store set to ack", summarise(measured.endToEnd));
   report("bridge round trip (diagnostic)", summarise(measured.channel));
@@ -505,7 +515,9 @@ test("state:load of 200 assignments lands inside 50ms of frame time", async ({ p
   await expect(
     page.frameLocator('iframe[title="Cloned page preview"]').locator('[data-vm-id="vm-extra-200"]'),
   ).toBeAttached();
-  await page.waitForFunction(() => window.__vmTest?.client.status() === "ready");
+  // Same race as above: let the reload's own handshake finish before the ack
+  // buffer is armed, so only the `state:load` under test is timed.
+  await expect.poll(() => receivedTypes(previewFrame(page))).toContain("select");
 
   await collectAcks(page);
   const session = await throttle(page, 4);
