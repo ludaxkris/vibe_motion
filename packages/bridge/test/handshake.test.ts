@@ -68,10 +68,9 @@ describe("handshake", () => {
     expect(h.acks()).toEqual([]);
   });
 
-  it("ignores the reserved types that later phases own", () => {
+  it("ignores the reserved type that a later phase owns", () => {
     const h = loadBridge(FIXTURE);
     h.send({ type: "mode", payload: { mode: "view" }, seq: 1 });
-    h.send({ type: "elements:query", payload: { limit: 10 }, seq: 2 });
 
     expect(h.acks()).toEqual([]);
   });

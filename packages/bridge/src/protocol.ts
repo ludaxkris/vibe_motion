@@ -5,7 +5,8 @@
  * (CLAUDE.md rule 6): additive changes only once it is on `main`.
  *
  * `vm-bridge.js` cannot import this file — it is a plain browser script with no
- * build step — so it duplicates the three validation regexes below verbatim.
+ * build step — so it duplicates the three validation regexes and the
+ * shared constants below verbatim.
  * `test/protocol.test.ts` and `test/render.test.ts` assert the two copies match.
  */
 
@@ -17,6 +18,10 @@ export const IN_VIEW_THRESHOLD = 0.2 as const;
 
 /** More changed draft entries than this in one update => the shell sends `state:load`. */
 export const BULK_APPLY_LIMIT = 8 as const;
+
+/** `elements:query`: the `limit` used when none is sent, and the ceiling it is clamped to. */
+export const ELEMENTS_QUERY_LIMIT = 200 as const;
+export const ELEMENTS_QUERY_MAX = 500 as const;
 
 export const VM_ID_RE = /^vm-[a-z0-9-]+$/;
 export const KEYFRAMES_NAME_RE = /^vm-[a-z0-9-]+$/;
@@ -65,6 +70,16 @@ export type ToShell =
   | { type: "element:hover"; payload: ElementInfo | { vmId: null } }
   | { type: "element:select"; payload: ElementInfo }
   | { type: "element:deselect"; payload: { reason: "escape" | "background" } }
+  | {
+      /**
+       * The answer to `elements:query`, posted before that query's `ack`. `seq` is the query's
+       * envelope `seq`. Visible elements only, in document order; `truncated` when more matched
+       * than `limit`. `viewport` is the frame's `innerWidth` / `innerHeight`, so the receiver can
+       * tell above-the-fold (`pageRect.y < viewport.height`) from below.
+       */
+      type: "elements:list";
+      payload: { seq: number; elements: ElementInfo[]; truncated: boolean; viewport: { width: number; height: number } };
+    }
   | { type: "ack"; payload: Ack };
 
 export type ToBridge =
@@ -75,7 +90,17 @@ export type ToBridge =
   | { type: "replay"; payload: { vmId: string | null } }
   | { type: "preview"; payload: AppliedAssignment }
   | { type: "preview:clear"; payload: Record<string, never> }
-  | { type: "state:load"; payload: { assignments: AppliedAssignment[] } };
+  | { type: "state:load"; payload: { assignments: AppliedAssignment[] } }
+  | {
+      /**
+       * Bridge >= 1.1.0 (older bridges ignore it: check `ready.bridgeVersion`). Must be sent with
+       * an envelope `seq`, or the bridge posts nothing. `tags` are lower-case tag names, and
+       * `"button"` also matches `role="button"`; sizes are border-box px; `limit` defaults to
+       * `ELEMENTS_QUERY_LIMIT` and is clamped to `[1, ELEMENTS_QUERY_MAX]`.
+       */
+      type: "elements:query";
+      payload: { filter?: { tags?: string[]; minWidth?: number; minHeight?: number }; limit?: number };
+    };
 
 export type Envelope<M extends { type: string; payload: unknown }> = M & {
   source: typeof MESSAGE_SOURCE;

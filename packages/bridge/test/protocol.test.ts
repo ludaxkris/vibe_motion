@@ -8,6 +8,8 @@ import { FIXTURE, applied as appliedFixture, destroyAll, loadBridge } from "./ha
 
 import {
   BULK_APPLY_LIMIT,
+  ELEMENTS_QUERY_LIMIT,
+  ELEMENTS_QUERY_MAX,
   IN_VIEW_THRESHOLD,
   KEYFRAMES_NAME_RE,
   MESSAGE_SOURCE,
@@ -86,6 +88,10 @@ describe("parity with the bridge script", () => {
     expect(source).toContain(`var VM_ID_RE = /${VM_ID_RE.source}/;`);
     expect(source).toContain(`var KEYFRAMES_NAME_RE = /${KEYFRAMES_NAME_RE.source}/;`);
     expect(source).toContain(`var STYLE_KEY_RE = /${STYLE_KEY_RE.source}/;`);
+    expect(source).toContain(`var ELEMENTS_QUERY_LIMIT = ${ELEMENTS_QUERY_LIMIT};`);
+    expect(source).toContain(`var ELEMENTS_QUERY_MAX = ${ELEMENTS_QUERY_MAX};`);
+    expect(ELEMENTS_QUERY_LIMIT).toBe(200);
+    expect(ELEMENTS_QUERY_MAX).toBe(500);
   });
 
   it("declares BRIDGE_VERSION on one line the API can regex out", () => {

@@ -406,3 +406,178 @@ test("keyframes css that is not exactly one matching @keyframes rule is rejected
   expect(await h.frame.evaluate(() => getComputedStyle(document.body).display)).not.toBe("none");
   expect(await h.inline("vm-a", "animation-name")).toBe("");
 });
+
+// ---------------------------------------------------------------------------------------------
+// elements:query -> elements:list (Phase 5, bridge 1.1.0)
+// ---------------------------------------------------------------------------------------------
+
+type ListedElement = {
+  vmId: string;
+  tag: string;
+  order: number;
+  visible: boolean;
+  rect: { x: number; y: number; width: number; height: number };
+  pageRect: { x: number; y: number; width: number; height: number };
+};
+type ElementsList = {
+  seq: number;
+  elements: ListedElement[];
+  truncated: boolean;
+  viewport: { width: number; height: number };
+};
+
+/** The filter the Phase 5 shell always sends (plan D4 / D6). */
+const PHASE_5_FILTER = {
+  tags: ["h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote", "img", "picture", "video", "figure", "article", "button", "a"],
+  minWidth: 40,
+  minHeight: 40,
+};
+
+test.describe("elements:query", () => {
+  test("lists measured, visible elements in document order, with the frame's viewport", async ({ page }) => {
+    const h = await mountBridge(
+      page,
+      `<h1 class="box" data-vm-id="vm-title">Title</h1>
+       <div class="box" data-vm-id="vm-gone" style="display:none">gone</div>
+       <div class="box" data-vm-id="vm-ghost" style="visibility:hidden">ghost</div>
+       <span data-vm-id="vm-tiny" style="display:inline-block;width:10px;height:10px"></span>
+       <div class="box" data-vm-id="vm-card"><p data-vm-id="vm-copy" style="margin:0;height:50px">Copy</p></div>
+       <div class="spacer"></div>
+       <div class="box" data-vm-id="vm-below" role="button">below the fold</div>`,
+    );
+
+    const ack = await h.send("elements:query", { filter: { minWidth: 40, minHeight: 40 } });
+    expect(ack.ok).toBe(true);
+
+    const all = await h.messages();
+    const lists = all.filter((m) => m.type === "elements:list");
+    expect(lists).toHaveLength(1);
+    const list = lists[0].payload as unknown as ElementsList;
+
+    // The list lands before its ack, and carries the ack's seq.
+    const listAt = all.findIndex((m) => m.type === "elements:list");
+    const ackAt = all.findIndex((m) => m.type === "ack" && m.payload.seq === ack.seq);
+    expect(listAt).toBeLessThan(ackAt);
+    expect(list.seq).toBe(ack.seq);
+
+    expect(list.elements.map((e) => e.vmId)).toEqual(["vm-title", "vm-card", "vm-copy", "vm-below"]);
+    expect(list.truncated).toBe(false);
+    // The harness iframe is 800x600.
+    expect(list.viewport).toEqual({ width: 800, height: 600 });
+
+    const orders = list.elements.map((e) => e.order);
+    expect([...orders].sort((a, b) => a - b)).toEqual(orders);
+    for (const e of list.elements) {
+      expect(e.visible).toBe(true);
+      expect(e.pageRect.width).toBeGreaterThanOrEqual(40);
+      expect(e.pageRect.height).toBeGreaterThanOrEqual(40);
+    }
+    const ys = list.elements.map((e) => e.pageRect.y);
+    expect(ys[0]).toBeGreaterThan(0);
+    expect(ys[3]).toBeGreaterThan(list.viewport.height); // below the fold: what `viewport` is for
+    expect(await h.rect('[data-vm-id="vm-title"]')).toMatchObject({
+      width: Math.round(list.elements[0].rect.width),
+      height: Math.round(list.elements[0].rect.height),
+    });
+  });
+
+  test("pageRect is scroll-independent", async ({ page }) => {
+    const h = await mountBridge(
+      page,
+      `<div class="spacer"></div><h2 class="box" data-vm-id="vm-deep">deep</h2><div class="spacer"></div>`,
+    );
+    await h.send("elements:query", { filter: { tags: ["h2"] } });
+    await h.frame.evaluate(() => window.scrollTo(0, 1500));
+    await h.send("elements:query", { filter: { tags: ["h2"] } });
+
+    const [before, after] = (await h.messages("elements:list")).map(
+      (m) => (m.payload as unknown as ElementsList).elements[0],
+    );
+    expect(after.pageRect).toEqual(before.pageRect);
+    expect(after.rect.y).toBe(before.rect.y - 1500);
+  });
+
+  test("answers the Phase 5 query on a 2,000-element page inside the 50 ms budget, with no writes", async ({ page }) => {
+    // What a clone looks like: every element under <body> tagged, targets buried in wrappers.
+    const sentence = "The quick brown fox jumps over the lazy dog while the designer tunes an easing curve. ";
+    const paragraph = sentence.repeat(11); // ~950 chars
+    let n = 0;
+    const id = () => `data-vm-id="vm-e${(n += 1)}"`;
+    let body = "";
+    for (let s = 0; s < 40; s += 1) {
+      let items = "";
+      for (let i = 0; i < 10; i += 1) {
+        items += `<li ${id()} style="min-height:44px"><span ${id()}>Item ${i}</span> <a ${id()} href="#" style="display:inline-block;padding:14px 20px">Link ${s}-${i}</a></li>`;
+      }
+      let paras = "";
+      for (let p = 0; p < 8; p += 1) paras += `<div ${id()}><p ${id()}>${paragraph}</p></div>`;
+      body += `<section ${id()}><div ${id()}><div ${id()}>
+        <h2 ${id()} style="min-height:44px">Section ${s}</h2>
+        <ul ${id()}>${items}</ul>
+        ${paras}
+        <button ${id()} style="width:120px;height:44px">Go</button>
+        <div ${id()} role="button" style="width:120px;height:44px">Also go</div>
+      </div></div></section>`;
+    }
+    expect(n).toBeGreaterThanOrEqual(2000);
+    expect(body.length).toBeGreaterThanOrEqual(300_000);
+
+    const h = await mountBridge(page, body);
+    const ready = (await h.messages("ready"))[0].payload;
+    expect(ready.elementCount).toBe(n);
+    expect(ready.bridgeVersion).toBe("1.1.0");
+
+    // Any DOM or inline-style write during the queries would show up here.
+    await h.frame.evaluate(() => {
+      const w = window as unknown as { __mutations: number; __observer: MutationObserver };
+      w.__mutations = 0;
+      w.__observer = new MutationObserver((records) => {
+        w.__mutations += records.length;
+      });
+      w.__observer.observe(document.documentElement, { attributes: true, childList: true, characterData: true, subtree: true });
+    });
+    /** Invalidate layout for the whole page (the test's own write is dropped from the count). */
+    const dirtyLayout = (width: number) =>
+      h.frame.evaluate((px) => {
+        document.body.style.width = `${px}px`;
+        (window as unknown as { __observer: MutationObserver }).__observer.takeRecords();
+      }, width);
+
+    const measure = async (payload: unknown) => {
+      const samples: number[] = [];
+      for (let i = 0; i < 15; i += 1) {
+        // Dirty on alternate runs, so the budget includes the one layout pass a query may cost
+        // (the first run is cold too), not only the cached case.
+        if (i % 2 === 1) await dirtyLayout(780 - i);
+        samples.push((await h.send("elements:query", payload)).ms);
+      }
+      return samples;
+    };
+    const describeSamples = (label: string, samples: number[]) => {
+      const sorted = [...samples].sort((x, y) => x - y);
+      const dirty = samples.filter((_, i) => i % 2 === 1);
+      const line = `elements:query ack.ms, ${n} elements, ${label}: first=${samples[0].toFixed(1)} min=${sorted[0].toFixed(1)} median=${sorted[7].toFixed(1)} max=${sorted[14].toFixed(1)} dirty-layout max=${Math.max(...dirty).toFixed(1)}`;
+      test.info().annotations.push({ type: "perf", description: line });
+      console.log(line);
+    };
+
+    // What the shell sends, then the most a query can ever cost: the ceiling limit, which walks
+    // further down the page, and a filter so narrow that all 2,000 elements are scanned.
+    const samples = await measure({ filter: PHASE_5_FILTER, limit: 200 });
+    const atCeiling = await measure({ filter: PHASE_5_FILTER, limit: 500 });
+    const fullScan = await measure({ filter: { ...PHASE_5_FILTER, minWidth: 5000 } });
+    describeSamples("Phase 5 filter limit 200", samples);
+    describeSamples("Phase 5 filter limit 500", atCeiling);
+    describeSamples("Phase 5 filter, nothing wide enough (full scan)", fullScan);
+
+    const list = (await h.messages("elements:list"))[0].payload as unknown as ElementsList;
+    expect(list.elements).toHaveLength(200);
+    expect(list.truncated).toBe(true);
+    expect(list.elements.every((e) => PHASE_5_FILTER.tags.includes(e.tag) || e.tag === "div")).toBe(true);
+    expect(list.elements.some((e) => e.tag === "h2")).toBe(true);
+    expect(list.elements.some((e) => e.tag === "div")).toBe(true); // role="button"
+
+    expect(await h.frame.evaluate(() => (window as unknown as { __mutations: number }).__mutations)).toBe(0);
+    for (const ms of [...samples, ...atCeiling, ...fullScan]) expect(ms).toBeLessThan(50);
+  });
+});
