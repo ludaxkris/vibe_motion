@@ -1,5 +1,5 @@
 import { keyframesName } from "animation-catalog";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CURRENT_CATALOG_VERSION, getCatalogEntries } from "@/lib/catalog";
@@ -154,13 +154,28 @@ describe("ChoosingPanel", () => {
 
   it("applies the highlighted animation on Enter", () => {
     const { onPick } = renderPicker({ search: "fade in" });
-    const cards = screen.getAllByTestId("animation-card");
+    const [first] = screen.getAllByTestId("animation-card");
 
-    fireEvent.keyDown(cards[0], { key: "ArrowDown" });
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Enter" });
+    fireEvent.focus(first);
+    fireEvent.keyDown(first, { key: "Enter" });
 
     expect(onPick).toHaveBeenCalledOnce();
     expect(onPick).toHaveBeenCalledWith("fade-in");
+  });
+
+  it("applies the card the arrow keys moved to, not the one they started from", () => {
+    const { onPick } = renderPicker({ search: "fade in" });
+    const cards = screen.getAllByTestId("animation-card");
+    const second = cards[1].textContent ?? "";
+
+    fireEvent.focus(cards[0]);
+    fireEvent.keyDown(cards[0], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(cards[1]);
+
+    fireEvent.keyDown(cards[1], { key: "Enter" });
+
+    expect(onPick).toHaveBeenCalledOnce();
+    expect(entries.find((entry) => entry.id === onPick.mock.calls[0][0])?.name).toBe(second);
   });
 
   it("does nothing on Enter before anything is highlighted", () => {
@@ -171,6 +186,86 @@ describe("ChoosingPanel", () => {
     });
 
     expect(onPick).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The picker's keys belong to the card grid and to nothing else. Once a card
+   * has been highlighted, the header, the search field and the chips still have
+   * to get their own keys — anything else hands a keyboard user a different
+   * action than the control they are standing on.
+   */
+  describe("once the highlight has left the grid", () => {
+    /** Arrow into the grid, then move focus on to `next`, as Shift+Tab would. */
+    function highlightThenLeaveTo(next: HTMLElement) {
+      const [first] = screen.getAllByTestId("animation-card");
+      fireEvent.keyDown(screen.getByRole("searchbox", { name: "Search animations" }), {
+        key: "ArrowDown",
+      });
+      expect(document.activeElement).toBe(first);
+
+      fireEvent.blur(first, { relatedTarget: next });
+      next.focus();
+    }
+
+    it("Enter on a category chip filters and applies nothing", () => {
+      const { onPick, onCategoryChange } = renderPicker({ search: "fade in" });
+      const chip = screen.getByRole("button", { name: "Entrance" });
+      highlightThenLeaveTo(chip);
+
+      const enter = createEvent.keyDown(chip, { key: "Enter" });
+      fireEvent(chip, enter);
+      // Nothing swallowed the key, so the browser still activates the chip.
+      expect(enter.defaultPrevented).toBe(false);
+      fireEvent.click(chip);
+
+      expect(onCategoryChange).toHaveBeenCalledWith("entrance");
+      expect(onPick).not.toHaveBeenCalled();
+    });
+
+    it("Enter on the back control goes back and applies nothing", () => {
+      const { onPick, onBack } = renderPicker({ search: "fade in" });
+      const back = screen.getByRole("button", { name: "Back" });
+      highlightThenLeaveTo(back);
+
+      const enter = createEvent.keyDown(back, { key: "Enter" });
+      fireEvent(back, enter);
+      expect(enter.defaultPrevented).toBe(false);
+      fireEvent.click(back);
+
+      expect(onBack).toHaveBeenCalledOnce();
+      expect(onPick).not.toHaveBeenCalled();
+    });
+
+    it("Enter in the search field applies nothing", () => {
+      const { onPick } = renderPicker({ search: "fade in" });
+      const search = screen.getByRole("searchbox", { name: "Search animations" });
+      highlightThenLeaveTo(search);
+
+      const enter = createEvent.keyDown(search, { key: "Enter" });
+      fireEvent(search, enter);
+
+      expect(enter.defaultPrevented).toBe(false);
+      expect(onPick).not.toHaveBeenCalled();
+    });
+  });
+
+  it("leaves the caret keys to the search field", () => {
+    renderPicker({ search: "fade in" });
+    const search = screen.getByRole("searchbox", { name: "Search animations" });
+    const [first] = screen.getAllByTestId("animation-card");
+    search.focus();
+
+    for (const key of ["ArrowUp", "ArrowLeft", "ArrowRight"]) {
+      const event = createEvent.keyDown(search, { key });
+      fireEvent(search, event);
+
+      expect(event.defaultPrevented, `${key} is the caret's`).toBe(false);
+      expect(document.activeElement, `${key} keeps focus in the field`).toBe(search);
+    }
+
+    // …and ArrowDown is the one that steps into the list.
+    fireEvent.keyDown(search, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(first);
   });
 
   it("keeps the handoff's footer caption about previewing and applying", () => {

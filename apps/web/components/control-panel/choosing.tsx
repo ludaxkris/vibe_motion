@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -54,9 +54,11 @@ export function ChoosingPanel({
   onPick?: (animationId: string) => void;
   onBack?: () => void;
 }) {
-  // Which card the arrow keys last moved to, by id rather than by index: the
-  // visible list changes under it as the search and the category change.
-  const [highlightId, setHighlightId] = useState<string | null>(null);
+  // The highlight *is* the focused card (roving focus): a second copy of
+  // "which card the arrows are on" could disagree with the one the user can
+  // see, and an Enter resolved from the copy would apply an animation the
+  // focused control knows nothing about. It also means the highlight is gone
+  // the moment focus leaves the grid, with nothing to clear.
   const cardRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const query = search.trim().toLowerCase();
@@ -77,36 +79,56 @@ export function ChoosingPanel({
     [visible, catalogVersion],
   );
 
-  const highlightIndex = visible.findIndex((entry) => entry.id === highlightId);
+  /** Where in the grid an event came from, or -1 when it came from elsewhere. */
+  const cardIndexOf = (target: EventTarget | null): number =>
+    cardRefs.current.findIndex((card) => card !== null && card === target);
 
-  const moveHighlight = (delta: 1 | -1) => {
-    if (visible.length === 0) return;
-    const next =
-      highlightIndex < 0
-        ? delta > 0
-          ? 0
-          : visible.length - 1
-        : Math.min(visible.length - 1, Math.max(0, highlightIndex + delta));
-    setHighlightId(visible[next].id);
-    cardRefs.current[next]?.focus();
+  const focusCard = (index: number) => {
+    cardRefs.current[index]?.focus();
   };
 
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+  /**
+   * ↑↓ move the highlight and Enter applies it — for the grid, and only for
+   * the grid. The handler sits on the grid `<div>` *and* checks that the key
+   * came from one of its cards, so a key pressed on the search field, a
+   * category chip or the back control is never swallowed on its way to the
+   * control the user is actually standing on.
+   */
+  const handleGridKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const index = cardIndexOf(event.target);
+    if (index < 0) return;
+
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      moveHighlight(event.key === "ArrowDown" ? 1 : -1);
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      // Stops at the ends rather than wrapping: the grid is a list of what the
+      // search left, not a carousel.
+      focusCard(Math.min(visible.length - 1, Math.max(0, index + delta)));
       return;
     }
-    if (event.key === "Enter" && highlightIndex >= 0) {
+
+    if (event.key === "Enter") {
       // Also cancels the focused card's own Enter activation, so an applied
       // animation is applied exactly once.
       event.preventDefault();
-      onPick?.(visible[highlightIndex].id);
+      onPick?.(visible[index].id);
     }
   };
 
+  /**
+   * ArrowDown steps out of the search field and into the list, the way a
+   * filter over a list conventionally does. Every other key stays the field's
+   * — ArrowUp, ArrowLeft and ArrowRight move the caret, which is the whole
+   * point of a text field.
+   */
+  const handleSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "ArrowDown" || visible.length === 0) return;
+    event.preventDefault();
+    focusCard(0);
+  };
+
   return (
-    <PanelCard data-testid="panel-choosing" onKeyDown={handleKeyDown}>
+    <PanelCard data-testid="panel-choosing">
       <style>{keyframes}</style>
 
       <PanelSection className="h-11 flex-row items-center gap-2 py-0">
@@ -134,6 +156,7 @@ export function ChoosingPanel({
           className="[&_input::-webkit-search-cancel-button]:appearance-none"
           value={search}
           onChange={(event) => onSearchChange?.(event.target.value)}
+          onKeyDown={handleSearchKeyDown}
         />
 
         <div className="flex flex-wrap gap-1.5">
@@ -159,7 +182,7 @@ export function ChoosingPanel({
             No animations match &ldquo;{search.trim()}&rdquo;.
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2" onKeyDown={handleGridKeyDown}>
             {visible.map((entry, index) => (
               <AnimationCard
                 key={entry.id}
@@ -170,7 +193,6 @@ export function ChoosingPanel({
                 catalogVersion={catalogVersion}
                 applied={entry.id === appliedAnimationId}
                 onApply={() => onPick?.(entry.id)}
-                onFocus={() => setHighlightId(entry.id)}
               />
             ))}
           </div>

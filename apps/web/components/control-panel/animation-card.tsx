@@ -24,7 +24,6 @@ export function AnimationCard({
   catalogVersion,
   applied = false,
   onApply,
-  onFocus,
   ref,
 }: {
   entry: CatalogEntry;
@@ -33,7 +32,6 @@ export function AnimationCard({
   /** This is the animation currently on the selected element. */
   applied?: boolean;
   onApply?: () => void;
-  onFocus?: () => void;
   ref?: Ref<HTMLButtonElement>;
 }) {
   const [playing, setPlaying] = useState(false);
@@ -53,10 +51,7 @@ export function AnimationCard({
       onClick={onApply}
       onMouseEnter={() => setPlaying(true)}
       onMouseLeave={() => setPlaying(false)}
-      onFocus={() => {
-        setPlaying(true);
-        onFocus?.();
-      }}
+      onFocus={() => setPlaying(true)}
       onBlur={() => setPlaying(false)}
       className={cn(
         "flex flex-col gap-1.5 rounded-lg border p-2 text-left",
