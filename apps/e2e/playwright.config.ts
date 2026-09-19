@@ -1,14 +1,14 @@
 import { defineConfig, devices } from "@playwright/test";
 
-/**
- * DT-113: several agents share one machine, and `reuseExistingServer` on a
- * fixed port silently attaches this suite to another checkout's `next dev` —
- * a false red, or worse a false green. Setting `E2E_WEB_PORT` takes a port of
- * your own and refuses to reuse anything, so a busy :3000 is no longer a
- * reason to distrust a local run. The default is unchanged.
- */
-const explicitPort = process.env.E2E_WEB_PORT;
-const PORT = Number(explicitPort ?? 3000);
+// VM_E2E_PORT moves this run's dev server off :3000. `pnpm e2e` and `pnpm gates` set it to a free
+// port for every local run, because several worktrees share one machine and a fixed port meant
+// either a refused start or, worse, specs silently running against another worktree's server
+// (DT-113). Run Playwright directly without it and you get :3000, and a loud failure if it is taken.
+const pinnedPort = process.env.VM_E2E_PORT;
+const PORT = pinnedPort ? Number(pinnedPort) : 3000;
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+  throw new Error(`VM_E2E_PORT must be a TCP port, got "${pinnedPort}"`);
+}
 const baseURL = `http://localhost:${PORT}`;
 const isCI = Boolean(process.env.CI);
 
@@ -49,7 +49,10 @@ export default defineConfig({
     // Explicit port so an ambient PORT (Render sets one) cannot move the server.
     command: `pnpm --filter web exec next dev --port ${PORT}`,
     url: baseURL,
-    reuseExistingServer: !isCI && explicitPort === undefined,
+    // Never attach to whatever already answers on the port: it may be another worktree's code.
+    // VM_E2E_REUSE=1 is the explicit opt-in for the one case where reuse is right: the `pnpm dev`
+    // you started yourself in THIS worktree (a second `next dev` here would hit Next's dev lock).
+    reuseExistingServer: !isCI && process.env.VM_E2E_REUSE === "1",
     timeout: 120_000,
     // The real Ktor API (apps/api) isn't running in this phase's e2e — serve
     // it from the MSW mocks instead (mocks/, gated by lib/env.ts#apiMocking).

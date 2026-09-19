@@ -25,7 +25,7 @@ Environment: `NEXT_PUBLIC_API_ORIGIN` (default `http://localhost:8080`). Copy th
 pnpm --filter web lint        # eslint (flat config, eslint-config-next)
 pnpm --filter web typecheck   # next typegen && tsc --noEmit
 pnpm --filter web test        # vitest + @testing-library/react (jsdom), unit tests next to source
-pnpm e2e                      # playwright, from apps/e2e; starts `next dev` on :3000 itself (reuses a running one)
+pnpm e2e                      # playwright, from apps/e2e; starts its own `next dev` on a free port (never reuses one; see apps/e2e/README.md)
 ```
 
 e2e lives in `apps/e2e` (see its README). First run on a new machine: `pnpm --filter e2e exec playwright install chromium`.

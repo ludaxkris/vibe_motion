@@ -45,3 +45,37 @@ describe("e2e package scripts", () => {
     expect(scripts.pretest).toBe(CATALOG_BUILD);
   });
 });
+
+/**
+ * DT-113: several worktrees share one machine, and the local e2e server used
+ * to be a fixed `:3000` with `reuseExistingServer` on, so a run could silently
+ * test ANOTHER worktree's `next dev`. Like the hooks above, a regression here
+ * is invisible from inside the worktree that causes it — every gate stays
+ * green — so assert the wiring instead.
+ */
+describe("local e2e never attaches to a foreign dev server (DT-113)", () => {
+  const root = path.resolve(here, "../..");
+  const read = (file: string) => readFileSync(path.join(root, file), "utf8");
+
+  it("`pnpm e2e` goes through the free-port wrapper", () => {
+    expect(scriptsOf(root).e2e).toBe("node scripts/e2e.mjs");
+  });
+
+  it("the web e2e gate asks for a free port", () => {
+    expect(read("scripts/gates.mjs")).toMatch(
+      /name: "web e2e \(playwright\)".*freePort: "VM_E2E_PORT"/,
+    );
+  });
+
+  it("the Playwright config reuses a running server only on explicit opt-in", () => {
+    const config = read("apps/e2e/playwright.config.ts");
+    expect(config).toContain('process.env.VM_E2E_REUSE === "1"');
+    // …and not the old unconditional form.
+    expect(config).not.toMatch(/reuseExistingServer:\s*!isCI\s*,/);
+  });
+
+  it("the port probe binds the wildcard, like `next dev` does", () => {
+    // A 127.0.0.1-only probe passes while something listens on [::1]:<port>.
+    expect(read("scripts/free-port.mjs")).not.toMatch(/listen\([^)]*127\.0\.0\.1/);
+  });
+});
