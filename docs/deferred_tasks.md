@@ -132,3 +132,4 @@ Status: `open` · `in-progress` · `done` · `wont-do`.
 | ID | Type | Title | Priority | Urgency | Phase | Owner | Status | Notes |
 |---|---|---|---|---|---|---|---|---|
 | — | — | none yet | — | — | — | — | — | — |
+| DT-120 | chore | render.yaml buildFilters omit `packages/bridge/**` (web now, api once it serves the package script) | P2 | this-phase | 4/5 | — | open | Found in PR #15: web gains a `bridge` workspace dependency, and Phase 4 Task 8 makes the api jar copy `packages/bridge/src/vm-bridge.js`. Neither service's `buildFilter.paths` lists `packages/bridge/**`, so a bridge-only change (e.g. PR A2's `BRIDGE_VERSION` 1.1.0) would not redeploy either. Add the path to both filters (mutable field). Check `feat/4-bridge-integration` first; it may already do the api half. |
