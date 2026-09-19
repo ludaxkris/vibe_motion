@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { relativeTime } from "./relative-time";
 
+// Midday timestamps throughout, so the expected weekday/date holds in any
+// timezone the test runner might be in (never a timestamp near midnight UTC).
 const NOW = new Date("2026-09-18T12:00:00.000Z"); // a Friday
 
 describe("relativeTime", () => {
@@ -19,10 +21,14 @@ describe("relativeTime", () => {
 
   it("names the weekday under a week ago", () => {
     // Monday, four days before the Friday `NOW`.
-    expect(relativeTime("2026-09-14T09:00:00.000Z", NOW)).toBe("Mon");
+    expect(relativeTime("2026-09-14T12:00:00.000Z", NOW)).toBe("Mon");
   });
 
   it("falls back to month and day at a week or older", () => {
-    expect(relativeTime("2026-09-03T09:00:00.000Z", NOW)).toBe("Sep 3");
+    expect(relativeTime("2026-09-03T12:00:00.000Z", NOW)).toBe("Sep 3");
+  });
+
+  it("returns an empty string for a date that does not parse", () => {
+    expect(relativeTime("not-a-date", NOW)).toBe("");
   });
 });
