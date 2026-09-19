@@ -46,8 +46,10 @@ flowchart TB
   root --> files["CLAUDE.md · memory.md · render.yaml · .github/workflows/gates.yml"]
 
   apps --> web["web/  Next.js<br/>app/ (routes) · components/ · lib/bridge · lib/agent · lib/api-client (generated)"]
+  apps --> e2e["e2e/  Playwright<br/>web/ · web/mocked/ · web/stack/ · fixtures/ · docker/"]
   apps --> api["api/  Ktor<br/>openapi.yaml · Dockerfile · src/{routes,clone,export,persistence} · db/migration"]
   packages --> cat["animation-catalog/<br/>versions/1.0.0.json … · current · schema.json · CHANGELOG.md<br/>scripts/gen-types · scripts/check-immutable"]
+  packages --> bridge["bridge/<br/>src/vm-bridge.js (served by the api jar and the web mock route)<br/>src/protocol.ts (wire types, constants, validation)"]
 ```
 
 ## 3. Request flows
@@ -184,18 +186,26 @@ flowchart LR
   end
 
   subgraph frame["api origin · iframe /projects/{id}/page"]
-    bridgeScript["vm-bridge.js (script tag added at serve time)<br/>capture-phase click handler · hover outline · runtime style block"]
+    bridgeScript["packages/bridge vm-bridge.js (script tag added at serve time)<br/>capture-phase click handler · hover outline · runtime style block"]
     dom["Cloned DOM<br/>every element has data-vm-id"]
     runtime["#vm-runtime style<br/>@keyframes for animations in use"]
     bridgeScript --> dom
     bridgeScript --> runtime
   end
 
-  bridgeClient -- "select · apply · clear · replay · state:load" --> bridgeScript
-  bridgeScript -- "ready · element:hover · element:select" --> bridgeClient
+  bridgeClient -- "hello · select · apply · clear · replay · preview · preview:clear · state:load" --> bridgeScript
+  bridgeScript -- "ready · element:hover · element:select · element:deselect · ack" --> bridgeClient
 ```
 
-Message envelope: `{ source: "vibe-motion", type, payload }`. Both sides drop messages whose `event.origin` is not in the allow-list injected from environment (`WEB_ORIGIN` for the API, `NEXT_PUBLIC_API_ORIGIN` for the web).
+Message envelope: `{ source: "vibe-motion", type, payload, seq? }`. Both sides drop a message unless its `event.origin`, its `event.source` and its envelope shape all pass; the allowed origin is injected from environment (`WEB_ORIGIN` for the API, which the page renderer writes into `data-vm-parent-origin`; the framed page's own origin for the web). `"*"` is never a `targetOrigin` on either side.
+
+Four things the sketch above leaves out, all of them contract
+([phase-4-bridge-protocol.md](plans/phase-4-bridge-protocol.md)):
+
+- **Handshake.** `ready` carries `protocolVersion`. The shell sends `hello` when its client mounts *and* on the iframe's `load` event, and the bridge answers every `hello` with a fresh `ready` — the shell is server-rendered, so the frame's first `ready` can be posted before the shell is listening. A `protocolVersion` the shell does not know stops it sending anything and shows a reload banner.
+- **`ack`.** Every shell→iframe message carries a `seq` and is answered with `ack { seq, ms, ok }`, where `ms` is the time the bridge spent in the handler. That is what the performance budget is measured against, and what tests await instead of a timer.
+- **`preview` is not `apply`.** Hovering a card in the picker shows an animation transiently, on top of whatever is applied and without touching the draft; `preview:clear` restores what was underneath. The shell owns that preview's whole lifetime and must end it — a preview left behind masks every later `apply`.
+- **The mock page is cross-origin too.** In mock mode the shell serves itself from one loopback name and frames the other (`localhost` ⇄ `127.0.0.1`, same Next server, same port), with the API's own CSP and the same `packages/bridge` script. A same-origin mock would let a bridge that skipped its origin check pass e2e.
 
 ## 5. Data model
 
