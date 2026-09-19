@@ -1,0 +1,33 @@
+{
+  "branch": "feat/3-web-shell-help",
+  "sha": "4e9efcafd148f7c743b0b2c6ab4f3fa9eb8f1189",
+  "viewport": "1280x844",
+  "names": [
+    "entry-default.png",
+    "editor-idle.png",
+    "help-default.png",
+    "help-attention.png",
+    "help-reduced-motion.png",
+    "not-found.png",
+    "dev-gallery.png",
+    "dev-frame-panel-idle-empty.png",
+    "dev-frame-panel-idle-assignments.png",
+    "dev-frame-panel-selected.png",
+    "dev-frame-panel-choosing.png",
+    "dev-frame-panel-choosing-empty-search.png",
+    "dev-frame-panel-tuning-distance.png",
+    "dev-frame-panel-tuning-scale.png",
+    "dev-frame-panel-tuning-selects.png",
+    "dev-frame-dialog-unsaved-guard.png",
+    "dev-frame-dialog-save.png",
+    "dev-frame-toast.png",
+    "dev-frame-entry-cloning.png",
+    "dev-frame-entry-error.png",
+    "ref-entry.png",
+    "ref-editor.png",
+    "ref-help.png"
+  ],
+  "diffs": {},
+  "supersedes": "13/a8bd5ba (blank reference shots, mislabelled editor shot)",
+  "notes": "Real comparison against docs/design/ui_kit run this time. See PR comment for the region-by-region diff."
+}
