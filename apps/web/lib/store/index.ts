@@ -32,7 +32,7 @@ import { create, type StateCreator, type StoreApi, type UseBoundStore } from "zu
 
 import type { Assignment, EditorStateMap } from "@/lib/api-client";
 import { assignmentsEqual } from "@/lib/assignment";
-import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
+import { defaultAssignmentFor, getCatalogEntry } from "@/lib/catalog";
 
 import {
   initialPanelState,
@@ -279,13 +279,10 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
 
         const entry = getCatalogEntry(event.animationId);
         if (entry) {
-          const assignment: Assignment = {
-            animationId: entry.id,
-            catalogVersion: CURRENT_CATALOG_VERSION,
-            trigger: entry.defaultTrigger ?? entry.triggers[0],
-            params: resolveCatalogParams(entry),
+          return {
+            panel,
+            draftState: { ...state.draftState, [panel.vmId]: defaultAssignmentFor(entry) },
           };
-          return { panel, draftState: { ...state.draftState, [panel.vmId]: assignment } };
         }
       }
 

@@ -8,9 +8,11 @@ import {
   CURRENT_CATALOG_VERSION,
   catalogInlineStyle,
   catalogKeyframes,
+  defaultAssignmentFor,
   getCatalogEntries,
   getCatalogEntry,
   getCatalogEntryAt,
+  resolveCatalogParams,
 } from "@/lib/catalog";
 
 describe("catalog", () => {
@@ -82,5 +84,26 @@ describe("catalog type bridges", () => {
     for (const entry of entries) {
       expect(css).toContain(`@keyframes ${keyframesName(entry.id, CURRENT_CATALOG_VERSION)}`);
     }
+  });
+});
+
+describe("defaultAssignmentFor", () => {
+  it("pins the current catalog version and takes the entry's own defaults", () => {
+    const entry = getCatalogEntry("fade-in-up")!;
+
+    expect(defaultAssignmentFor(entry)).toEqual({
+      animationId: "fade-in-up",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: entry.defaultTrigger ?? entry.triggers[0],
+      params: resolveCatalogParams(entry),
+    });
+  });
+
+  it("falls back to the entry's first trigger when it declares no default", () => {
+    const entry = getCatalogEntry("hover-lift")!;
+
+    expect(defaultAssignmentFor({ ...entry, defaultTrigger: undefined }).trigger).toBe(
+      entry.triggers[0],
+    );
   });
 });

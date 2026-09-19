@@ -161,6 +161,7 @@ export function EditorShell({ projectId }: { projectId: string }) {
   const previewSrc = useMemo(() => previewPageUrl(projectId), [projectId]);
   const expectedOrigin = useMemo(() => previewOrigin(projectId), [projectId]);
   const { frameRef, handleFrameLoad, status, client } = useBridge({ expectedOrigin });
+  const bridgeReady = client !== null && status === "ready";
 
   const handlePreview = useCallback(
     (vmId: string, assignment: Assignment) => client?.preview(vmId, assignment),
@@ -353,9 +354,13 @@ export function EditorShell({ projectId }: { projectId: string }) {
                 the draft forked from, which only this query knows. */}
             <ControlPanel
               currentVersionLabel={currentVersion ? `v${currentVersion.seq}` : undefined}
-              onPreview={client ? handlePreview : undefined}
-              onClearPreview={client ? handleClearPreview : undefined}
-              onReplay={client ? handleReplay : undefined}
+              // Gated on the handshake, not merely on the client existing:
+              // while `connecting` or `version-mismatch` the client refuses
+              // every post, so an enabled Replay and live card hovers would be
+              // controls that silently do nothing.
+              onPreview={bridgeReady ? handlePreview : undefined}
+              onClearPreview={bridgeReady ? handleClearPreview : undefined}
+              onReplay={bridgeReady ? handleReplay : undefined}
             />
           </aside>
         }

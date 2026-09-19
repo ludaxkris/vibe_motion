@@ -466,3 +466,76 @@ describe("EditorShell bridge", () => {
     expect(selectSelectedVmId(useEditorStore.getState())).toBe("vm-2");
   });
 });
+
+describe("EditorShell bridge readiness", () => {
+  async function editorWithTuning() {
+    const project = await createProject();
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+    act(() => {
+      selectAndAnimate("vm-1");
+    });
+    return project;
+  }
+
+  it("keeps Replay disabled until the frame has handshaked", async () => {
+    await editorWithTuning();
+
+    // `connecting`: `post()` refuses everything, so an enabled Replay would be
+    // a control that silently does nothing.
+    expect(await screen.findByRole("button", { name: "Replay" })).toBeDisabled();
+  });
+
+  it("enables Replay once the bridge is ready", async () => {
+    await editorWithTuning();
+    const frame = screen.getByTitle("Cloned page preview") as HTMLIFrameElement;
+    const source = frame.contentWindow;
+    if (source) vi.spyOn(source, "postMessage").mockImplementation(() => {});
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            source: "vibe-motion",
+            type: "ready",
+            payload: { elementCount: 3, bridgeVersion: "1.0.0", protocolVersion: PROTOCOL_VERSION },
+          },
+          origin: previewOrigin("ignored"),
+          source,
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Replay" })).toBeEnabled();
+    });
+  });
+
+  it("disables Replay again when the frame speaks a protocol this build does not know", async () => {
+    await editorWithTuning();
+    const frame = screen.getByTitle("Cloned page preview") as HTMLIFrameElement;
+    const source = frame.contentWindow;
+    if (source) vi.spyOn(source, "postMessage").mockImplementation(() => {});
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            source: "vibe-motion",
+            type: "ready",
+            payload: {
+              elementCount: 3,
+              bridgeVersion: "9.0.0",
+              protocolVersion: PROTOCOL_VERSION + 1,
+            },
+          },
+          origin: previewOrigin("ignored"),
+          source,
+        }),
+      );
+    });
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Replay" })).toBeDisabled();
+  });
+});

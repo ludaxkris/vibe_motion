@@ -1,16 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { UnsavedGuardDialog } from "@/components/dialogs/unsaved-guard-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Assignment, Trigger } from "@/lib/api-client";
 import {
   ALL_CATEGORIES,
-  CURRENT_CATALOG_VERSION,
+  defaultAssignmentFor,
   getCatalogEntry,
   getCatalogEntryAt,
-  resolveCatalogParams,
 } from "@/lib/catalog";
 import {
   selectDirtyVmIdCount,
@@ -85,57 +84,37 @@ function ChoosingSection({
   onClearPreview?: () => void;
 }) {
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
-  const appliedAnimationId = useEditorStore((state) => state.draftState[vmId]?.animationId);
+  const applied = useEditorStore((state) => state.draftState[vmId]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
 
-  // The picker owns the preview's whole life, and it has to end it itself.
-  // A card that is hovered and then *clicked* never gets its `mouseleave`: the
-  // pick unmounts the grid out from under the pointer. The preview would then
-  // outlive the picker, and because a preview sits on top of the applied
-  // assignment (spec D6) every later `apply` — a tuned param, a Discard's
-  // revert — would land underneath it and never be seen.
-  const clearPreview = useRef(onClearPreview);
-  useEffect(() => {
-    clearPreview.current = onClearPreview;
-  }, [onClearPreview]);
-  useEffect(() => () => clearPreview.current?.(), []);
-
+  // Each `AnimationCard` ends the preview it started, including when it is
+  // unmounted by the pick or filtered out from under the pointer, so the
+  // picker needs no cleanup of its own.
   return (
     <ChoosingPanel
       vmId={vmId}
-      appliedAnimationId={appliedAnimationId}
+      appliedAnimationId={applied?.animationId}
       search={search}
       onSearchChange={setSearch}
       category={category}
       onCategoryChange={setCategory}
       onPick={(animationId) => dispatchPanel({ type: "PICK", animationId })}
       onBack={() => dispatchPanel({ type: "BACK" })}
-      // Exactly what picking the card would create, so the preview is the
-      // truth about the click and not an approximation of it.
+      // Exactly what picking the card would do, so the preview is the truth
+      // about the click and not an approximation of it — and for the card
+      // *already* applied that means the element's own tuned assignment,
+      // because `PICK` deliberately keeps it rather than resetting it. The
+      // element would otherwise snap back to 600ms on hover.
       onPreview={(animationId) => {
-        const assignment = defaultAssignment(animationId);
+        const entry = getCatalogEntry(animationId);
+        const assignment =
+          applied?.animationId === animationId ? applied : entry && defaultAssignmentFor(entry);
         if (assignment) onPreview?.(vmId, assignment);
       }}
       onPreviewEnd={onClearPreview}
     />
   );
-}
-
-/**
- * The assignment a `PICK` would create: catalog defaults, pinned to the
- * current version, on the entry's own default trigger. Same construction as
- * the store's `PICK` branch, which is what the preview has to stand in for.
- */
-function defaultAssignment(animationId: string): Assignment | undefined {
-  const entry = getCatalogEntry(animationId);
-  if (!entry) return undefined;
-  return {
-    animationId: entry.id,
-    catalogVersion: CURRENT_CATALOG_VERSION,
-    trigger: entry.defaultTrigger ?? entry.triggers[0],
-    params: resolveCatalogParams(entry),
-  };
 }
 
 /**

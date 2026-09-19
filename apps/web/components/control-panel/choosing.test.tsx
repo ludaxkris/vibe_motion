@@ -315,3 +315,29 @@ describe("ChoosingPanel preview seam", () => {
     expect(onPreviewEnd).toHaveBeenCalledOnce();
   });
 });
+
+describe("ChoosingPanel preview ownership", () => {
+  it("ends the preview when the search filters the hovered card away", () => {
+    const onPreview = vi.fn();
+    const onPreviewEnd = vi.fn();
+    const view = renderPicker({ onPreview, onPreviewEnd, search: "" });
+
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Fade In Up" }));
+    expect(onPreview).toHaveBeenCalledWith("fade-in-up");
+
+    // Typing removes the card under the pointer, which therefore fires no
+    // `mouseleave` — the leak the architect found inside the picker's life.
+    view.rerender(
+      <ChoosingPanel
+        vmId="vm-1"
+        search="pulse"
+        category="all"
+        onPreview={onPreview}
+        onPreviewEnd={onPreviewEnd}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Fade In Up" })).not.toBeInTheDocument();
+    expect(onPreviewEnd).toHaveBeenCalledTimes(1);
+  });
+});

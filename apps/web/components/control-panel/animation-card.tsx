@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { useState, type CSSProperties, type Ref } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type Ref } from "react";
 
 import type { CatalogEntry } from "@/lib/api-client";
 import { catalogInlineStyle } from "@/lib/catalog";
@@ -49,16 +49,35 @@ export function AnimationCard({
   const [playing, setPlaying] = useState(false);
   const reducedMotion = usePrefersReducedMotion();
 
+  // A card owns the preview it starts, and has to end it even when it is
+  // removed without a pointer event: a clicked card is unmounted by the pick
+  // itself, and a card the search box filters out from under the pointer fires
+  // neither `mouseleave` nor `blur`. A preview left behind sits on top of the
+  // applied assignment (spec D6).
+  const playingRef = useRef(false);
+  const endPreview = useRef(onPreviewEnd);
+  useEffect(() => {
+    endPreview.current = onPreviewEnd;
+  }, [onPreviewEnd]);
+  useEffect(
+    () => () => {
+      if (playingRef.current) endPreview.current?.();
+    },
+    [],
+  );
+
   // Reduced motion stops the demo, never the picking: Enter still applies.
   const demoStyle = playing && !reducedMotion ? catalogInlineStyle(entry, catalogVersion) : undefined;
   const highlighted = playing || applied;
 
   const enter = () => {
     setPlaying(true);
+    playingRef.current = true;
     onPreviewStart?.();
   };
   const leave = () => {
     setPlaying(false);
+    playingRef.current = false;
     onPreviewEnd?.();
   };
 

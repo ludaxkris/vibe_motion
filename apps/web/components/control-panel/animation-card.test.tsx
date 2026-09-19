@@ -125,3 +125,57 @@ describe("AnimationCard preview seam", () => {
     expect(onPreviewStart).toHaveBeenCalledOnce();
   });
 });
+
+describe("AnimationCard preview ownership", () => {
+  it("ends its own preview when it is unmounted mid-hover", () => {
+    const onPreviewEnd = vi.fn();
+    const view = render(
+      <AnimationCard
+        entry={entry}
+        catalogVersion={CURRENT_CATALOG_VERSION}
+        onPreviewEnd={onPreviewEnd}
+      />,
+    );
+    fireEvent.mouseEnter(screen.getByRole("button", { name: entry.name }));
+
+    // A card that is clicked, or filtered out from under the pointer by the
+    // search box, is removed from the DOM and fires neither `mouseleave` nor
+    // `blur`. The preview would outlive it.
+    view.unmount();
+
+    expect(onPreviewEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not end a preview it never started", () => {
+    const onPreviewEnd = vi.fn();
+    const view = render(
+      <AnimationCard
+        entry={entry}
+        catalogVersion={CURRENT_CATALOG_VERSION}
+        onPreviewEnd={onPreviewEnd}
+      />,
+    );
+
+    view.unmount();
+
+    expect(onPreviewEnd).not.toHaveBeenCalled();
+  });
+
+  it("does not end the same preview twice", () => {
+    const onPreviewEnd = vi.fn();
+    const view = render(
+      <AnimationCard
+        entry={entry}
+        catalogVersion={CURRENT_CATALOG_VERSION}
+        onPreviewEnd={onPreviewEnd}
+      />,
+    );
+    const card = screen.getByRole("button", { name: entry.name });
+
+    fireEvent.mouseEnter(card);
+    fireEvent.mouseLeave(card);
+    view.unmount();
+
+    expect(onPreviewEnd).toHaveBeenCalledTimes(1);
+  });
+});

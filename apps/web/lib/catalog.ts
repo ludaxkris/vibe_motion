@@ -21,7 +21,7 @@ import {
   type CatalogEntry as CatalogPackageEntry,
 } from "animation-catalog";
 
-import type { Catalog, CatalogEntry } from "@/lib/api-client";
+import type { Assignment, Catalog, CatalogEntry } from "@/lib/api-client";
 import { inlineStyle, resolveParams, runtimeStylesheet } from "@/lib/runtime-css";
 
 /**
@@ -65,6 +65,24 @@ export function getCatalogEntryAt(
   id: string,
 ): CatalogEntry | undefined {
   return getEntryByVersion(catalogVersion, id) as CatalogEntry | undefined;
+}
+
+/**
+ * The assignment a fresh pick creates: the entry's own default trigger, its
+ * catalog defaults, pinned to the version they came from.
+ *
+ * One place, because two would be two places that know the pinning rule
+ * (CLAUDE.md rule 9). The store's `PICK` builds a draft assignment with it and
+ * the picker previews the same thing, so hovering a card and clicking it can
+ * never disagree.
+ */
+export function defaultAssignmentFor(entry: CatalogEntry): Assignment {
+  return {
+    animationId: entry.id,
+    catalogVersion: CURRENT_CATALOG_VERSION,
+    trigger: entry.defaultTrigger ?? entry.triggers[0],
+    params: resolveCatalogParams(entry),
+  };
 }
 
 /**
@@ -126,4 +144,4 @@ export function catalogKeyframes(
   );
 }
 
-export type { Catalog, CatalogEntry };
+export type { Assignment, Catalog, CatalogEntry };

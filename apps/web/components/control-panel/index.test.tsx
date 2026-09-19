@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CURRENT_CATALOG_VERSION } from "@/lib/catalog";
+import { CURRENT_CATALOG_VERSION, defaultAssignmentFor, getCatalogEntry } from "@/lib/catalog";
 import { initialEditorState, useEditorStore } from "@/lib/store";
 
 import { ControlPanel } from "./index";
@@ -378,6 +378,45 @@ describe("ControlPanel bridge seams", () => {
     });
 
     expect(onClearPreview).toHaveBeenCalled();
+  });
+
+  it("previews the element's own tuned assignment for the card already applied", () => {
+    const onPreview = vi.fn();
+    choosing();
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in-up" });
+    act(() => {
+      useEditorStore.getState().updateDraftParam("vm-1", "duration", "1200ms");
+    });
+    // Back into the picker with that animation applied and tuned.
+    act(() => {
+      useEditorStore.getState().dispatchPanel({ type: "BACK" });
+    });
+    render(<ControlPanel onPreview={onPreview} onClearPreview={vi.fn()} />);
+
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Fade In Up" }));
+
+    // Clicking that card keeps the tuned value (the store's PICK says so), so
+    // hovering it must not snap the element back to the catalog default.
+    expect(onPreview).toHaveBeenCalledWith(
+      "vm-1",
+      expect.objectContaining({ params: expect.objectContaining({ duration: "1200ms" }) }),
+    );
+  });
+
+  it("previews catalog defaults for a card that is not the applied one", () => {
+    const onPreview = vi.fn();
+    choosing();
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in-up" });
+    act(() => {
+      useEditorStore.getState().updateDraftParam("vm-1", "duration", "1200ms");
+      useEditorStore.getState().dispatchPanel({ type: "BACK" });
+    });
+    render(<ControlPanel onPreview={onPreview} onClearPreview={vi.fn()} />);
+
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Pulse" }));
+
+    // The catalog's own defaults for `pulse`, not the tuned `fade-in-up` ones.
+    expect(onPreview).toHaveBeenCalledWith("vm-1", defaultAssignmentFor(getCatalogEntry("pulse")!));
   });
 
   it("leaves the picker inert when there is no bridge to preview on", () => {
