@@ -98,6 +98,24 @@ describe("HistoryList", () => {
     ).toBeInTheDocument();
   });
 
+  it("passes elementCount through to the v0 row only", () => {
+    render(
+      <HistoryList
+        versions={[V0, V1, V2]}
+        currentVersionId="v2"
+        viewingVersionId={null}
+        now={NOW}
+        elementCount={42}
+        {...callbacks()}
+      />,
+    );
+
+    const cloneMeta = screen.getByText(/42 elements/);
+    expect(cloneMeta.closest("button")).toHaveTextContent("v0");
+    // v1 and v2 never mention an element count.
+    expect(screen.queryAllByText(/elements/)).toHaveLength(1);
+  });
+
   it("omits the caption when nothing is being viewed", () => {
     render(
       <HistoryList
