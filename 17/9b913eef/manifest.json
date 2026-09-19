@@ -1,0 +1,20 @@
+{
+  "branch": "feat/5-panel-auto-state",
+  "sha": "9b913eef735e581c3266d8e7a91d2b6676017db1",
+  "viewport": "320px × 900px (panel width)",
+  "colorScheme": "light",
+  "names": [
+    "panel-auto-result",
+    "panel-auto-result-with-back",
+    "panel-tuning",
+    "panel-idle-assignments",
+    "mock-frame-2k"
+  ],
+  "diffs": {
+    "panel-auto-result": "N/A (new feature)",
+    "panel-auto-result-with-back": "N/A (new feature)",
+    "panel-tuning": "no change (for comparison)",
+    "panel-idle-assignments": "no change (for comparison)",
+    "mock-frame-2k": "reference design"
+  }
+}
