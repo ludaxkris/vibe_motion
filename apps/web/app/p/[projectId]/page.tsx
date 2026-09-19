@@ -10,7 +10,8 @@ type EditorPageProps = {
  * with the Control Panel (docs/build_plan.md: ~75% preview / ~25% Control
  * Panel, clamped to 20-30%). It owns the screen's own chrome — the top bar is
  * a banner and therefore cannot live inside the page's `<main>`, so neither is
- * in `app/layout.tsx`. The postMessage bridge lands in Phase 4.
+ * in `app/layout.tsx`. The postMessage bridge to the preview iframe is
+ * mounted inside `EditorShell` (`lib/bridge/use-bridge.ts`).
  */
 export default async function EditorPage({ params }: EditorPageProps) {
   const { projectId } = await params;
