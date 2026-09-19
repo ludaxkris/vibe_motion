@@ -426,8 +426,9 @@ type VersionSlice = {
   mode: "editing" | "viewing"; currentVersionId: string | null; viewingVersionId: string | null;
 };
 initialVersionSlice: VersionSlice
+isDirty(slice): boolean                                // false while viewing; else draft differs from current. The store's unsaved selectors delegate here (Task 8)
 loadVersion(slice, versionId, state): VersionSlice     // project open, Back-to-current, after Restore, 409 Discard → editing, clean
-markSaved(slice, version: Version): VersionSlice       // 201: current = draft, id moves
+markSaved(slice, version: Version): VersionSlice       // 201: current = draft, id moves; throws while viewing
 enterViewing(slice, versionId, state): VersionSlice    // throws if the draft is dirty — the guard must run first
 rebaseDraft(slice, newCurrentId, newCurrentState): VersionSlice  // 409 Rebase: my diff on top of theirs
 ```
@@ -577,13 +578,13 @@ Rebase onto `main`. Verify each assumption and fix this plan's text in the same 
 - [ ] The guard was lifted (DT-099): find where `UnsavedGuardDialog` is mounted, what opens it (`selectGuardOpen` / `resolveGuard` per the Phase 4 plan), and that `onSave` is an optional prop rendering disabled when absent.
 - [ ] The bridge client exposes a way to push a whole state (`state:load`) and the shell already mirrors `draftState` into the iframe. If the mirror is per-assignment `apply` only, Task 8 adds a `loadState(state)` call on the four transitions that replace the draft wholesale.
 - [ ] Whether Phase 5 Track A has merged (`panel-machine.ts` `auto` state, `CHANGE` event). If it has not, tell that session via memory.md before touching `store/index.ts` or `control-panel/index.tsx`.
-- [ ] `editor-shell.tsx` still has local `fetchVersions` + the `["project", id, "versions"]` query to replace with `useVersions`.
+- [ ] `editor-shell.tsx` still has local `fetchVersions` + the `["project", id, "versions"]` query to replace with `useVersions`. **Hard rule:** that local query resolves to `Version[]` while `useVersions` resolves to `{ currentVersionId, versions }` under the *same key*. They share one cache entry, so if both are ever mounted together the editor throws on render (`data.find is not a function`). Delete the local `fetchVersions` + query in the **same commit** that first mounts `useVersions` or `HistoryList`; never land a partial wiring step.
 
 ### Task 8: Store wiring
 
 **Files:** Modify `apps/web/lib/store/index.ts` (+ test).
 
-Add `currentVersionId` and `viewingVersionId` to `EditorState` (initial `null`) and four actions that delegate to Task 4: `loadVersion(versionId, state)`, `markSaved(version)`, `enterViewing(versionId, state)`, `exitViewing()`, `rebaseDraft(newCurrentId, state)`. Each is `set((s) => ({ ...transitions.fn(s, …), panel: <see below> }))`. `loadVersion`, `enterViewing`, `exitViewing` and `rebaseDraft` also send the panel through `REVERT` exactly as `revertDraft` does today, so a selected element lands on `tuning` or `selected` according to the new `draftState`. Remove `setMode` if nothing else calls it (grep first). Every draft writer (`setDraftAssignment`, `updateDraftParam`, `removeDraftAssignment`, `dispatchPanel` `PICK`) returns `state` unchanged while `mode === "viewing"` — the store, not just disabled controls, is what makes viewing read-only.
+Add `currentVersionId` and `viewingVersionId` to `EditorState` (initial `null`) and four actions that delegate to Task 4: `loadVersion(versionId, state)`, `markSaved(version)`, `enterViewing(versionId, state)`, `exitViewing()`, `rebaseDraft(newCurrentId, state)`. Each is `set((s) => ({ ...transitions.fn(s, …), panel: <see below> }))`. `loadVersion`, `enterViewing`, `exitViewing` and `rebaseDraft` also send the panel through `REVERT` exactly as `revertDraft` does today, so a selected element lands on `tuning` or `selected` according to the new `draftState`. Remove `setMode` if nothing else calls it (grep first). **Viewing is never "unsaved":** while viewing, `draftState` holds the *viewed* state, so a raw draft-vs-current comparison is true for the whole viewing session. `selectUnsaved`, `selectDirtyVmIds`, `selectDirtyVmIdCount` and `selectGuardedVmId` must delegate to `isDirty(slice)` from `lib/versions/transitions.ts` (false while `mode === "viewing"`); `revertDraft` is a no-op while viewing; `markSaved` throws while viewing (Track A), so Save can never become a backdoor restore. Every draft writer (`setDraftAssignment`, `updateDraftParam`, `removeDraftAssignment`, `dispatchPanel` `PICK`) returns `state` unchanged while `mode === "viewing"` — the store, not just disabled controls, is what makes viewing read-only.
 
 Tests (add to `index.test.ts`): each action's effect on state; `updateDraftParam` is a no-op while viewing; `selectSelectedVmId` survives `enterViewing`; `reset()` clears both new ids.
 
@@ -599,7 +600,7 @@ Tests: MSW-backed, one per outcome above; the 409 case uses a second `saveVersio
 
 **Files:** Modify `control-panel/index.tsx` (mount `HistoryList` in the existing `TabsContent value="history"`), `editor-shell.tsx` (banner + dim overlay over the preview sheet, `pointer-events: none` on the iframe wrapper while viewing), `app/dev/dev-gallery.tsx` (link to `/dev/history`).
 
-View: guard first if dirty (existing tab guard already covers opening History) → `queryClient.fetchQuery({ queryKey: versionStateKey(...), queryFn, staleTime: Infinity })` (a version's state is immutable) → `enterViewing`. Clicking the current version while viewing, or **Back to v5**, → `exitViewing`. **Restore** (row or banner) → `useRestoreVersion` → on `saved`: `fetchVersionState(new.id)` → `loadVersion`, toast `Restored v3 as v6`, tab stays on History. Animate tab controls read `mode` and render disabled while viewing; `element:select` from the bridge is ignored while viewing. The protocol's reserved `mode` message stays unimplemented; log a DT if the overlay proves leaky in e2e.
+View: guard first if dirty (existing tab guard already covers opening History) → `queryClient.fetchQuery({ queryKey: versionStateKey(...), queryFn, staleTime: Infinity })` (a version's state is immutable) → `enterViewing`. Clicking the current version while viewing, or **Back to v5**, → `exitViewing`. **Restore** (row or banner) → `useRestoreVersion` → on `saved`: `fetchVersionState(new.id)` → `loadVersion`, toast `Restored v3 as v6`, tab stays on History. Top bar while viewing: the unsaved dot, **Save** and **Cancel** are hidden (`docs/user_flow.md` mode table: "Controls disabled · Save hidden"); the Esc-deselect gate reads the same mode-aware selector. The History tab renders an error state with a **Retry** button when `useVersions` fails (`retry: false`, same pattern as the editor's project-load error screen). Animate tab controls read `mode` and render disabled while viewing; `element:select` from the bridge is ignored while viewing. The protocol's reserved `mode` message stays unimplemented; log a DT if the overlay proves leaky in e2e.
 
 Tests: RTL for the tab (view → banner → back; restore → list grows, row v(n+1) current); store no-op test from Task 8 covers the read-only guarantee.
 
