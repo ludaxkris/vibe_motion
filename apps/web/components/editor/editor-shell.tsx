@@ -8,8 +8,9 @@ import { ControlPanel } from "@/components/control-panel";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { apiClient, type Assignment, type Project, type Version } from "@/lib/api-client";
+import { env } from "@/lib/env";
 import { useBridge } from "@/lib/bridge/use-bridge";
-import { previewOrigin, previewPageUrl } from "@/lib/preview-url";
+import { previewIsSameOrigin, previewOrigin, previewPageUrl } from "@/lib/preview-url";
 import { forgetRecentProject, rememberRecentProject } from "@/lib/recent-projects";
 import { hostAndPath } from "@/lib/source-url";
 import { useEditorStore, useUnsaved } from "@/lib/store";
@@ -99,6 +100,9 @@ function UnsavedIndicator() {
   );
 }
 
+/** Module-scope so React strict mode's double effect does not say it twice. */
+let warnedAboutSameOrigin = false;
+
 /**
  * Shown when the framed page speaks a protocol this build does not know
  * (spec D7). The shell has stopped sending altogether by then, so the preview
@@ -160,6 +164,22 @@ export function EditorShell({ projectId }: { projectId: string }) {
   // origin every message is checked against can never disagree (spec §2).
   const previewSrc = useMemo(() => previewPageUrl(projectId), [projectId]);
   const expectedOrigin = useMemo(() => previewOrigin(projectId), [projectId]);
+  // `allow-scripts allow-same-origin` is only safe while the frame is
+  // cross-origin with this document; the shell checks rather than assuming.
+  const sameOrigin = useMemo(() => previewIsSameOrigin(projectId), [projectId]);
+  const refusesToFrame = sameOrigin && !env.apiMocking;
+
+  useEffect(() => {
+    if (!sameOrigin || !env.apiMocking || warnedAboutSameOrigin) return;
+    warnedAboutSameOrigin = true;
+    // Dev only, and the framed document is this repo's own fixture rather
+    // than an untrusted clone, so it keeps working — but the origin check the
+    // mock exists to exercise is not being exercised (DT-129).
+    console.warn(
+      "Vibe Motion: the preview frame is same-origin with the editor. Open the app on " +
+        "http://localhost or http://127.0.0.1 so mock mode frames the other loopback host.",
+    );
+  }, [sameOrigin]);
   const { frameRef, handleFrameLoad, status, client } = useBridge({ expectedOrigin });
   const bridgeReady = client !== null && status === "ready";
 
@@ -322,6 +342,21 @@ export function EditorShell({ projectId }: { projectId: string }) {
             className="flex min-w-0 flex-1 flex-col overflow-hidden p-4 pb-0"
           >
             <div className="min-h-0 flex-1 overflow-hidden rounded-t-lg bg-vm-surface shadow-sheet">
+              {refusesToFrame ? (
+                <div
+                  role="alert"
+                  data-testid="preview-origin-refused"
+                  className="flex size-full flex-col items-center justify-center gap-2 p-8 text-center"
+                >
+                  <p className="text-md text-vm-danger">
+                    The preview cannot be shown from this address.
+                  </p>
+                  <p className="max-w-prose text-sm text-vm-ink-2">
+                    The cloned page would be served from the same origin as the editor, which
+                    would let it reach into this page. Serve the API from its own origin.
+                  </p>
+                </div>
+              ) : (
               <iframe
                 ref={frameRef}
                 title="Cloned page preview"
@@ -335,16 +370,22 @@ export function EditorShell({ projectId }: { projectId: string }) {
                 // and a `postMessage` whose `event.origin` is the string
                 // "null" and so cannot be checked against anything (spec §5).
                 //
-                // The pair is only safe because the framed page is never
-                // same-origin with this document — it comes from the API in a
-                // real deployment, and from this machine's *other* loopback
-                // name in mock mode (`lib/preview-url.ts`, spec §2). Together
-                // on a same-origin frame they would let the framed page reach
-                // into this document and unsandbox itself.
+                // The pair is only safe while the framed page is *not*
+                // same-origin with this document: together on a same-origin
+                // frame they let it reach into this one, remove its own
+                // sandbox attribute and reload itself unsandboxed. That is
+                // checked rather than assumed — `previewIsSameOrigin` above
+                // refuses to render this iframe at all outside mock mode, and
+                // warns inside it (the framed document there is this repo's
+                // own fixture, never an untrusted clone). In a real
+                // deployment the page comes from the API's own origin, and in
+                // mock mode from this machine's *other* loopback name
+                // (`lib/preview-url.ts`, spec §2).
                 sandbox="allow-scripts allow-same-origin"
                 className="size-full border-0 bg-vm-surface"
                 style={isDragging ? { pointerEvents: "none" } : undefined}
               />
+              )}
             </div>
           </section>
         )}

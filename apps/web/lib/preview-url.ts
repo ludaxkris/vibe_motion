@@ -61,3 +61,25 @@ export function previewOrigin(
   if (!location) return "";
   return `${location.protocol}//${location.hostname}${location.port ? `:${location.port}` : ""}`;
 }
+
+/**
+ * Would the preview frame share this document's origin?
+ *
+ * The iframe carries `sandbox="allow-scripts allow-same-origin"`, and that
+ * pair is only safe while the framed page is cross-origin with the shell:
+ * together on a same-origin frame they let the framed document reach into this
+ * one, remove its own sandbox attribute and reload itself unsandboxed. Real
+ * mode is cross-origin by construction (two services), and mock mode swaps
+ * loopback names to make it so — but a deployment that proxied the API under
+ * the web origin, or a dev server reached under a hostname with no loopback
+ * sibling, would quietly turn the pair into a no-op. The shell asks before it
+ * frames anything, rather than trusting a comment.
+ */
+export function previewIsSameOrigin(
+  projectId: string,
+  location: PreviewLocation = currentLocation(),
+): boolean {
+  const origin = previewOrigin(projectId, location);
+  if (!origin || !location) return false;
+  return origin === `${location.protocol}//${location.hostname}${location.port ? `:${location.port}` : ""}`;
+}

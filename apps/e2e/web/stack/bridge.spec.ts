@@ -133,3 +133,19 @@ test("switching away from a dirty cloned element raises the guard and holds the 
     expect(value).toBe("");
   }).toPass();
 });
+
+test("the production build serves no mock routes at all", async ({ request }) => {
+  // `lib/env.ts` ANDs `NEXT_PUBLIC_API_MOCKING` with `NODE_ENV !== "production"`,
+  // and Next inlines both at build time — so these two routes cannot serve in
+  // a deployed build whatever the environment says. This is the assertion that
+  // proves it where it matters: the real production image, not a unit test of
+  // the flag. Without it, a web origin could serve the bridge script and a
+  // fixture page, and the sandbox pair on the iframe would stop being safe.
+  for (const path of [
+    "/mock-api/projects/11111111-1111-1111-1111-111111111111/page",
+    "/mock-api/bridge/vm-bridge.js",
+  ]) {
+    const response = await request.get(`${stack.webOrigin}${path}`);
+    expect(response.status(), path).toBe(404);
+  }
+});

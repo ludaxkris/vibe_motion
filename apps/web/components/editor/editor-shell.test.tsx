@@ -539,3 +539,33 @@ describe("EditorShell bridge readiness", () => {
     expect(screen.getByRole("button", { name: "Replay" })).toBeDisabled();
   });
 });
+
+describe("EditorShell sandbox invariant", () => {
+  afterEach(() => {
+    vi.doUnmock("@/lib/preview-url");
+    vi.resetModules();
+  });
+
+  it("refuses to frame a preview that would share the editor's origin", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/preview-url", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("@/lib/preview-url")>();
+      return { ...actual, previewIsSameOrigin: () => true };
+    });
+    const { EditorShell: Shell } = await import("./editor-shell");
+
+    const project = await createProject();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<Shell projectId={project.id} />, {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      ),
+    });
+    await screen.findByText("example.com/pricing");
+
+    // `allow-scripts allow-same-origin` on a same-origin frame lets the framed
+    // page unsandbox itself, so there is no iframe to have the attributes on.
+    expect(screen.getByTestId("preview-origin-refused")).toBeInTheDocument();
+    expect(screen.queryByTitle("Cloned page preview")).not.toBeInTheDocument();
+  });
+});

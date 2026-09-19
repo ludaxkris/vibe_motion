@@ -78,6 +78,35 @@ describe("previewPageUrl / previewOrigin", () => {
     expect(previewOrigin(projectId)).toBe("http://127.0.0.1:3000");
   });
 
+  it("knows when the frame would share the shell's origin", async () => {
+    process.env.NEXT_PUBLIC_API_MOCKING = "enabled";
+    const { previewIsSameOrigin } = await import("./preview-url");
+
+    // Loopback siblings: genuinely cross-origin.
+    expect(previewIsSameOrigin(projectId, at("http://localhost:3000"))).toBe(false);
+    // No sibling to swap to, so the frame lands on this very origin.
+    expect(previewIsSameOrigin(projectId, at("http://192.168.1.9:3000"))).toBe(true);
+    expect(previewIsSameOrigin(projectId, at("http://web:3000"))).toBe(true);
+  });
+
+  it("is never same-origin against a real API on another host", async () => {
+    delete process.env.NEXT_PUBLIC_API_MOCKING;
+    const { previewIsSameOrigin } = await import("./preview-url");
+
+    expect(previewIsSameOrigin(projectId, at("http://localhost:3000"))).toBe(false);
+  });
+
+  it("flags a real deployment that serves the API under the web origin", async () => {
+    delete process.env.NEXT_PUBLIC_API_MOCKING;
+    process.env.NEXT_PUBLIC_API_ORIGIN = "https://app.example.test";
+    try {
+      const { previewIsSameOrigin } = await import("./preview-url");
+      expect(previewIsSameOrigin(projectId, at("https://app.example.test"))).toBe(true);
+    } finally {
+      delete process.env.NEXT_PUBLIC_API_ORIGIN;
+    }
+  });
+
   it("has no frame origin to check against while rendering on the server", async () => {
     process.env.NEXT_PUBLIC_API_MOCKING = "enabled";
     const { previewPageUrl, previewOrigin } = await import("./preview-url");

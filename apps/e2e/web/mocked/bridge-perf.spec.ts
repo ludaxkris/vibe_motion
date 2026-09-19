@@ -358,7 +358,7 @@ test("state:load inserts one rule per distinct keyframes body and reads no layou
   const names = await reloaded.evaluate(
     () =>
       new Set(
-        [...document.querySelectorAll<HTMLElement>('[data-vm-id^="vm-extra-"]')]
+        Array.from(document.querySelectorAll<HTMLElement>('[data-vm-id^="vm-extra-"]'))
           .map((el) => el.style.animationName)
           .filter(Boolean),
       ).size,
