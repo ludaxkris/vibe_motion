@@ -16,14 +16,22 @@ import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
  * same CSS the export ships — so the card is never a hand-drawn impression of
  * the animation. The `@keyframes` themselves are injected once by the picker
  * (`ChoosingPanel`) for every visible entry; this only sets the
- * `animation-*` properties. Hovering does not yet preview on the page itself:
- * that needs the iframe bridge (Phase 4).
+ * `animation-*` properties.
+ *
+ * The same hover also previews the animation on the *page*, transiently and
+ * without touching the draft (spec D4) — that is `onPreviewStart` /
+ * `onPreviewEnd`, which the picker turns into `preview` / `preview:clear`.
+ * Reduced motion stills the local demo but not the page preview: spec §6a is
+ * explicit that the editor preview always plays, and a designer who asked for
+ * a preview asked for it.
  */
 export function AnimationCard({
   entry,
   catalogVersion,
   applied = false,
   onApply,
+  onPreviewStart,
+  onPreviewEnd,
   ref,
 }: {
   entry: CatalogEntry;
@@ -32,6 +40,10 @@ export function AnimationCard({
   /** This is the animation currently on the selected element. */
   applied?: boolean;
   onApply?: () => void;
+  /** Show this entry on the selected element in the preview iframe. */
+  onPreviewStart?: () => void;
+  /** Take it away again. */
+  onPreviewEnd?: () => void;
   ref?: Ref<HTMLButtonElement>;
 }) {
   const [playing, setPlaying] = useState(false);
@@ -41,6 +53,15 @@ export function AnimationCard({
   const demoStyle = playing && !reducedMotion ? catalogInlineStyle(entry, catalogVersion) : undefined;
   const highlighted = playing || applied;
 
+  const enter = () => {
+    setPlaying(true);
+    onPreviewStart?.();
+  };
+  const leave = () => {
+    setPlaying(false);
+    onPreviewEnd?.();
+  };
+
   return (
     <button
       ref={ref}
@@ -49,10 +70,10 @@ export function AnimationCard({
       data-testid="animation-card"
       aria-current={applied ? "true" : undefined}
       onClick={onApply}
-      onMouseEnter={() => setPlaying(true)}
-      onMouseLeave={() => setPlaying(false)}
-      onFocus={() => setPlaying(true)}
-      onBlur={() => setPlaying(false)}
+      onMouseEnter={enter}
+      onMouseLeave={leave}
+      onFocus={enter}
+      onBlur={leave}
       className={cn(
         "flex flex-col gap-1.5 rounded-lg border p-2 text-left",
         "bg-vm-surface transition-[border-color,box-shadow] duration-(--dur-fast) ease-standard",

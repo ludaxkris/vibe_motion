@@ -79,10 +79,13 @@ function ParamControlFor({
   param,
   value,
   onChange,
+  onCommit,
 }: {
   param: CatalogParam;
   value: string;
   onChange: (value: string) => void;
+  /** The drag is over and the value has settled (spec §5: that is when the preview replays). */
+  onCommit?: (value: string) => void;
 }) {
   // `value` goes in so the option list is guaranteed to contain it: a control
   // that cannot show what it is bound to would render with nothing selected.
@@ -91,7 +94,8 @@ function ParamControlFor({
 
   if (control.kind === "slider") {
     const { amount, unit } = splitValue(value);
-    const commit = (next: number) => onChange(joinValue(next, unit || splitValue(param.default).unit));
+    const asValue = (next: number) => joinValue(next, unit || splitValue(param.default).unit);
+    const commit = (next: number) => onChange(asValue(next));
 
     return (
       <>
@@ -105,6 +109,12 @@ function ParamControlFor({
           onValueChange={(next) => {
             const nextAmount = Array.isArray(next) ? (next[0] ?? amount) : next;
             commit(nextAmount);
+          }}
+          // Pointer up (or the keyboard's equivalent): the value the designer
+          // settled on, which is the moment to replay it on the page.
+          onValueCommitted={(next) => {
+            const settled = Array.isArray(next) ? (next[0] ?? amount) : next;
+            onCommit?.(asValue(settled));
           }}
         />
         <NumberField
@@ -197,17 +207,23 @@ export function TuningPanel({
   assignment,
   onTriggerChange,
   onParamChange,
+  onParamCommit,
   onChangeAnimation,
   onRemove,
+  onReplay,
 }: {
   vmId: string;
   entry: CatalogEntry;
   assignment: Assignment;
   onTriggerChange?: (trigger: Trigger) => void;
   onParamChange?: (key: string, value: string) => void;
+  /** A slider was released: the value has settled (spec §5 replays the preview then). */
+  onParamCommit?: (key: string, value: string) => void;
   /** The "Change" link: back to the picker. */
   onChangeAnimation?: () => void;
   onRemove?: () => void;
+  /** Restart the animation in the preview iframe. Absent until the bridge is mounted. */
+  onReplay?: () => void;
 }) {
   return (
     <PanelCard data-testid="panel-tuning">
@@ -239,14 +255,23 @@ export function TuningPanel({
               param={param}
               value={assignment.params[param.key] ?? param.default}
               onChange={(value) => onParamChange?.(param.key, value)}
+              onCommit={(value) => onParamCommit?.(param.key, value)}
             />
           </ParamRow>
         ))}
       </PanelSection>
 
       <PanelSection className="flex-row items-center gap-2">
-        {/* Re-triggering the animation in the preview needs the bridge (Phase 4). */}
-        <Button variant="secondary" size="sm" glyph="↻" glyphTone="ink" disabled>
+        {/* Inert until the shell hands down a live bridge client — there is no
+            preview to replay without one. */}
+        <Button
+          variant="secondary"
+          size="sm"
+          glyph="↻"
+          glyphTone="ink"
+          disabled={!onReplay}
+          onClick={onReplay}
+        >
           Replay
         </Button>
         <Button variant="danger-link" className="ml-auto" onClick={onRemove}>

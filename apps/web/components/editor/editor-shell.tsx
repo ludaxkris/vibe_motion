@@ -2,17 +2,19 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, type ReactNode } from "react";
 
 import { ControlPanel } from "@/components/control-panel";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
-import { apiClient, type Project, type Version } from "@/lib/api-client";
-import { previewPageUrl } from "@/lib/preview-url";
+import { apiClient, type Assignment, type Project, type Version } from "@/lib/api-client";
+import { useBridge } from "@/lib/bridge/use-bridge";
+import { previewOrigin, previewPageUrl } from "@/lib/preview-url";
 import { forgetRecentProject, rememberRecentProject } from "@/lib/recent-projects";
 import { hostAndPath } from "@/lib/source-url";
 import { useEditorStore, useUnsaved } from "@/lib/store";
 
+import { ElementSwitchGuard } from "./element-switch-guard";
 import { SplitPane } from "./split-pane";
 
 /** Thrown by `fetchProject` so the shell can tell a 404 apart from any other failure. */
@@ -97,6 +99,33 @@ function UnsavedIndicator() {
   );
 }
 
+/**
+ * Shown when the framed page speaks a protocol this build does not know
+ * (spec D7). The shell has stopped sending altogether by then, so the preview
+ * is frozen and the only honest instruction is to reload.
+ */
+function VersionMismatchBanner() {
+  return (
+    <div
+      role="alert"
+      className="flex items-center gap-2 border-b border-vm-border bg-vm-accent-tint px-4 py-2 text-sm text-vm-ink"
+    >
+      <span>
+        This preview is running a newer version of Vibe Motion than this tab. Reload the page to
+        pick it up.
+      </span>
+      <Button
+        variant="secondary"
+        size="xs"
+        className="ml-auto"
+        onClick={() => window.location.reload()}
+      >
+        Reload
+      </Button>
+    </div>
+  );
+}
+
 function HelpLink() {
   return (
     // docs/user_flow.md §2: Help opens in a new tab so the draft is untouched.
@@ -117,14 +146,37 @@ function HelpLink() {
  *
  * Loads the project, then hosts the preview iframe in its white sheet (left)
  * and the Control Panel (right) behind a resizable split. Element selection
- * from inside the iframe arrives with the bridge (Phase 4); Save opens the
- * save dialog in Phase 6 and is deliberately inert here.
+ * and live preview come over the bridge mounted on that iframe
+ * (`lib/bridge/use-bridge.ts`); Save opens the save dialog in Phase 6 and is
+ * deliberately inert here.
  */
 export function EditorShell({ projectId }: { projectId: string }) {
   const reset = useEditorStore((state) => state.reset);
   const revertDraft = useEditorStore((state) => state.revertDraft);
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
   const unsaved = useUnsaved();
+
+  // Both derived from the same place, so the `src` the browser loads and the
+  // origin every message is checked against can never disagree (spec §2).
+  const previewSrc = useMemo(() => previewPageUrl(projectId), [projectId]);
+  const expectedOrigin = useMemo(() => previewOrigin(projectId), [projectId]);
+  const { frameRef, handleFrameLoad, status, client } = useBridge({ expectedOrigin });
+
+  const handlePreview = useCallback(
+    (vmId: string, assignment: Assignment) => client?.preview(vmId, assignment),
+    [client],
+  );
+  const handleClearPreview = useCallback(() => client?.clearPreview(), [client]);
+  const handleReplay = useCallback(
+    (vmId: string) => {
+      if (!client) return;
+      // Flush first: a draft change made in this same turn is still sitting in
+      // the client's coalescing frame, and a `replay` that overtook it would
+      // restart the animation the *old* params describe.
+      void client.whenIdle().then(() => client.replay(vmId));
+    },
+    [client],
+  );
 
   // A fresh project means a fresh draft: the previous project's selection and
   // client-side draft must not leak across navigations.
@@ -254,6 +306,8 @@ export function EditorShell({ projectId }: { projectId: string }) {
         </>
       }
     >
+      {status === "version-mismatch" ? <VersionMismatchBanner /> : null}
+
       <SplitPane
         left={(isDragging) => (
           <section
@@ -264,25 +318,25 @@ export function EditorShell({ projectId }: { projectId: string }) {
           >
             <div className="min-h-0 flex-1 overflow-hidden rounded-t-lg bg-vm-surface shadow-sheet">
               <iframe
+                ref={frameRef}
                 title="Cloned page preview"
-                src={previewPageUrl(projectId)}
-                // No `allow-scripts`: the postMessage bridge script arrives in
-                // Phase 4. `allow-same-origin` keeps the framed document on
-                // the API's own origin rather than the unique opaque one a
-                // bare `sandbox` gives it. Relative URLs resolve against the
-                // document's base either way — what an opaque origin costs is
-                // everything origin-derived: no cookies or storage, `Origin:
-                // null` on the requests it makes, and a `postMessage` whose
-                // `event.origin` is the string "null" and so cannot be checked
-                // against anything.
+                src={previewSrc}
+                onLoad={handleFrameLoad}
+                // `allow-scripts` runs the bridge; `allow-same-origin` keeps
+                // the framed document on the origin it was served from rather
+                // than the unique opaque one a bare `sandbox` gives it. An
+                // opaque origin would cost everything origin-derived: `Origin:
+                // null` on its requests, `script-src 'self'` matching nothing,
+                // and a `postMessage` whose `event.origin` is the string
+                // "null" and so cannot be checked against anything (spec §5).
                 //
-                // Phase 4, when the bridge script arrives: never pair
-                // `allow-scripts` with `allow-same-origin` while the framed
-                // page is served from an origin of ours — together they let
-                // the framed page reach into this document, remove its own
-                // sandbox attribute and reload itself unsandboxed. The bridge
-                // needs the cloned page on an origin of its own first.
-                sandbox="allow-same-origin"
+                // The pair is only safe because the framed page is never
+                // same-origin with this document — it comes from the API in a
+                // real deployment, and from this machine's *other* loopback
+                // name in mock mode (`lib/preview-url.ts`, spec §2). Together
+                // on a same-origin frame they would let the framed page reach
+                // into this document and unsandbox itself.
+                sandbox="allow-scripts allow-same-origin"
                 className="size-full border-0 bg-vm-surface"
                 style={isDragging ? { pointerEvents: "none" } : undefined}
               />
@@ -295,9 +349,20 @@ export function EditorShell({ projectId }: { projectId: string }) {
                 the draft forked from, which only this query knows. */}
             <ControlPanel
               currentVersionLabel={currentVersion ? `v${currentVersion.seq}` : undefined}
+              onPreview={client ? handlePreview : undefined}
+              onClearPreview={client ? handleClearPreview : undefined}
+              onReplay={client ? handleReplay : undefined}
             />
           </aside>
         }
+      />
+
+      {/* The guard on switching elements inside the preview. Mounted here, not
+          in the Control Panel, because the click that raises it comes from the
+          iframe this screen owns. DT-099 tracks folding the two mountings into
+          one. */}
+      <ElementSwitchGuard
+        currentVersionLabel={currentVersion ? `v${currentVersion.seq}` : undefined}
       />
     </EditorFrame>
   );

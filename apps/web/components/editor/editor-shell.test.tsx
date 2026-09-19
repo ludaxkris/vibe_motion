@@ -1,12 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { PROTOCOL_VERSION } from "bridge";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse, delay, http } from "msw";
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiClient, type Assignment, type Project } from "@/lib/api-client";
 import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
 import { env } from "@/lib/env";
+import { previewOrigin } from "@/lib/preview-url";
 import { readRecentProjects, rememberRecentProject } from "@/lib/recent-projects";
 import { initialEditorState, selectSelectedVmId, useEditorStore } from "@/lib/store";
 import { server } from "@/mocks/server";
@@ -172,7 +174,9 @@ describe("EditorShell", () => {
     const preview = screen.getByRole("region", { name: "Preview" });
     const iframe = within(preview).getByTitle("Cloned page preview");
     expect(iframe).toHaveAttribute("src", `${env.apiOrigin}/projects/${project.id}/page`);
-    expect(iframe).toHaveAttribute("sandbox", "allow-same-origin");
+    // The bridge needs scripts, and the origin check needs a real origin; the
+    // frame is cross-origin with the shell either way (spec §5).
+    expect(iframe).toHaveAttribute("sandbox", "allow-scripts allow-same-origin");
 
     expect(screen.getByRole("complementary", { name: "Control Panel" })).toBeInTheDocument();
   });
@@ -360,5 +364,105 @@ describe("EditorShell", () => {
     useEditorStore.getState().dispatchPanel({ type: "SELECT", vmId: "vm-something-else" });
     rerender(<EditorShell projectId={projectB.id} />);
     await waitFor(() => expect(selectSelectedVmId(useEditorStore.getState())).toBeNull());
+  });
+});
+
+describe("EditorShell bridge", () => {
+  const info = (vmId: string, tag: string) => ({
+    vmId,
+    tag,
+    role: null,
+    textPreview: "",
+    rect: { x: 0, y: 0, width: 10, height: 10 },
+    pageRect: { x: 0, y: 0, width: 10, height: 10 },
+    order: 0,
+    visible: true,
+  });
+
+  /** A `ready` from the frame, with the `source` the client checks. */
+  function handshake(protocolVersion: number = PROTOCOL_VERSION) {
+    const frame = screen.getByTitle("Cloned page preview") as HTMLIFrameElement;
+    const source = frame.contentWindow;
+    if (source) vi.spyOn(source, "postMessage").mockImplementation(() => {});
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            source: "vibe-motion",
+            type: "ready",
+            payload: { elementCount: 3, bridgeVersion: "1.0.0", protocolVersion },
+          },
+          origin: previewOrigin("ignored"),
+          source,
+        }),
+      );
+    });
+  }
+
+  it("shows a reload banner when the frame speaks a protocol this build does not know", async () => {
+    const project = await createProject();
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    handshake(PROTOCOL_VERSION + 1);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/newer version of Vibe Motion/);
+    expect(screen.getByRole("button", { name: "Reload" })).toBeInTheDocument();
+  });
+
+  it("keeps the banner away once the frame handshakes on the protocol it knows", async () => {
+    const project = await createProject();
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+
+    handshake();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("raises the element-switch guard when a dirty element is clicked away from", async () => {
+    const project = await createProject();
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+
+    act(() => {
+      useEditorStore.getState().rememberElement(info("vm-1", "h1"));
+    });
+    selectAndAnimate("vm-1");
+    await screen.findByText("Unsaved");
+
+    // What an `element:select` from inside the frame does (spec D10): it asks.
+    act(() => {
+      useEditorStore.getState().requestSelect("vm-2");
+    });
+
+    expect(await screen.findByText("Save changes to h1?")).toBeInTheDocument();
+    // The selection has not moved.
+    expect(selectSelectedVmId(useEditorStore.getState())).toBe("vm-1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    await waitFor(() => {
+      expect(selectSelectedVmId(useEditorStore.getState())).toBe("vm-2");
+    });
+    expect(useEditorStore.getState().draftState).toEqual({});
+  });
+
+  it("switches without a dialog while the element is clean", async () => {
+    const project = await createProject();
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+    act(() => {
+      useEditorStore.getState().setSelectedVmId("vm-1");
+    });
+
+    act(() => {
+      useEditorStore.getState().requestSelect("vm-2");
+    });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(selectSelectedVmId(useEditorStore.getState())).toBe("vm-2");
   });
 });

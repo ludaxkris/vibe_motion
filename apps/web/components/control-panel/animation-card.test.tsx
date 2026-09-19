@@ -94,3 +94,34 @@ describe("AnimationCard", () => {
     expect(screen.getByRole("button", { name: entry.name })).not.toHaveAttribute("aria-current");
   });
 });
+
+describe("AnimationCard preview seam", () => {
+  it("asks for a preview on the page while hovered or focused, and to clear it on the way out", () => {
+    const onPreviewStart = vi.fn();
+    const onPreviewEnd = vi.fn();
+    const { card } = renderCard({ onPreviewStart, onPreviewEnd });
+
+    fireEvent.mouseEnter(card);
+    expect(onPreviewStart).toHaveBeenCalledOnce();
+
+    fireEvent.mouseLeave(card);
+    expect(onPreviewEnd).toHaveBeenCalledOnce();
+
+    // Keyboard reaches the same preview: the grid is arrow-navigable.
+    fireEvent.focus(card);
+    expect(onPreviewStart).toHaveBeenCalledTimes(2);
+    fireEvent.blur(card);
+    expect(onPreviewEnd).toHaveBeenCalledTimes(2);
+  });
+
+  it("previews even when the local demo is stilled by reduced motion", () => {
+    stubReducedMotion(true);
+    const onPreviewStart = vi.fn();
+    const { card, demo } = renderCard({ onPreviewStart });
+
+    fireEvent.mouseEnter(card);
+
+    expect(demo.getAttribute("style") ?? "").not.toContain("animation-name");
+    expect(onPreviewStart).toHaveBeenCalledOnce();
+  });
+});

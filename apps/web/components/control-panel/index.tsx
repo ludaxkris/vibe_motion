@@ -1,11 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { UnsavedGuardDialog } from "@/components/dialogs/unsaved-guard-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { Trigger } from "@/lib/api-client";
-import { ALL_CATEGORIES, getCatalogEntryAt } from "@/lib/catalog";
+import type { Assignment, Trigger } from "@/lib/api-client";
+import {
+  ALL_CATEGORIES,
+  CURRENT_CATALOG_VERSION,
+  getCatalogEntry,
+  getCatalogEntryAt,
+  resolveCatalogParams,
+} from "@/lib/catalog";
 import {
   selectDirtyVmIdCount,
   selectGuardedVmId,
@@ -35,11 +41,31 @@ function PlaceholderTab({ children }: { children: string }) {
  * are this visit's filter, not editor state, and they reset with the element
  * (the caller keys this by `vmId`).
  */
-function ChoosingSection({ vmId }: { vmId: string }) {
+function ChoosingSection({
+  vmId,
+  onPreview,
+  onClearPreview,
+}: {
+  vmId: string;
+  onPreview?: (vmId: string, assignment: Assignment) => void;
+  onClearPreview?: () => void;
+}) {
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
   const appliedAnimationId = useEditorStore((state) => state.draftState[vmId]?.animationId);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
+
+  // The picker owns the preview's whole life, and it has to end it itself.
+  // A card that is hovered and then *clicked* never gets its `mouseleave`: the
+  // pick unmounts the grid out from under the pointer. The preview would then
+  // outlive the picker, and because a preview sits on top of the applied
+  // assignment (spec D6) every later `apply` — a tuned param, a Discard's
+  // revert — would land underneath it and never be seen.
+  const clearPreview = useRef(onClearPreview);
+  useEffect(() => {
+    clearPreview.current = onClearPreview;
+  }, [onClearPreview]);
+  useEffect(() => () => clearPreview.current?.(), []);
 
   return (
     <ChoosingPanel
@@ -51,8 +77,31 @@ function ChoosingSection({ vmId }: { vmId: string }) {
       onCategoryChange={setCategory}
       onPick={(animationId) => dispatchPanel({ type: "PICK", animationId })}
       onBack={() => dispatchPanel({ type: "BACK" })}
+      // Exactly what picking the card would create, so the preview is the
+      // truth about the click and not an approximation of it.
+      onPreview={(animationId) => {
+        const assignment = defaultAssignment(animationId);
+        if (assignment) onPreview?.(vmId, assignment);
+      }}
+      onPreviewEnd={onClearPreview}
     />
   );
+}
+
+/**
+ * The assignment a `PICK` would create: catalog defaults, pinned to the
+ * current version, on the entry's own default trigger. Same construction as
+ * the store's `PICK` branch, which is what the preview has to stand in for.
+ */
+function defaultAssignment(animationId: string): Assignment | undefined {
+  const entry = getCatalogEntry(animationId);
+  if (!entry) return undefined;
+  return {
+    animationId: entry.id,
+    catalogVersion: CURRENT_CATALOG_VERSION,
+    trigger: entry.defaultTrigger ?? entry.triggers[0],
+    params: resolveCatalogParams(entry),
+  };
 }
 
 /**
@@ -69,7 +118,15 @@ function ChoosingSection({ vmId }: { vmId: string }) {
  * version never had would write a value that version cannot validate
  * (CLAUDE.md rule 9). That is also why the assignment is read before the entry.
  */
-function TuningSection({ vmId, animationId }: { vmId: string; animationId: string }) {
+function TuningSection({
+  vmId,
+  animationId,
+  onReplay,
+}: {
+  vmId: string;
+  animationId: string;
+  onReplay?: (vmId: string) => void;
+}) {
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
   const setDraftAssignment = useEditorStore((state) => state.setDraftAssignment);
   const updateDraftParam = useEditorStore((state) => state.updateDraftParam);
@@ -108,6 +165,16 @@ function TuningSection({ vmId, animationId }: { vmId: string; animationId: strin
       assignment={assignment}
       onTriggerChange={(trigger: Trigger) => setDraftAssignment(vmId, { ...assignment, trigger })}
       onParamChange={(key, value) => updateDraftParam(vmId, key, value)}
+      // A released slider replays the preview (spec §5), so the designer sees
+      // the value they landed on rather than only its tail.
+      onParamCommit={
+        onReplay &&
+        ((key, value) => {
+          updateDraftParam(vmId, key, value);
+          onReplay(vmId);
+        })
+      }
+      onReplay={onReplay && (() => onReplay(vmId))}
       onChangeAnimation={() => dispatchPanel({ type: "BACK" })}
       onRemove={() => {
         removeDraftAssignment(vmId);
@@ -135,7 +202,19 @@ const TABS = [
  * Element selection from the preview iframe arrives with the bridge (Phase 4);
  * until then `panel` is only advanced from here, `/dev` and tests.
  */
-export function ControlPanel({ currentVersionLabel }: { currentVersionLabel?: string }) {
+export function ControlPanel({
+  currentVersionLabel,
+  onPreview,
+  onClearPreview,
+  onReplay,
+}: {
+  currentVersionLabel?: string;
+  /** Show an animation transiently on the page (spec D4). Absent until the bridge is mounted. */
+  onPreview?: (vmId: string, assignment: Assignment) => void;
+  onClearPreview?: () => void;
+  /** Restart one element's animation in the preview iframe. */
+  onReplay?: (vmId: string) => void;
+}) {
   const panel = useEditorStore((state) => state.panel);
   const draftState = useEditorStore((state) => state.draftState);
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
@@ -208,10 +287,19 @@ export function ControlPanel({ currentVersionLabel }: { currentVersionLabel?: st
               />
             )}
             {panel.status === "choosing" && (
-              <ChoosingSection key={panel.vmId} vmId={panel.vmId} />
+              <ChoosingSection
+                key={panel.vmId}
+                vmId={panel.vmId}
+                onPreview={onPreview}
+                onClearPreview={onClearPreview}
+              />
             )}
             {panel.status === "tuning" && (
-              <TuningSection vmId={panel.vmId} animationId={panel.animationId} />
+              <TuningSection
+                vmId={panel.vmId}
+                animationId={panel.animationId}
+                onReplay={onReplay}
+              />
             )}
           </TabsContent>
 

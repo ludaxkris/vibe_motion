@@ -300,3 +300,18 @@ describe("ChoosingPanel", () => {
     expect(within(container).getAllByTestId("animation-card").length).toBe(entries.length);
   });
 });
+
+describe("ChoosingPanel preview seam", () => {
+  it("names the entry the pointer is on, and says when it has left", () => {
+    const onPreview = vi.fn();
+    const onPreviewEnd = vi.fn();
+    renderPicker({ onPreview, onPreviewEnd });
+
+    const card = screen.getByRole("button", { name: entries[0].name });
+    fireEvent.mouseEnter(card);
+    expect(onPreview).toHaveBeenCalledWith(entries[0].id);
+
+    fireEvent.mouseLeave(card);
+    expect(onPreviewEnd).toHaveBeenCalledOnce();
+  });
+});

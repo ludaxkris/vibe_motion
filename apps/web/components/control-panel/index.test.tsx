@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CURRENT_CATALOG_VERSION } from "@/lib/catalog";
 import { initialEditorState, useEditorStore } from "@/lib/store";
@@ -318,5 +318,100 @@ describe("ControlPanel · unsaved guard", () => {
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Export" })).toHaveAttribute("data-active");
+  });
+});
+
+describe("ControlPanel bridge seams", () => {
+  function choosing() {
+    useEditorStore.getState().dispatchPanel({ type: "SELECT", vmId: "vm-1" });
+    useEditorStore.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
+  }
+
+  it("previews exactly what picking the hovered card would apply", () => {
+    const onPreview = vi.fn();
+    const onClearPreview = vi.fn();
+    choosing();
+    render(<ControlPanel onPreview={onPreview} onClearPreview={onClearPreview} />);
+
+    const card = screen.getByRole("button", { name: "Fade In Up" });
+    fireEvent.mouseEnter(card);
+
+    expect(onPreview).toHaveBeenCalledWith("vm-1", {
+      animationId: "fade-in-up",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: "load",
+      params: expect.objectContaining({ duration: expect.any(String) }),
+    });
+    // …and it stays a preview: the draft is untouched (CLAUDE.md rule 9).
+    expect(useEditorStore.getState().draftState).toEqual({});
+
+    fireEvent.mouseLeave(card);
+    expect(onClearPreview).toHaveBeenCalledOnce();
+  });
+
+  it("ends the preview when the picker goes away, whatever took it away", () => {
+    const onClearPreview = vi.fn();
+    choosing();
+    const view = render(<ControlPanel onPreview={vi.fn()} onClearPreview={onClearPreview} />);
+
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Fade In Up" }));
+    // A pick unmounts the grid under the pointer, so the card never gets its
+    // `mouseleave` — and a preview left behind would sit on top of every
+    // later apply (spec D6).
+    fireEvent.click(screen.getByRole("button", { name: "Fade In Up" }));
+
+    expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
+    expect(onClearPreview).toHaveBeenCalled();
+
+    onClearPreview.mockClear();
+    view.unmount();
+  });
+
+  it("ends the preview when the element is deselected out from under the picker", () => {
+    const onClearPreview = vi.fn();
+    choosing();
+    render(<ControlPanel onPreview={vi.fn()} onClearPreview={onClearPreview} />);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Fade In Up" }));
+
+    act(() => {
+      useEditorStore.getState().dispatchPanel({ type: "DESELECT" });
+    });
+
+    expect(onClearPreview).toHaveBeenCalled();
+  });
+
+  it("leaves the picker inert when there is no bridge to preview on", () => {
+    choosing();
+    render(<ControlPanel />);
+
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Fade In Up" }));
+
+    expect(useEditorStore.getState().draftState).toEqual({});
+  });
+
+  it("replays the element being tuned, and again when a slider is released", () => {
+    const onReplay = vi.fn();
+    choosing();
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in" });
+    render(<ControlPanel onReplay={onReplay} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+    expect(onReplay).toHaveBeenCalledWith("vm-1");
+
+    const slider = screen.getByLabelText("Duration");
+    slider.focus();
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    fireEvent.keyUp(slider, { key: "ArrowRight" });
+
+    expect(onReplay).toHaveBeenCalledTimes(2);
+    expect(useEditorStore.getState().draftState["vm-1"]?.params.duration).toBe("650ms");
+  });
+
+  it("keeps Replay disabled while no bridge is mounted", () => {
+    choosing();
+    useEditorStore.getState().dispatchPanel({ type: "PICK", animationId: "fade-in" });
+    render(<ControlPanel />);
+
+    expect(screen.getByRole("button", { name: "Replay" })).toBeDisabled();
   });
 });
