@@ -39,6 +39,11 @@ projects:
               paths:
                 - apps/api/**
                 - packages/animation-catalog/**
+                # The jar bakes packages/bridge/src/vm-bridge.js in (bridgeResources),
+                # so a bridge-only change has to rebuild this service too — otherwise
+                # the web app ships new protocol constants while the api keeps serving
+                # the old script.
+                - packages/bridge/**
                 - render.yaml
             envVars:
               - key: DATABASE_URL
@@ -83,6 +88,9 @@ projects:
               paths:
                 - apps/web/**
                 - packages/animation-catalog/**
+                # apps/web imports the protocol types, constants and validation from
+                # this package (and serves the script itself in mock mode).
+                - packages/bridge/**
                 - pnpm-lock.yaml
                 - package.json
                 - render.yaml
