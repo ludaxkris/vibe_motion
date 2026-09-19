@@ -84,6 +84,21 @@ describe("TuningPanel", () => {
     expect(onChangeAnimation).toHaveBeenCalledOnce();
   });
 
+  it("has no ‹ control unless it was given somewhere to go back to", () => {
+    renderTuning("fade-in-up");
+
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+  });
+
+  it("shows ‹ when onBack is passed, and calls it", () => {
+    const onBack = vi.fn();
+    renderTuning("fade-in-up", { onBack });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
   it("offers only the triggers the entry declares, in the handoff's words", () => {
     const { entry, onTriggerChange } = renderTuning("fade-in-up");
 

@@ -37,4 +37,26 @@ describe("SelectedPanel", () => {
 
     expect(onChooseCustom).toHaveBeenCalledOnce();
   });
+
+  it("has no ‹ control unless it was given somewhere to go back to", () => {
+    render(<SelectedPanel vmId="vm-42" />);
+
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+  });
+
+  it("says Esc returns to the list when opened from it, since that is what Esc does there", () => {
+    render(<SelectedPanel vmId="vm-42" onBack={() => undefined} />);
+
+    expect(screen.getByText("No animation yet · Esc returns to the list")).toBeInTheDocument();
+    expect(screen.queryByText(/Esc to deselect/)).not.toBeInTheDocument();
+  });
+
+  it("shows ‹ when onBack is passed, and calls it", () => {
+    const onBack = vi.fn();
+    render(<SelectedPanel vmId="vm-42" onBack={onBack} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(onBack).toHaveBeenCalledOnce();
+  });
 });

@@ -9,12 +9,14 @@ import type { Assignment, EditorStateMap } from "@/lib/api-client";
 import { getCatalogEntryAt } from "@/lib/catalog";
 
 import { PanelCard, PanelSection } from "./panel-card";
+import { rowMeta } from "./row-meta";
 
-/** "load · 600ms · 0ms" — the handoff's row meta. */
 function assignmentMeta(assignment: Assignment): string {
-  return [assignment.trigger, assignment.params.duration, assignment.params.delay]
-    .filter(Boolean)
-    .join(" · ");
+  return rowMeta({
+    trigger: assignment.trigger,
+    duration: assignment.params.duration,
+    delay: assignment.params.delay,
+  });
 }
 
 /**

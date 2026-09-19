@@ -69,6 +69,66 @@ describe("ControlPanel", () => {
     expect(screen.queryByText(/No animation yet/)).not.toBeInTheDocument();
   });
 
+  it("Change dispatches CHANGE, so BACK stays free to mean 'up one level'", () => {
+    const store = useEditorStore.getState();
+    store.dispatchPanel({ type: "SELECT", vmId: "vm-1" });
+    store.dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    store.dispatchPanel({ type: "PICK", animationId: "fade-in" });
+    // As if the element had been opened from the result list: BACK from here
+    // would land on `auto`, CHANGE must land on the picker.
+    store.dispatchPanel({ type: "AUTO_DONE" });
+    render(<ControlPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+
+    expect(useEditorStore.getState().panel).toEqual({
+      status: "choosing",
+      vmId: "vm-1",
+      returnTo: "auto",
+    });
+  });
+
+  it("tuning and selected show ‹ only when opened from the result list", () => {
+    const store = useEditorStore.getState();
+    store.dispatchPanel({ type: "SELECT", vmId: "vm-1" });
+    const { unmount } = render(<ControlPanel />);
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+    unmount();
+
+    store.dispatchPanel({ type: "AUTO_DONE" });
+    render(<ControlPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(useEditorStore.getState().panel).toEqual({ status: "auto" });
+    expect(screen.getByTestId("panel-auto-result")).toBeInTheDocument();
+  });
+
+  it("‹ on a tuning panel opened from the result list returns to the list", () => {
+    const store = useEditorStore.getState();
+    store.dispatchPanel({ type: "SELECT", vmId: "vm-1" });
+    store.dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    store.dispatchPanel({ type: "PICK", animationId: "fade-in" });
+    store.dispatchPanel({ type: "AUTO_DONE" });
+    render(<ControlPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(useEditorStore.getState().panel).toEqual({ status: "auto" });
+  });
+
+  it("renders the result list in the auto state, and ‹ closes it to idle", () => {
+    useEditorStore.getState().dispatchPanel({ type: "AUTO_DONE" });
+    render(<ControlPanel />);
+
+    expect(screen.getByTestId("panel-auto-result")).toBeInTheDocument();
+    // Until Track B wires them, no control may look live and do nothing.
+    expect(screen.getByRole("button", { name: "Regenerate" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(useEditorStore.getState().panel).toEqual({ status: "idle" });
+  });
+
   it("re-picking the card already applied keeps what was tuned", () => {
     const store = useEditorStore.getState();
     store.dispatchPanel({ type: "SELECT", vmId: "vm-1" });

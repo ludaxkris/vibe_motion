@@ -19,6 +19,7 @@ import {
   type EditorState,
 } from "@/lib/store";
 
+import { AutoResultPanel } from "./auto-result";
 import { ChoosingPanel } from "./choosing";
 import { IdlePanel } from "./idle";
 import { PanelCard, PanelSection } from "./panel-card";
@@ -135,10 +136,12 @@ function TuningSection({
   vmId,
   animationId,
   onReplay,
+  onBack,
 }: {
   vmId: string;
   animationId: string;
   onReplay?: (vmId: string) => void;
+  onBack?: () => void;
 }) {
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
   const setDraftAssignment = useEditorStore((state) => state.setDraftAssignment);
@@ -169,8 +172,10 @@ function TuningSection({
     removeDraftAssignment(vmId);
     dispatchPanel({ type: "CLEAR" });
   }, [removeDraftAssignment, dispatchPanel, vmId]);
+  // CHANGE, not BACK: BACK means "up one level", which from a tuning panel
+  // opened from the result list is the list, not the picker.
   const handleChangeAnimation = useCallback(
-    () => dispatchPanel({ type: "BACK" }),
+    () => dispatchPanel({ type: "CHANGE" }),
     [dispatchPanel],
   );
 
@@ -209,6 +214,7 @@ function TuningSection({
       onParamCommit={handleParamCommit}
       onReplay={handleReplay}
       onChangeAnimation={handleChangeAnimation}
+      onBack={onBack}
       onRemove={handleRemove}
     />
   );
@@ -220,8 +226,12 @@ const TABS = [
   { value: "export", label: "Export" },
 ] as const;
 
+/** Stable: the `auto` state has no rows until Phase 5 Track B derives them. */
+const NO_ROWS: never[] = [];
+
 /**
- * Control Panel: idle -> selected -> choosing -> tuning, driven by the
+ * Control Panel: idle -> selected -> choosing -> tuning (+ the `auto` result
+ * list), driven by the
  * `panel` state machine (`lib/store/panel-machine.ts`), under the handoff's
  * folder tabs (`docs/design/README.md` "2. Editor").
  *
@@ -250,6 +260,13 @@ export function ControlPanel({
   const revertDraft = useEditorStore((state) => state.revertDraft);
   const unsaved = useUnsaved();
 
+  // "‹" on selected/tuning exists only for an element opened from the result
+  // list; everywhere else there is no level above to go back up to.
+  const backToResults =
+    "returnTo" in panel && panel.returnTo === "auto"
+      ? () => dispatchPanel({ type: "BACK" })
+      : undefined;
+
   // The tab is controlled so an unsaved draft can hold the switch: the guard
   // parks the requested tab here and `onValueChange` is simply not honoured
   // until the user says what to do with the draft (docs/user_flow.md §1,
@@ -268,6 +285,8 @@ export function ControlPanel({
   const unsavedElementCount = useEditorStore(selectDirtyVmIdCount);
   // Scalars, not the draft map: this panel must not wake up on a slider tick.
   const guardedAnimationName = useEditorStore(selectGuardedAnimationName);
+  // A stable action, so subscribing to it never re-renders this panel.
+  const setSelectedVmId = useEditorStore((state) => state.setSelectedVmId);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -303,10 +322,34 @@ export function ControlPanel({
         <div className="min-h-0 flex-1 overflow-y-auto px-3">
           <TabsContent value="animate">
             {panel.status === "idle" && <IdleSection />}
+            {/* Unreachable in the app until Phase 5 Track B (Tasks 4-5): nothing
+                dispatches AUTO_DONE yet, and the rows, prompt, Regenerate,
+                Replay all and Remove all need store state (`lastRun`,
+                `generated`, `prompt`) that lands there. What needs no new
+                state is already wired: row -> select, "‹" -> AUTO_CLOSE. The
+                rest is disabled, so no control looks live and does nothing. */}
+            {panel.status === "auto" && (
+              <AutoResultPanel
+                rows={NO_ROWS}
+                prompt=""
+                skippedCount={0}
+                truncated={false}
+                consideredLimit={0}
+                onSelectRow={setSelectedVmId}
+                onRegenerate={() => undefined}
+                onReplayAll={() => undefined}
+                onRemoveAll={() => undefined}
+                onClose={() => dispatchPanel({ type: "AUTO_CLOSE" })}
+                regenerateDisabled
+                replayDisabled
+                removeAllDisabled
+              />
+            )}
             {panel.status === "selected" && (
               <SelectedPanel
                 vmId={panel.vmId}
                 onChooseCustom={() => dispatchPanel({ type: "CHOOSE_CUSTOM" })}
+                onBack={backToResults}
               />
             )}
             {panel.status === "choosing" && (
@@ -322,6 +365,7 @@ export function ControlPanel({
                 vmId={panel.vmId}
                 animationId={panel.animationId}
                 onReplay={onReplay}
+                onBack={backToResults}
               />
             )}
           </TabsContent>
