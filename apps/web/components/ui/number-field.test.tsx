@@ -124,6 +124,22 @@ describe("NumberField", () => {
     expect(onCommit).toHaveBeenLastCalledWith(650);
   });
 
+  it("redraws the box even when the step lands back on the committed value", () => {
+    const { onCommit, field } = renderField();
+
+    // Typed 550, then ArrowUp: 550 + 50 is 600, which is what is committed
+    // already — so there is nothing to commit, but the box must stop showing
+    // 550, or blurring would commit the number the arrow key argued against.
+    fireEvent.change(field, { target: { value: "550" } });
+    fireEvent.keyDown(field, { key: "ArrowUp" });
+
+    expect(field).toHaveValue("600");
+    expect(onCommit).not.toHaveBeenCalled();
+
+    fireEvent.blur(field);
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
   it("stops stepping at the ends of the range", () => {
     const { onCommit, field } = renderField(3000);
 

@@ -82,8 +82,11 @@ export function NumberField({
     const from = parseDraft() ?? value
     // Floating-point steps (scale is 0.01) would otherwise drift to 1.0500000001.
     const next = clamp(Number((from + direction * step).toFixed(10)))
-    if (next === value) return
+    // The box follows the step even when there is nothing to commit — a
+    // half-typed 550 stepped up to the committed 600 has to stop reading 550,
+    // or the blur that follows would commit the opposite of what was asked.
     setDraft(String(next))
+    if (next === value) return
     onCommit?.(next)
   }
 
