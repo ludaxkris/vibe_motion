@@ -12,18 +12,34 @@ It is a shared contract (CLAUDE.md rule 6): additive changes only.
 | File | What |
 |---|---|
 | `src/vm-bridge.js` | The bridge itself. One IIFE, `"use strict"`, `// @ts-check`, no imports, no exports, **no build step**. |
-| `src/protocol.ts` | Message types, `AppliedAssignment`, `ElementInfo`, the validation regexes, `IN_VIEW_THRESHOLD`, `BULK_APPLY_LIMIT`. |
+| `src/protocol.ts` | Message types, `AppliedAssignment`, `ElementInfo`, the validation regexes, `IN_VIEW_THRESHOLD`, `BULK_APPLY_LIMIT`, `ELEMENTS_QUERY_LIMIT` / `ELEMENTS_QUERY_MAX`. |
 | `test/harness.ts` | `loadBridge(html)` — builds a JSDOM, stubs `window.parent`, evaluates the script and hands back a controllable frame (fake `IntersectionObserver`, fake `requestAnimationFrame`, recorded posts). |
 | `e2e/harness.ts` | `mountBridge(page, body)` — the same script in a real browser: the test page is the shell on one origin, the framed page is the clone on another, and a third origin hosts a frame that tries to talk to the bridge. Everything is fulfilled by `page.route`, so there is no app and no API to start. |
 
 `vm-bridge.js` is a **plain classic script**, not a module. It is loaded into someone else's page
 under a CSP of `script-src 'self'; connect-src 'none'`: no `eval`, no injected inline script, no
 network call. It cannot `import` `protocol.ts`, so it duplicates the three validation regexes and
-`typecheck` (tsc with `checkJs`) checks it against the JSDoc types; `test/render.test.ts` asserts
-the two copies of the regexes are byte-identical.
+the shared constants, and `typecheck` (tsc with `checkJs`) checks it against the JSDoc types;
+`test/protocol.test.ts` ("parity with the bridge script") and `test/render.test.ts` assert the
+two copies are identical.
 
 The bridge is a **dumb renderer** (spec D1): the shell computes every byte of CSS and sends it in
 an `AppliedAssignment`. The bridge never reads the catalog and never builds a keyframes name.
+
+### Element discovery (`elements:query` → `elements:list`, bridge ≥ 1.1.0)
+
+The one read-only message pair, added for Phase 5's agent (spec §3, "`elements:query` rules").
+The shell sends `{ filter?: { tags?, minWidth?, minHeight? }, limit? }` **with a `seq`** and gets
+back `elements:list { seq, elements: ElementInfo[], truncated, viewport }`, then the ack.
+
+- Visible elements only, in document order; `"button"` in `tags` also matches `role="button"`.
+- `limit` defaults to `ELEMENTS_QUERY_LIMIT` (200), clamped to `[1, ELEMENTS_QUERY_MAX]` (500).
+- Non-finite numbers, a non-object `filter` or non-array `tags` → `invalid-payload`, no list.
+- No `seq` → nothing is posted. A bridge older than 1.1.0 ignores the type entirely, so check
+  `ready.bridgeVersion` first and time out rather than wait.
+- The tag/role filter runs **before** any measurement: a clone tags every element under
+  `<body>`, and `ElementInfo.textPreview` reads `textContent`, so always send `tags`.
+- The handler writes nothing. `e2e/` holds it to `ack.ms` < 50 ms on a 2,000-element page.
 
 Everything it injects into the page is prefixed:
 
@@ -89,11 +105,13 @@ three wrong while every jsdom test passed. So `e2e/` exists for exactly that cla
 | the selection ring tracks a nested scroller | `getBoundingClientRect()` returns zeros |
 | a message from a third origin is never acked | needs three real origins |
 | `baseStyles` and `keyframesCss` cannot escape their rules | needs a real CSS parser |
+| `elements:query` returns real rects, skips `display:none`, reports the viewport, and meets its 50 ms budget on 2,000 elements | `getBoundingClientRect()` returns zeros, so jsdom tests stub it per element |
 
 Still unproven anywhere, and worth knowing:
 
-- `ElementInfo.rect` / `pageRect` / `visible` are exercised but never meaningfully asserted
-  (`visible` is always `false` under jsdom).
+- `ElementInfo.rect` / `pageRect` / `visible` on `element:hover` / `element:select` are exercised
+  but never meaningfully asserted (`visible` is always `false` under jsdom). The same function
+  builds `elements:list`, where `e2e/` does assert them.
 - Where the overlay boxes actually land: which element they are drawn around is asserted through
   `data-vm-hovered` / `data-vm-selected` and the ring's rect is checked in `e2e/`, but the 6px
   offset and the label position are not.
