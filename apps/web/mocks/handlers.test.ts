@@ -10,6 +10,9 @@ import type { StaleParentError } from "@/lib/api-client";
 
 import { CLONE_FAILURE_HOSTS, UNREACHABLE_HOST } from "./db";
 
+/** `{ params: { path: { projectId } } }`, which every project route takes. */
+const pathParams = (projectId: string) => ({ params: { path: { projectId } } });
+
 describe("mock API: projects", () => {
   it("rejects a non-http(s)/invalid URL with the contract's validation error", async () => {
     const { response, data, error } = await apiClient.POST("/projects", {
@@ -69,6 +72,54 @@ describe("mock API: projects", () => {
         "rate-limited.test",
       ]),
     );
+  });
+
+  // The service parses every path id with `UUID.fromString` and maps the
+  // failure to 400 `bad_request` (apps/api `routes/ProjectRoutes.kt`
+  // `uuidParameter`, `Application.kt`), so a malformed id is a malformed
+  // request here too — not a missing resource.
+  it.each([
+    ["get project", () => apiClient.GET("/projects/{projectId}", pathParams("not-a-uuid"))],
+    ["delete project", () => apiClient.DELETE("/projects/{projectId}", pathParams("not-a-uuid"))],
+    ["get page", () => apiClient.GET("/projects/{projectId}/page", pathParams("not-a-uuid"))],
+    [
+      "list versions",
+      () => apiClient.GET("/projects/{projectId}/versions", pathParams("not-a-uuid")),
+    ],
+    ["export", () => apiClient.GET("/projects/{projectId}/export", pathParams("not-a-uuid"))],
+  ])("400s %s for a projectId that is not a uuid", async (_name, call) => {
+    const { response, data, error } = await call();
+
+    expect(response.status).toBe(400);
+    expect(data).toBeUndefined();
+    expect(error?.code).toBe("bad_request");
+    expect(error?.message).toBeTruthy();
+  });
+
+  it("400s for a versionId that is not a uuid", async () => {
+    const { response, error } = await apiClient.GET(
+      "/projects/{projectId}/versions/{versionId}/state",
+      {
+        params: {
+          path: {
+            projectId: "00000000-0000-0000-0000-000000000000",
+            versionId: "not-a-uuid",
+          },
+        },
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(error?.code).toBe("bad_request");
+  });
+
+  it("still 404s a well-formed id that names nothing", async () => {
+    const { response, error } = await apiClient.GET("/projects/{projectId}", {
+      params: { path: { projectId: "00000000-0000-0000-0000-000000000000" } },
+    });
+
+    expect(response.status).toBe(404);
+    expect(error?.code).toBe("not_found");
   });
 
   it("404s when fetching an unknown project's page", async () => {

@@ -38,6 +38,27 @@ import {
 
 const api = (path: string): string => `${env.apiOrigin}${path}`;
 
+/** RFC 4122 shape, which is all `UUID.fromString` in the service accepts. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The 400 the service returns for a path id that is not a uuid
+ * (`apps/api/.../routes/ProjectRoutes.kt` `uuidParameter` →
+ * `BadRequestException` → `Application.kt`'s `bad_request` handler), or
+ * `undefined` when every id is well formed.
+ *
+ * A malformed id is a malformed *request*, not a missing resource, and the
+ * mock has to agree: the editor's "No project found for this link" screen is
+ * reached by a typo in the URL bar far more often than by a real 404, and
+ * until this existed only the real API produced the status that path sees.
+ */
+function badPathId(...ids: string[]): Response | undefined {
+  const invalid = ids.find((id) => !UUID_PATTERN.test(id));
+  if (invalid === undefined) return undefined;
+  const body: ApiError = { code: "bad_request", message: `id must be a uuid, got '${invalid}'` };
+  return HttpResponse.json(body, { status: 400 });
+}
+
 export const handlers = [
   http.get(api("/health"), () => {
     const body: Health = { status: "ok", db: "ok", version: "mock" };
@@ -74,7 +95,11 @@ export const handlers = [
   }),
 
   http.get(api("/projects/:projectId"), ({ params }) => {
-    const project = getProject(params.projectId as string);
+    const projectId = params.projectId as string;
+    const malformed = badPathId(projectId);
+    if (malformed) return malformed;
+
+    const project = getProject(projectId);
     if (!project) {
       const body: ApiError = { code: "not_found", message: "No such project" };
       return HttpResponse.json(body, { status: 404 });
@@ -83,7 +108,11 @@ export const handlers = [
   }),
 
   http.delete(api("/projects/:projectId"), ({ params }) => {
-    const deleted = deleteProject(params.projectId as string);
+    const projectId = params.projectId as string;
+    const malformed = badPathId(projectId);
+    if (malformed) return malformed;
+
+    const deleted = deleteProject(projectId);
     if (!deleted) {
       const body: ApiError = { code: "not_found", message: "No such project" };
       return HttpResponse.json(body, { status: 404 });
@@ -92,7 +121,11 @@ export const handlers = [
   }),
 
   http.get(api("/projects/:projectId/page"), ({ params }) => {
-    const html = getProjectPageHtml(params.projectId as string);
+    const projectId = params.projectId as string;
+    const malformed = badPathId(projectId);
+    if (malformed) return malformed;
+
+    const html = getProjectPageHtml(projectId);
     if (html === undefined) {
       const body: ApiError = { code: "not_found", message: "No such project" };
       return HttpResponse.json(body, { status: 404 });
@@ -103,7 +136,11 @@ export const handlers = [
   // -- Versions ---------------------------------------------------------------
 
   http.get(api("/projects/:projectId/versions"), ({ params }) => {
-    const result = listVersions(params.projectId as string);
+    const projectId = params.projectId as string;
+    const malformed = badPathId(projectId);
+    if (malformed) return malformed;
+
+    const result = listVersions(projectId);
     if (!result) {
       const body: ApiError = { code: "not_found", message: "No such project" };
       return HttpResponse.json(body, { status: 404 });
@@ -112,6 +149,9 @@ export const handlers = [
   }),
 
   http.post(api("/projects/:projectId/versions"), async ({ params, request }) => {
+    const malformed = badPathId(params.projectId as string);
+    if (malformed) return malformed;
+
     const body = (await request.json()) as CreateVersionRequest;
     const diff: Diff = body.diff;
     const result = createVersion(params.projectId as string, {
@@ -124,6 +164,9 @@ export const handlers = [
   }),
 
   http.get(api("/projects/:projectId/versions/:versionId/state"), ({ params }) => {
+    const malformed = badPathId(params.projectId as string, params.versionId as string);
+    if (malformed) return malformed;
+
     const result = getVersionState(params.projectId as string, params.versionId as string);
     if (!result) {
       const body: ApiError = { code: "not_found", message: "No such project or version" };
@@ -133,6 +176,9 @@ export const handlers = [
   }),
 
   http.post(api("/projects/:projectId/versions/:versionId/restore"), async ({ params, request }) => {
+    const malformed = badPathId(params.projectId as string, params.versionId as string);
+    if (malformed) return malformed;
+
     let label: string | undefined;
     try {
       const body = (await request.json()) as { label?: string } | null;
@@ -149,6 +195,9 @@ export const handlers = [
   // -- Export -------------------------------------------------------------
 
   http.get(api("/projects/:projectId/export"), ({ params, request }) => {
+    const malformed = badPathId(params.projectId as string);
+    if (malformed) return malformed;
+
     const url = new URL(request.url);
     const versionId = url.searchParams.get("versionId") ?? undefined;
     const mode = (url.searchParams.get("mode") as "full" | "snippet" | null) ?? undefined;
