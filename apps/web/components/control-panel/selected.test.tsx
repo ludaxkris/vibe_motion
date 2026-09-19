@@ -37,4 +37,19 @@ describe("SelectedPanel", () => {
 
     expect(onChooseCustom).toHaveBeenCalledOnce();
   });
+
+  it("has no ‹ control unless it was given somewhere to go back to", () => {
+    render(<SelectedPanel vmId="vm-42" />);
+
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+  });
+
+  it("shows ‹ when onBack is passed, and calls it", () => {
+    const onBack = vi.fn();
+    render(<SelectedPanel vmId="vm-42" onBack={onBack} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(onBack).toHaveBeenCalledOnce();
+  });
 });

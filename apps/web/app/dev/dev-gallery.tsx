@@ -4,6 +4,7 @@ import { getEntry } from "animation-catalog";
 import { cn } from "cn";
 import { useId, useState, type ReactNode } from "react";
 
+import { AutoResultPanel, type AutoResultRow } from "@/components/control-panel/auto-result";
 import { ChoosingPanel } from "@/components/control-panel/choosing";
 import { IdlePanel } from "@/components/control-panel/idle";
 import { SelectedPanel } from "@/components/control-panel/selected";
@@ -96,6 +97,39 @@ const SAMPLE_DIFF = summariseDiff(SAVED_STATE, DRAFT_STATE, getEntry);
 const SAMPLE_FAILURE = describeCloneFailure(
   new CloneRequestError(422, "login_required", "login required"),
 );
+
+/** What a page auto-generate run leaves behind; the middle row has been hand-tuned since. */
+const AUTO_RESULT_ROWS: AutoResultRow[] = [
+  {
+    vmId: VM_HEADLINE,
+    tag: "h1",
+    animationName: "Fade In Up",
+    trigger: "load",
+    duration: "600ms",
+    delay: "0ms",
+    edited: false,
+  },
+  {
+    vmId: "vm-5",
+    tag: "p",
+    animationName: "Fade In",
+    trigger: "in-view",
+    duration: "900ms",
+    delay: "60ms",
+    edited: true,
+  },
+  {
+    vmId: VM_CTA,
+    tag: "a",
+    animationName: "Pulse",
+    trigger: "hover",
+    duration: "400ms",
+    delay: "0ms",
+    edited: false,
+  },
+];
+
+const noop = () => {};
 
 function Frame({
   slug,
@@ -313,6 +347,25 @@ export function DevGallery() {
           bodyClassName={PANEL_FRAME}
         >
           <TuningFrame animationId="spin" />
+        </Frame>
+
+        <Frame
+          slug="panel-auto-result"
+          title="Auto-generate result"
+          note="One row per element of the last run; a row tuned by hand since keeps its place with a quiet “edited” tag."
+          bodyClassName={PANEL_FRAME}
+        >
+          <AutoResultPanel
+            rows={AUTO_RESULT_ROWS}
+            prompt="calm, staggered entrances, nothing loops"
+            skippedCount={4}
+            truncated={false}
+            onSelectRow={noop}
+            onRegenerate={noop}
+            onReplayAll={noop}
+            onRemoveAll={noop}
+            onClose={noop}
+          />
         </Frame>
       </Group>
 

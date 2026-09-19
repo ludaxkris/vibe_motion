@@ -17,6 +17,7 @@ const FRAMES = [
   "dev-frame-panel-tuning-distance",
   "dev-frame-panel-tuning-scale",
   "dev-frame-panel-tuning-selects",
+  "dev-frame-panel-auto-result",
   "dev-frame-dialog-unsaved-guard",
   "dev-frame-dialog-unsaved-guard-many",
   "dev-frame-dialog-save",
