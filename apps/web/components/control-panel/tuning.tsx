@@ -19,6 +19,7 @@ import { Slider } from "@/components/ui/slider";
 import type { Assignment, CatalogEntry, CatalogParam, Trigger } from "@/lib/api-client";
 import { easingCurvePath } from "@/lib/easing-curve";
 
+import { PanelBackButton } from "./panel-back-button";
 import { PanelCard, PanelSection } from "./panel-card";
 import { paramControl, paramLabel } from "./param-control";
 import { joinValue, splitValue } from "./param-value";
@@ -220,14 +221,7 @@ export function TuningPanel({
       <PanelSection>
         <div className="flex min-w-0 items-center gap-2">
           {onBack ? (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Back"
-              glyph="‹"
-              onClick={onBack}
-              className="-ml-1.5 text-lg"
-            />
+            <PanelBackButton onClick={onBack} />
           ) : null}
           <ElementTag>{vmId}</ElementTag>
           <span className="min-w-0 flex-1 truncate text-md font-semibold">{entry.name}</span>

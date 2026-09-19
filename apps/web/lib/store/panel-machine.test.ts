@@ -348,11 +348,24 @@ describe("transition", () => {
       expect(transition(choosingAFromAuto, events.CLEAR)).toEqual(selectedAFromAuto);
       expect(transition(selectedAFromAuto, events.CLEAR)).toBe(selectedAFromAuto);
     });
-    it("REVERT preserves returnTo", () => {
-      expect(transition(tuningAFromAuto, events.REVERT)).toEqual(selectedAFromAuto);
-      expect(transition(selectedAFromAuto, events.REVERT_WITH_DRAFT)).toEqual(tuningAFromAuto);
-      expect(transition(selectedAFromAuto, events.REVERT)).toBe(selectedAFromAuto);
-      expect(transition(tuningAFromAuto, events.REVERT_WITH_DRAFT)).toBe(tuningAFromAuto);
+    it("REVERT drops returnTo: the whole draft is gone, generated work included, so there is no list to go back to", () => {
+      expect(transition(tuningAFromAuto, events.REVERT)).toEqual(selectedA);
+      expect(transition(tuningAFromAuto, events.REVERT)).not.toHaveProperty("returnTo");
+      expect(transition(choosingAFromAuto, events.REVERT)).toEqual(selectedA);
+      expect(transition(choosingAFromAuto, events.REVERT)).not.toHaveProperty("returnTo");
+      expect(transition(selectedAFromAuto, events.REVERT)).toEqual(selectedA);
+      expect(transition(selectedAFromAuto, events.REVERT)).not.toHaveProperty("returnTo");
+    });
+    it("REVERT that leaves an assignment drops returnTo too, even onto the same animation", () => {
+      expect(transition(selectedAFromAuto, events.REVERT_WITH_DRAFT)).toEqual(tuningA);
+      expect(transition(choosingAFromAuto, events.REVERT_WITH_DRAFT)).toEqual(tuningA);
+      const reverted = transition(tuningAFromAuto, events.REVERT_WITH_DRAFT);
+      expect(reverted).toEqual(tuningA);
+      expect(reverted).not.toHaveProperty("returnTo");
+    });
+    it("REVERT without returnTo keeps its identity no-ops", () => {
+      expect(transition(selectedA, events.REVERT)).toBe(selectedA);
+      expect(transition(tuningA, events.REVERT_WITH_DRAFT)).toBe(tuningA);
     });
     it("BACK from tuning -> the list", () => {
       expect(transition(tuningAFromAuto, events.BACK)).toEqual(auto);

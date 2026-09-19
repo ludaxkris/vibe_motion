@@ -121,6 +121,8 @@ describe("ControlPanel", () => {
     render(<ControlPanel />);
 
     expect(screen.getByTestId("panel-auto-result")).toBeInTheDocument();
+    // Until Track B wires them, no control may look live and do nothing.
+    expect(screen.getByRole("button", { name: "Regenerate" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
 

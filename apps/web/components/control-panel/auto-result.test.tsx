@@ -47,6 +47,7 @@ function renderResult(props: Partial<AutoResultProps> = {}) {
       prompt="calm, staggered entrances, nothing loops"
       skippedCount={0}
       truncated={false}
+      consideredLimit={200}
       {...handlers}
       {...props}
     />,
@@ -59,14 +60,20 @@ describe("AutoResultPanel", () => {
     renderResult();
 
     expect(screen.getByTestId("panel-auto-result")).toBeInTheDocument();
-    expect(screen.getByRole("heading")).toHaveTextContent("✦ Generated 3 animations");
+    expect(screen.getByTestId("auto-result-title")).toHaveTextContent("✦ Generated 3 animations");
   });
 
   it("says '1 animation' for a single row", () => {
     renderResult({ rows: ROWS.slice(0, 1) });
 
-    expect(screen.getByRole("heading")).toHaveTextContent("✦ Generated 1 animation");
-    expect(screen.getByRole("heading")).not.toHaveTextContent("animations");
+    expect(screen.getByTestId("auto-result-title")).toHaveTextContent("✦ Generated 1 animation");
+    expect(screen.getByTestId("auto-result-title")).not.toHaveTextContent("animations");
+  });
+
+  it("titles the panel the way tuning and choosing do, not with a heading element", () => {
+    renderResult();
+
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
   });
 
   it("Regenerate calls onRegenerate", () => {
@@ -123,19 +130,64 @@ describe("AutoResultPanel", () => {
     expect(onSelectRow).toHaveBeenCalledExactlyOnceWith("vm-7");
   });
 
-  it("a row is a button, so Enter on it selects its element too", () => {
-    const { onSelectRow } = renderResult();
+  it("a row is a native button, so it is keyboard-activatable without a key handler", () => {
+    renderResult();
     const row = screen.getAllByTestId("auto-result-row")[0];
 
-    // A native <button> turns Enter into a click; jsdom does not synthesise
-    // that, so assert the element type and fire what the browser would.
     expect(row.tagName).toBe("BUTTON");
+    expect(row).toHaveAttribute("type", "button");
     row.focus();
     expect(row).toHaveFocus();
-    fireEvent.keyDown(row, { key: "Enter" });
-    fireEvent.click(row);
+  });
 
-    expect(onSelectRow).toHaveBeenCalledExactlyOnceWith("vm-3");
+  it("names each row by animation, tag and vmId, so same-tag rows read apart", () => {
+    renderResult();
+
+    expect(screen.getByRole("button", { name: "Tune Fade In Up on h1 (vm-3)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tune Fade In on p (vm-7)" })).toBeInTheDocument();
+  });
+
+  it("leaves no empty segment in the meta when a timing is missing", () => {
+    renderResult({ rows: [{ ...ROWS[0], duration: "", delay: "" }, { ...ROWS[1], duration: "" }] });
+
+    const metas = screen.getAllByTestId("auto-result-row-meta");
+    expect(metas[0].textContent).toBe("load");
+    expect(metas[1].textContent).toBe("in-view · 60ms");
+  });
+
+  it("lets a long tag widen its chip rather than clipping it", () => {
+    renderResult({ rows: [{ ...ROWS[0], tag: "blockquote" }] });
+
+    const chip = screen.getByText("blockquote");
+    expect(chip).toHaveClass("min-w-[58px]", "text-center");
+    expect(chip).not.toHaveClass("truncate");
+  });
+
+  describe("with no rows left", () => {
+    it("says so instead of rendering an empty list", () => {
+      renderResult({ rows: [] });
+
+      expect(screen.getByText("No generated animations left.")).toBeInTheDocument();
+      expect(screen.queryByRole("list")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("auto-result-caption")).not.toBeInTheDocument();
+    });
+
+    it("still offers Regenerate and the way out", () => {
+      const { onRegenerate, onClose } = renderResult({ rows: [] });
+
+      fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+      expect(onRegenerate).toHaveBeenCalledOnce();
+      expect(onClose).toHaveBeenCalledOnce();
+    });
+
+    it("has nothing to replay or remove", () => {
+      renderResult({ rows: [] });
+
+      expect(screen.queryByRole("button", { name: "Replay all" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Remove all" })).not.toBeInTheDocument();
+    });
   });
 
   it("captions the list with how to tune", () => {
@@ -171,6 +223,32 @@ describe("AutoResultPanel", () => {
     expect(screen.getByTestId("auto-result-caption")).toHaveTextContent(
       "Only the first 200 elements were considered.",
     );
+  });
+
+  it("states the limit the query actually used", () => {
+    renderResult({ truncated: true, consideredLimit: 500 });
+
+    expect(screen.getByTestId("auto-result-caption")).toHaveTextContent(
+      "Only the first 500 elements were considered.",
+    );
+  });
+
+  it("Regenerate is disabled when regenerateDisabled", () => {
+    const { onRegenerate } = renderResult({ regenerateDisabled: true });
+
+    const regenerate = screen.getByRole("button", { name: "Regenerate" });
+    expect(regenerate).toBeDisabled();
+    fireEvent.click(regenerate);
+    expect(onRegenerate).not.toHaveBeenCalled();
+  });
+
+  it("Remove all is disabled when removeAllDisabled", () => {
+    const { onRemoveAll } = renderResult({ removeAllDisabled: true });
+
+    const removeAll = screen.getByRole("button", { name: "Remove all" });
+    expect(removeAll).toBeDisabled();
+    fireEvent.click(removeAll);
+    expect(onRemoveAll).not.toHaveBeenCalled();
   });
 
   it("Replay all calls onReplayAll", () => {

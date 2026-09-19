@@ -137,7 +137,6 @@ const TABS = [
 
 /** Stable: the `auto` state has no rows until Phase 5 Track B derives them. */
 const NO_ROWS: never[] = [];
-const noop = () => {};
 
 /**
  * Control Panel: idle -> selected -> choosing -> tuning (+ the `auto` result
@@ -229,19 +228,23 @@ export function ControlPanel({ currentVersionLabel }: { currentVersionLabel?: st
                 dispatches AUTO_DONE yet, and the rows, prompt, Regenerate,
                 Replay all and Remove all need store state (`lastRun`,
                 `generated`, `prompt`) that lands there. What needs no new
-                state is already wired: row -> select, "‹" -> AUTO_CLOSE. */}
+                state is already wired: row -> select, "‹" -> AUTO_CLOSE. The
+                rest is disabled, so no control looks live and does nothing. */}
             {panel.status === "auto" && (
               <AutoResultPanel
                 rows={NO_ROWS}
                 prompt=""
                 skippedCount={0}
                 truncated={false}
+                consideredLimit={0}
                 onSelectRow={setSelectedVmId}
-                onRegenerate={noop}
-                onReplayAll={noop}
-                onRemoveAll={noop}
+                onRegenerate={() => undefined}
+                onReplayAll={() => undefined}
+                onRemoveAll={() => undefined}
                 onClose={() => dispatchPanel({ type: "AUTO_CLOSE" })}
+                regenerateDisabled
                 replayDisabled
+                removeAllDisabled
               />
             )}
             {panel.status === "selected" && (

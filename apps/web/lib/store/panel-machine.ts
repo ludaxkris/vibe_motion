@@ -71,8 +71,10 @@ function carryReturnTo(state: PanelState): { returnTo?: "auto" } {
  *   `tuning` back down to `selected`, since nothing about the element
  *   actually changed. Reselecting it *with* the draft it is already being
  *   tuned on is a no-op for the same reason. From `auto`, or from a state
- *   that has `returnTo: "auto"`, the new state carries `returnTo: "auto"`;
- *   the same-element identity checks compare `returnTo` too.
+ *   that has `returnTo: "auto"`, the new state carries `returnTo: "auto"`.
+ *   The same-element identity no-ops stay sound without comparing `returnTo`:
+ *   a state with an element in play is never `auto`, so the `returnTo` the new
+ *   state would carry is exactly the one the current state already has.
  * - `DESELECT` returns to `idle` from any state with an element in play — or
  *   to `auto` when that state has `returnTo: "auto"`. From `auto` itself it is
  *   a no-op (identity): a background click or Esc must not throw the list
@@ -95,9 +97,12 @@ function carryReturnTo(state: PanelState): { returnTo?: "auto" } {
  * - `REVERT` follows the element the panel is on after the draft is thrown
  *   away: `tuning` when it still has an assignment, `selected` when the revert
  *   took it away, `idle` untouched (docs/design/README.md, "Interactions").
- *   From `auto` it lands on `idle`: the generated assignments are gone.
- * - `CHOOSE_CUSTOM`, `PICK`, `CHANGE`, `CLEAR`, `REVERT` and `BACK` out of
- *   `choosing` all preserve `returnTo`.
+ *   From `auto` it lands on `idle`: the generated assignments are gone. For
+ *   the same reason it *drops* `returnTo` — a revert throws away the whole
+ *   draft, everything the agent generated included, so "‹" would lead to an
+ *   empty list.
+ * - `CHOOSE_CUSTOM`, `PICK`, `CHANGE`, `CLEAR` and `BACK` out of `choosing`
+ *   all preserve `returnTo`.
  * - `AUTO_DONE` lands on `auto` from `idle` (identity when already `auto`).
  *   From `selected`/`choosing`/`tuning` the panel does not move — the query
  *   can take seconds, and if the designer selected something meanwhile the
@@ -110,8 +115,7 @@ export function transition(state: PanelState, event: PanelEvent): PanelState {
     case "SELECT": {
       const returnTo =
         state.status === "auto" ? ({ returnTo: "auto" } as const) : carryReturnTo(state);
-      const sameElement =
-        hasElement(state) && state.vmId === event.vmId && state.returnTo === returnTo.returnTo;
+      const sameElement = hasElement(state) && state.vmId === event.vmId;
 
       if (event.draftAnimationId) {
         // Reselecting the element already being tuned, on the same animation,
@@ -183,20 +187,22 @@ export function transition(state: PanelState, event: PanelEvent): PanelState {
       if (state.status === "idle") return state;
       if (state.status === "auto") return { status: "idle" };
 
+      // The whole draft is gone — generated work included — so there is no
+      // result list left to return to: `returnTo` is dropped, and a state
+      // that carried one is never an identity no-op.
+      const fromList = state.returnTo === "auto";
+
       if (event.draftAnimationId) {
-        return state.status === "tuning" && state.animationId === event.draftAnimationId
+        return !fromList &&
+          state.status === "tuning" &&
+          state.animationId === event.draftAnimationId
           ? state
-          : {
-              status: "tuning",
-              vmId: state.vmId,
-              animationId: event.draftAnimationId,
-              ...carryReturnTo(state),
-            };
+          : { status: "tuning", vmId: state.vmId, animationId: event.draftAnimationId };
       }
 
-      return state.status === "selected"
+      return !fromList && state.status === "selected"
         ? state
-        : { status: "selected", vmId: state.vmId, ...carryReturnTo(state) };
+        : { status: "selected", vmId: state.vmId };
     }
 
     case "AUTO_DONE":
