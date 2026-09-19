@@ -13,10 +13,12 @@ const projectId = "11111111-1111-1111-1111-111111111111";
  * `localhost`, so the `Host` header is the only faithful record of which
  * loopback name the browser asked for — which is exactly what the route reads.
  */
-async function get(host = "127.0.0.1:3000") {
+async function get(host = "127.0.0.1:3000", query = "") {
   const { GET } = await import("./route");
   return GET(
-    new NextRequest(`http://${host}/mock-api/projects/${projectId}/page`, { headers: { host } }),
+    new NextRequest(`http://${host}/mock-api/projects/${projectId}/page${query}`, {
+      headers: { host },
+    }),
   );
 }
 
@@ -98,6 +100,22 @@ describe("GET /mock-api/projects/[projectId]/page", () => {
 
     expect(fromKotlin).not.toBe("");
     expect(BASE_POLICY).toBe(fromKotlin);
+  });
+
+  it("grows to the size the performance spec needs, and no further", async () => {
+    process.env.NEXT_PUBLIC_API_MOCKING = "enabled";
+
+    const html = await (await get("127.0.0.1:3000", "?vmExtraElements=200")).text();
+    expect(html.match(/data-vm-id="vm-extra-/g)).toHaveLength(200);
+    expect(html.indexOf("vm-bridge.js")).toBeGreaterThan(html.lastIndexOf("vm-extra-200"));
+
+    const capped = await (await get("127.0.0.1:3000", "?vmExtraElements=999999")).text();
+    expect(capped.match(/data-vm-id="vm-extra-/g)).toHaveLength(1000);
+
+    for (const bad of ["", "?vmExtraElements=nope", "?vmExtraElements=-5"]) {
+      const html = await (await get("127.0.0.1:3000", bad)).text();
+      expect(html).not.toContain("vm-extra-");
+    }
   });
 
   it("404s when mocking is off", async () => {

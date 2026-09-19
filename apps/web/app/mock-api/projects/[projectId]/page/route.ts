@@ -29,6 +29,25 @@ export const dynamic = "force-dynamic";
 /** Where the mock serves the script; the API uses `/bridge/vm-bridge.js`. */
 const BRIDGE_PATH = "/mock-api/bridge/vm-bridge.js";
 
+/**
+ * `?vmExtraElements=N` appends N more tagged paragraphs.
+ *
+ * Only the performance spec asks for it (spec §6 budgets `state:load` at 200
+ * assignments, and the fixture has twelve elements). A real clone is whatever
+ * size the page was, so this is the mock standing in for a big one rather than
+ * a second fixture to keep in step. Capped so a stray value cannot make the
+ * dev server build a megabyte of markup.
+ */
+const MAX_EXTRA_ELEMENTS = 1000;
+
+function extraElements(count: number): string {
+  let html = "";
+  for (let index = 1; index <= count; index += 1) {
+    html += `<p data-vm-id="vm-extra-${index}">Filler element ${index}.</p>`;
+  }
+  return html;
+}
+
 function escapeAttribute(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -62,16 +81,22 @@ export function GET(request: NextRequest): NextResponse {
   const url = servedOrigin(request);
   const shellOrigin = siblingLoopbackOrigin(url) ?? url.origin;
 
+  const requested = Number(new URL(request.url).searchParams.get("vmExtraElements") ?? 0);
+  const extra = Number.isFinite(requested)
+    ? Math.min(Math.max(Math.trunc(requested), 0), MAX_EXTRA_ELEMENTS)
+    : 0;
+
   const tag =
     `<script src="${escapeAttribute(BRIDGE_PATH)}" ` +
     `data-vm-parent-origin="${escapeAttribute(shellOrigin)}" defer></script>`;
   // The fixture ends with `</body></html>`; the API inserts at the last
   // `</body`, and one `lastIndexOf` is the same insertion point here.
   const bodyEnd = pageFixtureHtml.lastIndexOf("</body");
+  const inserted = extraElements(extra) + tag;
   const html =
     bodyEnd < 0
-      ? pageFixtureHtml + tag
-      : pageFixtureHtml.slice(0, bodyEnd) + tag + pageFixtureHtml.slice(bodyEnd);
+      ? pageFixtureHtml + inserted
+      : pageFixtureHtml.slice(0, bodyEnd) + inserted + pageFixtureHtml.slice(bodyEnd);
 
   return new NextResponse(html, {
     headers: {
