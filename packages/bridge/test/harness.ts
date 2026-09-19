@@ -98,7 +98,9 @@ export type Harness = {
    * Install a fake `Element.getAnimations` on one element. jsdom has none, so without this the
    * bridge's "was this cancel ours?" check cannot be exercised in either direction.
    */
-  setLiveAnimations(vmId: string, names: string[] | null): void;
+  setLiveAnimations(vmId: string, names: string[] | null, playState?: string): void;
+  /** jsdom has no layout, so a test that cares about the overlay's box supplies one. */
+  setRect(vmId: string, rect: { x: number; y: number; width: number; height: number }): void;
   /** Put the body back and fire DOMContentLoaded, for a harness built with `beforeBody`. */
   completeLoad(): void;
   destroy(): void;
@@ -333,13 +335,20 @@ export function loadBridge(
       if (detachedBody && !detachedBody.parentNode) document.documentElement.appendChild(detachedBody);
       document.dispatchEvent(new window.Event("DOMContentLoaded", { bubbles: true }));
     },
-    setLiveAnimations(vmId, names) {
-      const target = el(vmId) as unknown as { getAnimations?: () => Array<{ animationName: string }> };
+    setLiveAnimations(vmId, names, playState = "running") {
+      const target = el(vmId) as unknown as {
+        getAnimations?: () => Array<{ animationName: string; playState: string }>;
+      };
       if (names === null) {
         delete target.getAnimations;
         return;
       }
-      target.getAnimations = () => names.map((animationName) => ({ animationName }));
+      target.getAnimations = () => names.map((animationName) => ({ animationName, playState }));
+    },
+    setRect(vmId, rect) {
+      const target = el(vmId);
+      target.getBoundingClientRect = () =>
+        ({ ...rect, top: rect.y, left: rect.x, right: rect.x + rect.width, bottom: rect.y + rect.height, toJSON: () => rect }) as DOMRect;
     },
     animationEvent(vmId, opts = {}) {
       const event = new window.Event(opts.type ?? "animationend", { bubbles: true });

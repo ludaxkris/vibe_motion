@@ -406,3 +406,42 @@ test("keyframes css that is not exactly one matching @keyframes rule is rejected
   expect(await h.frame.evaluate(() => getComputedStyle(document.body).display)).not.toBe("none");
   expect(await h.inline("vm-a", "animation-name")).toBe("");
 });
+
+test("the selection ring marks the resting box, not the box mid-animation", async ({ page }) => {
+  const h = await mountBridge(
+    page,
+    `<div class="spacer" style="height:80px"></div>
+     <div class="box" data-vm-id="vm-1">Headline</div>`,
+  );
+
+  const resting = await h.rect('[data-vm-id="vm-1"]');
+  await h.send("select", { vmId: "vm-1", label: "div" });
+  await h.send(
+    "apply",
+    assignment("vm-1", {
+      keyframesName: "vm-fade-in-up-v1-1-0",
+      keyframesCss:
+        "@keyframes vm-fade-in-up-v1-1-0 { from { opacity: 0; transform: translateY(24px) } to { opacity: 1; transform: none } }",
+      style: { "animation-duration": "1200ms", "animation-fill-mode": "both" },
+    }),
+  );
+
+  // Mid-flight the element really is 24px low…
+  await page.waitForTimeout(150);
+  const moved = await h.rect('[data-vm-id="vm-1"]');
+  expect(moved.y).toBeGreaterThan(resting.y);
+
+  // …and the ring stays on the resting box regardless. Sampled repeatedly:
+  // scroll, resize and every message schedule a reposition.
+  for (let sample = 0; sample < 4; sample += 1) {
+    await h.send("replay", { vmId: "vm-1" });
+    await page.waitForTimeout(80);
+    const ring = await h.rect("[data-vm-overlay-ring]");
+    expect(Math.abs(ring.y - resting.y), `sample ${sample}`).toBeLessThanOrEqual(1);
+  }
+
+  // And after it finishes, the ring is still right where the element is.
+  await page.waitForTimeout(1400);
+  const settled = await h.rect("[data-vm-overlay-ring]");
+  expect(Math.abs(settled.y - resting.y)).toBeLessThanOrEqual(1);
+});

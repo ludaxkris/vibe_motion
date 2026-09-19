@@ -19,7 +19,7 @@
   "use strict";
 
   /** Parsed out of this file by the API at build time; never hand-synced into Kotlin. */
-  var BRIDGE_VERSION = "1.0.0";
+  var BRIDGE_VERSION = "1.0.1";
   var MESSAGE_SOURCE = "vibe-motion";
   var PROTOCOL_VERSION = 1;
   /** Kept in sync with IN_VIEW_THRESHOLD in src/protocol.ts; the Phase 7 exporter uses it too. */
@@ -792,6 +792,9 @@
   var selectBox = /** @type {HTMLElement | null} */ (null);
   var selectLabel = /** @type {HTMLElement | null} */ (null);
   var selectedVmId = /** @type {string | null} */ (null);
+  /** Which element each box was last *measured* against; see `positionBox`. */
+  var hoverBoxVmId = /** @type {string | null} */ (null);
+  var selectBoxVmId = /** @type {string | null} */ (null);
   var overlayFrame = 0;
 
   var BOX_BASE = "position:fixed;left:0;top:0;width:0;height:0;box-sizing:border-box;display:none;pointer-events:none;";
@@ -827,26 +830,74 @@
   }
 
   /**
-   * @param {HTMLElement | null} box
-   * @param {Element | undefined} el
+   * Is one of *our* animations moving this element right now?
+   *
+   * `getAnimations()` also returns animations that have finished but still
+   * fill (`fill-mode: both`, which most entrance animations use), and those
+   * leave the element at its resting box — so play state is the question, not
+   * existence. A host animation does not count: the ring has to keep following
+   * an element the page itself is moving.
+   *
+   * @param {string} vmId
    */
-  function positionBox(box, el) {
-    if (!box) return;
+  function isMidOwnAnimation(vmId) {
+    var record = records.get(vmId);
+    if (!record) return false;
+    var assignment = effective(record);
+    if (!assignment) return false;
+    var el = record.el;
+    if (typeof el.getAnimations !== "function") return false;
+    var running = el.getAnimations();
+    for (var i = 0; i < running.length; i += 1) {
+      var animation = /** @type {CSSAnimation} */ (running[i]);
+      if (!animation || animation.animationName !== assignment.keyframesName) continue;
+      // Only "running". A *paused* one — an `in-view` element held at its
+      // first keyframe — is sitting still at the box the designer can see, so
+      // the ring should mark that; and freezing on it would stop the ring
+      // following a scroll for as long as the element stayed off-screen.
+      if (animation.playState === "running") return true;
+    }
+    return false;
+  }
+
+  /**
+   * Draw one overlay box on `vmId`, and answer which element it is now measured
+   * against.
+   *
+   * The ring marks the element's *resting* box. Measuring it mid-animation
+   * reads the translated one — a Fade In Up would sit the ring exactly its
+   * `distance` below the element for the length of the play, and with a replay
+   * on every slider release that is most of the time. So once a box is drawn
+   * for an element, it is left alone while our animation is running on it; the
+   * `animationend` / `animationcancel` resync below puts it right. A box moving
+   * to a *new* element still measures once, because a ring that never appeared
+   * would be worse than one that is briefly offset.
+   *
+   * @param {HTMLElement | null} box
+   * @param {string | null} vmId
+   * @param {string | null} drawnFor  which element this box was last measured against
+   * @returns {string | null}
+   */
+  function positionBox(box, vmId, drawnFor) {
+    if (!box) return drawnFor;
+    var el = vmId ? elements.get(vmId) : undefined;
     if (!el) {
       box.style.display = "none";
-      return;
+      return null;
     }
+    if (vmId !== null && drawnFor === vmId && isMidOwnAnimation(vmId)) return drawnFor;
     var rect = el.getBoundingClientRect();
     box.style.display = "block";
     box.style.left = rect.left + "px";
     box.style.top = rect.top + "px";
     box.style.width = rect.width + "px";
     box.style.height = rect.height + "px";
+    return vmId;
   }
 
   function syncOverlay() {
-    positionBox(hoverBox, hoveredVmId ? elements.get(hoveredVmId) : undefined);
-    positionBox(selectBox, selectedVmId ? elements.get(selectedVmId) : undefined);
+    hoverBoxVmId = positionBox(hoverBox, hoveredVmId, hoverBoxVmId);
+    selectBoxVmId = positionBox(selectBox, selectedVmId, selectBoxVmId);
   }
 
   var overlayResize = /** @type {ResizeObserver | null} */ (null);
@@ -984,7 +1035,7 @@
       if (nearest) overlayRoot.setAttribute(HOVERED_ATTR, nearest);
       else overlayRoot.removeAttribute(HOVERED_ATTR);
     }
-    positionBox(hoverBox, nearest ? elements.get(nearest) : undefined);
+    hoverBoxVmId = positionBox(hoverBox, nearest, hoverBoxVmId);
     observeOverlayTargets();
     // Only on a change: a message per mouse move would flood the channel (spec §6).
     post("element:hover", nearest ? elementInfo(nearest) : { vmId: null });
@@ -1036,7 +1087,11 @@
     if (!vmId) return;
     var record = records.get(vmId);
     if (!record || record.el !== el) return;
-    if (selectedVmId === vmId && event.type !== "animationiteration") scheduleOverlaySync();
+    // The element has stopped moving, so whatever box the overlay is holding
+    // for it is now stale: this is the resync `positionBox` defers to.
+    if ((selectedVmId === vmId || hoveredVmId === vmId) && event.type !== "animationiteration") {
+      scheduleOverlaySync();
+    }
     if (!record.replaying) return;
     var assignment = effective(record);
     if (!assignment || event.animationName !== assignment.keyframesName) return;
@@ -1096,7 +1151,7 @@
       else overlayRoot.removeAttribute(SELECTED_ATTR);
     }
     if (selectLabel) selectLabel.textContent = label || "";
-    positionBox(selectBox, vmId ? elements.get(vmId) : undefined);
+    selectBoxVmId = positionBox(selectBox, vmId, selectBoxVmId);
     observeOverlayTargets();
   }
 
