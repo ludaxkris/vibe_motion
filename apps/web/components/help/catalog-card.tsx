@@ -9,6 +9,22 @@ import { defaultsLine } from "@/lib/catalog-defaults";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 
 /**
+ * How long an exit demo rests on its end state before the stage is handed
+ * back. Long enough to read "it is gone", short enough that the gallery is
+ * not full of empty boxes.
+ */
+export const EXIT_HOLD_MS = 600;
+
+/**
+ * The one category whose end state is the absence of the element. Read from
+ * the catalog's own `category`, never from an animation id: which animations
+ * are exits is the catalog's to say, and a new one joins without a change
+ * here (CLAUDE.md, "add a params entry rather than special-casing an
+ * animation in code").
+ */
+const CATEGORY_THAT_LEAVES_NOTHING = "exit";
+
+/**
  * One animation on `/help` (`docs/design/README.md` "4. Help",
  * `docs/design/ui_kit/Help.jsx`): a 120px stage with the accent block, a ↻
  * mini button, the animation's name and its defaults.
@@ -21,7 +37,9 @@ import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
  * Every card plays once on mount, whatever its `defaultTrigger`: the page is a
  * gallery, and a third of the catalog sitting still is not one. Entries that
  * default to `hover` additionally replay when the stage is hovered or its ↻
- * takes focus.
+ * takes focus. An `exit` entry rests on its end state for `EXIT_HOLD_MS` and
+ * then takes the animation off, since that end state is an empty stage; every
+ * other category keeps whatever its animation left behind.
  *
  * A replay mounts a fresh block rather than rewriting `animation-name` on the
  * live one: React stays the only writer of the block's style, so a hover and a
@@ -44,13 +62,49 @@ export function CatalogCard({
   const [run, setRun] = useState(0);
   /** This run was asked for (↻), rather than being autoplay or a hover. */
   const [requested, setRequested] = useState(false);
+  /** The run is over and the stage has been handed back: no animation at all. */
+  const [idle, setIdle] = useState(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const replaysOnHover = entry.defaultTrigger === "hover";
+  const leavesNothingBehind = entry.category === CATEGORY_THAT_LEAVES_NOTHING;
 
-  const replay = useCallback((explicit: boolean) => {
-    setRequested(explicit);
-    setRun((previous) => previous + 1);
+  const cancelHold = useCallback(() => {
+    if (holdTimer.current === null) return;
+    clearTimeout(holdTimer.current);
+    holdTimer.current = null;
   }, []);
+
+  const replay = useCallback(
+    (explicit: boolean) => {
+      cancelHold();
+      setIdle(false);
+      setRequested(explicit);
+      setRun((previous) => previous + 1);
+    },
+    [cancelHold],
+  );
+
+  // Nothing may fire into a card that has gone.
+  useEffect(() => cancelHold, [cancelHold]);
+
+  const runEnded = () => {
+    if (!leavesNothingBehind) {
+      setRequested(false);
+      return;
+    }
+    // An exit animation fills forwards onto nothing, so the stage would stay
+    // empty. Rest on that for a beat — it is what the animation does — then
+    // hand the block back, ready to be played again.
+    cancelHold();
+    holdTimer.current = setTimeout(() => {
+      holdTimer.current = null;
+      setIdle(true);
+      // Dropped only now: while it holds, the run stays exempt from the
+      // reduced-motion rule that would otherwise cut the end state short.
+      setRequested(false);
+    }, EXIT_HOLD_MS);
+  };
 
   // "Replay all" reaches every card through this token, and counts as asking:
   // pressing it is as explicit as pressing one card's own ↻.
@@ -60,10 +114,10 @@ export function CatalogCard({
     replay(true);
   }, [replayToken, replay]);
 
-  const demoStyle = catalogInlineStyle(entry, catalogVersion);
+  const demoStyle = idle ? undefined : catalogInlineStyle(entry, catalogVersion);
   // An animation the user asked to see should end by itself, however many
   // times the catalog would repeat it.
-  if (reducedMotion && demoStyle.animationIterationCount === "infinite") {
+  if (demoStyle && reducedMotion && demoStyle.animationIterationCount === "infinite") {
     demoStyle.animationIterationCount = "1";
   }
 
@@ -90,11 +144,9 @@ export function CatalogCard({
           // asked for less motion only while it is marked as asked for.
           data-vm-demo=""
           data-vm-replayed={requested ? "" : undefined}
-          // The run is over, so the mark goes: a `forwards` fill would
-          // otherwise leave the block parked off its mark.
-          onAnimationEnd={() => setRequested(false)}
+          onAnimationEnd={runEnded}
           className="block h-[38px] w-16 rounded-md bg-vm-accent"
-          style={demoStyle as CSSProperties}
+          style={demoStyle as CSSProperties | undefined}
         />
 
         {replaysOnHover ? (

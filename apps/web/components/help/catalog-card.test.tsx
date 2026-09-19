@@ -1,11 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { keyframesName } from "animation-catalog";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogEntry } from "@/lib/api-client";
 import { CURRENT_CATALOG_VERSION, getCatalogEntry } from "@/lib/catalog";
 
-import { CatalogCard } from "./catalog-card";
+import { CatalogCard, EXIT_HOLD_MS } from "./catalog-card";
 
 const entry = (id: string): CatalogEntry => {
   const found = getCatalogEntry(id);
@@ -19,6 +19,10 @@ const fadeInUp = entry("fade-in-up");
 const hoverLift = entry("hover-lift");
 /** Runs forever until something stops it. */
 const pulse = entry("pulse");
+/** Ends where the element is no longer there: `category: "exit"`. */
+const fadeOut = entry("fade-out");
+/** Also fills forwards, but its end state is the whole point. */
+const highlight = entry("highlight");
 
 function stubReducedMotion(matches: boolean) {
   vi.stubGlobal(
@@ -186,6 +190,77 @@ describe("CatalogCard", () => {
 
     expect(styleOf(demo())).toContain("animation-name");
     expect(demo()).toHaveAttribute("data-vm-demo");
+  });
+
+  describe("once an exit animation has finished", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("holds the end state, then hands the stage back", () => {
+      // An exit animation ends with the element gone, so a card left on its
+      // end state is an empty box on a gallery page.
+      const { demo } = renderCard({ entry: fadeOut });
+      endAnimation(demo());
+
+      act(() => vi.advanceTimersByTime(EXIT_HOLD_MS - 1));
+      expect(styleOf(demo())).toContain("animation-name");
+
+      act(() => vi.advanceTimersByTime(1));
+      expect(styleOf(demo())).not.toContain("animation-name");
+    });
+
+    it("leaves what another category's animation marked in place", () => {
+      const { demo } = renderCard({ entry: highlight });
+      endAnimation(demo());
+
+      act(() => vi.advanceTimersByTime(EXIT_HOLD_MS * 4));
+
+      expect(styleOf(demo())).toContain("animation-name");
+    });
+
+    it("holds it for an asked-for run under reduced motion too", () => {
+      stubReducedMotion(true);
+      const { demo, replay } = renderCard({ entry: fadeOut });
+
+      fireEvent.click(replay);
+      endAnimation(demo());
+      // Still exempt from the stylesheet's suppression while it holds.
+      expect(demo()).toHaveAttribute("data-vm-replayed");
+
+      act(() => vi.advanceTimersByTime(EXIT_HOLD_MS));
+      expect(demo()).not.toHaveAttribute("data-vm-replayed");
+      expect(styleOf(demo())).not.toContain("animation-name");
+    });
+
+    it("drops the pending hand-back when the demo is replayed instead", () => {
+      const { demo, replay } = renderCard({ entry: fadeOut });
+      endAnimation(demo());
+
+      act(() => vi.advanceTimersByTime(EXIT_HOLD_MS / 2));
+      fireEvent.click(replay);
+      act(() => vi.advanceTimersByTime(EXIT_HOLD_MS));
+
+      expect(styleOf(demo())).toContain("animation-name");
+    });
+
+    it("drops it when the card goes away mid-hold", () => {
+      const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { demo, unmount } = renderCard({ entry: fadeOut });
+      endAnimation(demo());
+      expect(vi.getTimerCount()).toBe(1);
+
+      unmount();
+
+      expect(vi.getTimerCount()).toBe(0);
+      act(() => vi.advanceTimersByTime(EXIT_HOLD_MS * 2));
+      expect(errors).not.toHaveBeenCalled();
+      errors.mockRestore();
+    });
   });
 
   it("replays when the replay token changes, and counts that as explicit", () => {
