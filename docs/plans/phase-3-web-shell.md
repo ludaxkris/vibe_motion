@@ -7,7 +7,7 @@ Branch `feat/3-web-shell-help`, worktree `.worktrees/feat/3-web-shell-help`. All
 ## Global Constraints
 
 - Read the repo-root `CLAUDE.md` before the first change; its rules bind every task.
-- TDD: failing test first, then code. Unit tests sit next to source (`foo.ts` → `foo.test.ts`). e2e in `apps/web/e2e`.
+- TDD: failing test first, then code. Unit tests sit next to source (`foo.ts` → `foo.test.ts`). e2e lives in `apps/e2e` (PR #11): `apps/e2e/web/` for specs true of any deployment, `apps/e2e/web/mocked/` for those needing the MSW mock api or a dev build, `apps/e2e/web/stack/` for those needing the real api.
 - TypeScript strict. Server Components by default; `"use client"` only where needed. Zustand in `apps/web/lib/store`, server data via TanStack Query with the generated client in `apps/web/lib/api-client` (never hand-edit `schema.d.ts`). Tailwind + shadcn/ui (Base UI, not Radix). No CSS modules.
 - Contracts are read-only in this phase: do not edit `apps/api/openapi.yaml`, `packages/animation-catalog/schema.json`, or anything under `packages/animation-catalog/versions/`.
 - Everything injected into a page or generated as CSS is prefixed `vm-` / `--vm-` / `data-vm-`.
@@ -16,7 +16,7 @@ Branch `feat/3-web-shell-help`, worktree `.worktrees/feat/3-web-shell-help`. All
 - Only `apps/web/lib/env.ts` reads `process.env`.
 - No `.png`/`.jpg` committed. No secrets. No TODO comment without a `docs/deferred_tasks.md` entry (report deferred items in your task report; the controller logs them on `main`).
 - Conventional commits, each ending with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
-- Before reporting DONE run, from the worktree root: `pnpm --filter web lint && pnpm --filter web typecheck && pnpm --filter web test`. Tasks that touch e2e also run `pnpm --filter web e2e`.
+- Before reporting DONE run, from the worktree root: `pnpm --filter web lint && pnpm --filter web typecheck && pnpm --filter web test`. Tasks that touch e2e also run `pnpm e2e` (and `pnpm e2e:docker` if they touch `apps/e2e/web/` or `apps/e2e/web/stack/`).
 - Visual design: tasks 1–6 build wireframe-level UI with existing shadcn components and semantic tokens from `app/globals.css` only (no hard-coded colours, no new fonts), so Task 7 can re-skin by changing tokens and component classes rather than structure.
 
 ## Task 1: Runtime CSS generator

@@ -43,7 +43,17 @@ test("cloning a fixture page from the Entry screen opens it in the editor", asyn
   await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
 
   const preview = page.getByRole("region", { name: "Preview" });
-  const clone = preview.getByTitle("Cloned page preview").contentFrame();
+  const frame = preview.getByTitle("Cloned page preview");
+
+  // Proof that this build is not mocking: `lib/preview-url.ts` frames the
+  // same-origin `/mock-api/...` route whenever `env.apiMocking` is on, and the
+  // api's own origin only when it is off — which `lib/env.ts` forces here.
+  await expect(frame).toHaveAttribute(
+    "src",
+    new RegExp(`^${stack.apiOrigin}/projects/[0-9a-f-]+/page$`),
+  );
+
+  const clone = frame.contentFrame();
 
   // The api serves this from `base_html`, cross-origin to the web app, under
   // the clone CSP — and it is the fixture, instrumented and script-free.

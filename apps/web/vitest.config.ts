@@ -16,8 +16,8 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
     include: ["**/*.test.{ts,tsx}"],
-    // e2e belongs to Playwright.
-    exclude: ["node_modules/**", ".next/**", "e2e/**", "playwright-report/**"],
+    // e2e is Playwright's, and lives in apps/e2e (PR #11) — nothing to skip here.
+    exclude: ["node_modules/**", ".next/**"],
     poolOptions: {
       forks: { execArgv },
       threads: { execArgv },
