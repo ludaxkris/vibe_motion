@@ -10,6 +10,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { freePort } from "./free-port.mjs";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const group = process.argv[2] ?? "all";
 
@@ -41,7 +43,7 @@ const gates = [
   { group: "api", name: "api docker build", cmd: "docker", args: ["build", "-q", "-f", "apps/api/Dockerfile", "-t", "vibe-motion-api:gate", "."], requires: "docker" },
   // ---- e2e -----------------------------------------------------------------
   { group: "e2e", name: "e2e typecheck", cmd: "pnpm", args: ["--filter", "e2e", "typecheck"] },
-  { group: "e2e", name: "web e2e (playwright)", cmd: "pnpm", args: ["--filter", "e2e", "test"] },
+  { group: "e2e", name: "web e2e (playwright)", cmd: "pnpm", args: ["--filter", "e2e", "test"], freePort: "VM_E2E_PORT" },
   // Full stack (db + api image + production web build) in a throwaway, per-run Docker stack.
   { group: "e2e-docker", name: "full-stack e2e (docker)", cmd: "scripts/e2e-docker.sh", args: [], requires: "docker" },
 ];
@@ -69,7 +71,20 @@ for (const g of selected) {
     note = `${g.cwd} does not exist`;
   } else {
     console.log(`\n[1m▶ ${g.name}[0m  (${[g.cmd, ...g.args].join(" ")})`);
-    const r = spawnSync(g.cmd, g.args, { cwd, stdio: "inherit", env: process.env, shell: false });
+    const env = { ...process.env };
+    // Worktrees run gates side by side on one machine, so the web e2e gate must not depend on
+    // (or attach to) a fixed :3000 (DT-113). A caller-pinned port is respected; GitHub's runners
+    // are one job each and keep the default.
+    if (g.freePort && !env[g.freePort] && !env.GITHUB_ACTIONS) {
+      try {
+        env[g.freePort] = String(await freePort());
+        console.log(`  ${g.freePort}=${env[g.freePort]}`);
+      } catch (error) {
+        // Never lose the summary of the gates that already ran over a failed probe.
+        note = `no free port: ${error.message}`;
+      }
+    }
+    const r = spawnSync(g.cmd, g.args, { cwd, stdio: "inherit", env, shell: false });
     status = r.status === 0 ? "PASS" : "FAIL";
     if (r.error) note = r.error.message;
   }

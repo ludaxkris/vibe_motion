@@ -17,7 +17,10 @@ apps/e2e/
 ```
 
 ```bash
-pnpm e2e           # web/ + web/mocked/; starts `next dev` on :3000 itself with the MSW mocks on
+pnpm e2e           # web/ + web/mocked/; starts its OWN `next dev` (MSW mocks on) on a free port and
+                   # never attaches to a server that is already running (DT-113); extra args go to Playwright
+VM_E2E_PORT=3210 pnpm e2e                  # pin the port
+VM_E2E_REUSE=1 VM_E2E_PORT=3000 pnpm e2e   # attach to the `pnpm dev` you started in THIS worktree
 pnpm e2e:docker    # web/ + web/stack/, against a brand-new full stack in Docker
 ```
 
