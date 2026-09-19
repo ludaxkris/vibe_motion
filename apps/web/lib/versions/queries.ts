@@ -17,7 +17,7 @@ function useRefreshOn(projectId: string) {
   return async (outcome: WriteOutcome) => {
     if (outcome.kind !== "saved" && outcome.kind !== "stale") return;
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: versionsKey(projectId) }),
+      queryClient.invalidateQueries({ queryKey: versionsKey(projectId), exact: true }),
       queryClient.invalidateQueries({ queryKey: ["project", projectId], exact: true }),
     ]);
   };
