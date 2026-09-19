@@ -14,9 +14,21 @@ type ToastState = {
   dismiss: (id?: number) => void
 }
 
-export const useToastStore = create<ToastState>((set, get) => ({
+/**
+ * Monotonic and never reused. Deriving the id from the toast currently showing
+ * restarted it at 1 after every auto-dismiss, and `Toaster` keys the pill by
+ * it: a `dismiss()` and a `show()` landing in one React batch would then
+ * re-render with the same key, React would reuse the element, and the
+ * entrance animation would never replay.
+ */
+let nextToastId = 0;
+
+export const useToastStore = create<ToastState>((set) => ({
   current: null,
-  show: (message) => set({ current: { id: (get().current?.id ?? 0) + 1, message } }),
+  show: (message) => {
+    nextToastId += 1;
+    set({ current: { id: nextToastId, message } });
+  },
   dismiss: (id) =>
     set((state) => (id != null && state.current?.id !== id ? state : { current: null })),
 }))

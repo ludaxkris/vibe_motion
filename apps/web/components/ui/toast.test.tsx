@@ -86,6 +86,27 @@ describe("Toast", () => {
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
 
+  it("never reuses an id, so a dismiss and a show in one batch still replay", () => {
+    render(<Toaster />);
+
+    show("Saved v6");
+    const first = useToastStore.getState().current?.id;
+
+    // A Phase 6 Save clearing one confirmation and raising another lands both
+    // in a single React batch: same `key` would mean React reuses the element
+    // and the entrance never plays again.
+    act(() => {
+      useToastStore.getState().dismiss();
+      useToastStore.getState().show("Saved v7");
+    });
+    const second = useToastStore.getState().current?.id;
+
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(second).not.toBe(first);
+    expect(screen.getByRole("status")).toHaveTextContent("Saved v7");
+  });
+
   it("can be dismissed before the timer fires", () => {
     render(<Toaster />);
 
