@@ -924,6 +924,24 @@
   }
 
   /**
+   * Is an animation of this keyframes name running on the element right now?
+   *
+   * Feature-detected: jsdom has no `getAnimations`, and an engine without it simply treats every
+   * cancel as real, which is the pre-`rewind` behaviour.
+   *
+   * @param {HTMLElement} el
+   * @param {string} name
+   */
+  function hasLiveAnimation(el, name) {
+    if (typeof el.getAnimations !== "function") return false;
+    var running = el.getAnimations();
+    for (var i = 0; i < running.length; i += 1) {
+      if (running[i] && /** @type {CSSAnimation} */ (running[i]).animationName === name) return true;
+    }
+    return false;
+  }
+
+  /**
    * End a forced `replay`, but only for the element's own animation.
    *
    * `animationend` bubbles, so without the target check a host spinner or marquee finishing
@@ -943,6 +961,12 @@
     if (!record.replaying) return;
     var assignment = effective(record);
     if (!assignment || event.animationName !== assignment.keyframesName) return;
+    // `rewind()` cancels the outgoing animation before starting its replacement, and that cancel
+    // is delivered a frame later, by which time the replacement is already running. Ending the
+    // replay on it would kill the play we were asked for. Asking whether an animation of this
+    // name is live *now* answers "was this cancel ours?" from state rather than from event
+    // ordering, which is what makes it safe: engines coalesce the cancel away unpredictably.
+    if (event.type === "animationcancel" && hasLiveAnimation(record.el, assignment.keyframesName)) return;
     record.replaying = false;
     // An in-view element that is still off-screen has to go back to a *new* animation paused at
     // its first keyframe, not to the one that just finished (spec D3).

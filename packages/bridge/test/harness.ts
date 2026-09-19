@@ -94,6 +94,11 @@ export type Harness = {
     vmId: string,
     opts?: { type?: "animationend" | "animationiteration" | "animationcancel"; animationName?: string; target?: Node },
   ): void;
+  /**
+   * Install a fake `Element.getAnimations` on one element. jsdom has none, so without this the
+   * bridge's "was this cancel ours?" check cannot be exercised in either direction.
+   */
+  setLiveAnimations(vmId: string, names: string[] | null): void;
   destroy(): void;
 };
 
@@ -307,6 +312,14 @@ export function loadBridge(html: string, opts: { parentOrigin?: string | null } 
     },
     keydown(key) {
       document.dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    },
+    setLiveAnimations(vmId, names) {
+      const target = el(vmId) as unknown as { getAnimations?: () => Array<{ animationName: string }> };
+      if (names === null) {
+        delete target.getAnimations;
+        return;
+      }
+      target.getAnimations = () => names.map((animationName) => ({ animationName }));
     },
     animationEvent(vmId, opts = {}) {
       const event = new window.Event(opts.type ?? "animationend", { bubbles: true });

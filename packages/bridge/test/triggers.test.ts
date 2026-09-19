@@ -355,14 +355,46 @@ describe("replay", () => {
     expect(h.el("vm-heading").style.getPropertyValue("animation-duration")).toBe("9s");
   });
 
-  it("ends a forced replay whose animation is cancelled", () => {
+  it("ends a forced replay whose animation is cancelled with nothing left in its place", () => {
     const h = loadBridge(hostPage);
     h.send({ type: "apply", payload: applied({ trigger: "hover" }), seq: 1 });
     h.send({ type: "replay", payload: { vmId: "vm-heading" }, seq: 2 });
+    h.setLiveAnimations("vm-heading", []);
 
     h.animationEvent("vm-heading", { type: "animationcancel" });
 
     expect(h.el("vm-heading").style.getPropertyValue("animation-name")).toBe("");
+  });
+
+  it("ignores the cancel its own rewind causes, while an animation of that name is still live", () => {
+    // `rewind()` writes `animation-name: none` before putting the name back; the browser cancels
+    // the outgoing animation and delivers the event a frame later, once the replacement is
+    // already running. Trusting it ended the replay the instant it started.
+    const h = loadBridge(hostPage);
+    h.send({ type: "apply", payload: applied({ trigger: "hover" }), seq: 1 });
+    h.send({ type: "replay", payload: { vmId: "vm-heading" }, seq: 2 });
+    h.setLiveAnimations("vm-heading", ["vm-fade-in-up-v1-1-0"]);
+
+    h.animationEvent("vm-heading", { type: "animationcancel" });
+
+    expect(h.el("vm-heading").style.getPropertyValue("animation-name")).toBe("vm-fade-in-up-v1-1-0");
+    expect(h.el("vm-heading").style.getPropertyValue("animation-play-state")).toBe("running");
+
+    // The replacement is what ends it.
+    h.animationEvent("vm-heading");
+    expect(h.el("vm-heading").style.getPropertyValue("animation-name")).toBe("");
+  });
+
+  it("keeps a held in-view element playing when its own rewind cancel arrives", () => {
+    const h = loadBridge(hostPage);
+    h.send({ type: "apply", payload: applied(held), seq: 1 });
+    h.send({ type: "replay", payload: { vmId: "vm-heading" }, seq: 2 });
+    expect(h.el("vm-heading").style.getPropertyValue("animation-play-state")).toBe("running");
+    h.setLiveAnimations("vm-heading", ["vm-fade-in-up-v1-1-0"]);
+
+    h.animationEvent("vm-heading", { type: "animationcancel" });
+
+    expect(h.el("vm-heading").style.getPropertyValue("animation-play-state")).toBe("running");
   });
 
   it("leaves a naturally armed element armed after animationend", () => {

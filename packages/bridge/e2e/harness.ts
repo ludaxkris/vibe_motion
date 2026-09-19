@@ -42,6 +42,14 @@ export type BridgeHarness = {
   inline(vmId: string, prop: string): Promise<string>;
   /** How many `animationstart` events fired inside the frame for this keyframes name. */
   starts(name: string): Promise<number>;
+  /**
+   * Sample an element's animation once per frame for `ms`, from inside the frame.
+   *
+   * A single `getAnimations()` round trip after a fixed wait races anything the browser delivers
+   * asynchronously — an `animationcancel` a frame or two late will sometimes be missed. Sampling
+   * every frame turns "it kept playing" into a deterministic assertion.
+   */
+  sample(vmId: string, ms: number): Promise<Array<{ name: string; time: number; state: string } | null>>;
   rect(selector: string): Promise<{ x: number; y: number; width: number; height: number }>;
 };
 
@@ -171,6 +179,31 @@ export async function mountBridge(page: Page, body: string, head = ""): Promise<
         [vmId, prop] as const,
       ),
     starts: (name) => frame.evaluate((n) => window.__starts[n] ?? 0, name),
+    sample: (vmId, ms) =>
+      frame.evaluate(
+        ([id, duration]) =>
+          new Promise<Array<{ name: string; time: number; state: string } | null>>((resolve) => {
+            const el = document.querySelector(`[data-vm-id="${id}"]`);
+            const out: Array<{ name: string; time: number; state: string } | null> = [];
+            const started = performance.now();
+            const tick = () => {
+              const animation = el?.getAnimations()[0];
+              out.push(
+                animation
+                  ? {
+                      name: (animation as CSSAnimation).animationName ?? "",
+                      time: Math.round(Number(animation.currentTime ?? 0)),
+                      state: animation.playState,
+                    }
+                  : null,
+              );
+              if (performance.now() - started < (duration as number)) requestAnimationFrame(tick);
+              else resolve(out);
+            };
+            requestAnimationFrame(tick);
+          }),
+        [vmId, ms] as const,
+      ),
     rect: (selector) =>
       frame.evaluate((sel) => {
         const el = document.querySelector(sel);

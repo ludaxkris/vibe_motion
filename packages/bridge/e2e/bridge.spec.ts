@@ -105,6 +105,78 @@ test.describe("replay", () => {
     expect(await h.inline("vm-card", "animation-name")).toBe("vm-fade-v1-0-0");
   });
 
+  /**
+   * `rewind()` writes `animation-name: none` before putting the name back. When the element
+   * already had a live animation of that same name, that write *cancels* it, and the
+   * `animationcancel` lands a frame later — after the replacement has already started. An
+   * end-condition that trusts it kills the replay it was meant to protect.
+   */
+  test("plays an off-screen in-view element that was held on its first keyframe", async ({ page }) => {
+    const h = await mountBridge(
+      page,
+      `<div class="box" data-vm-id="vm-top">top</div>
+       <div class="spacer"></div>
+       <div class="box" data-vm-id="vm-iv">in view</div>
+       <div class="spacer"></div>`,
+    );
+    await h.send("apply", assignment("vm-iv", { trigger: "in-view", style: { "animation-duration": "1s" } }));
+    // Held: a paused animation of the very name the replay is about to write again.
+    await expect.poll(() => h.animations("vm-iv")).toMatchObject([{ time: 0, state: "paused" }]);
+
+    await h.send("replay", { vmId: "vm-iv" });
+
+    // Sampled every frame for most of one duration: it must be running the whole way through,
+    // not merely running at whichever instant we happened to look.
+    const frames = await h.sample("vm-iv", 600);
+    expect(frames.length).toBeGreaterThan(10);
+    expect(frames.filter((f) => f?.state !== "running")).toEqual([]);
+    expect(frames[frames.length - 1]?.time).toBeGreaterThan(400);
+
+    // And when that one play is over it goes back to being held, at the first keyframe.
+    await expect
+      .poll(() => h.animations("vm-iv"), { timeout: 3000 })
+      .toMatchObject([{ time: 0, state: "paused" }]);
+  });
+
+  test("replays every element, including one held off-screen, with vmId null", async ({ page }) => {
+    const h = await mountBridge(
+      page,
+      `<div class="box" data-vm-id="vm-top">top</div>
+       <div class="spacer"></div>
+       <div class="box" data-vm-id="vm-iv">in view</div>
+       <div class="spacer"></div>`,
+    );
+    await h.send("apply", assignment("vm-top"));
+    await h.send("apply", assignment("vm-iv", { trigger: "in-view", style: { "animation-duration": "1s" } }));
+    await expect.poll(() => h.animations("vm-iv")).toMatchObject([{ time: 0, state: "paused" }]);
+
+    await h.send("replay", { vmId: null });
+
+    const frames = await h.sample("vm-iv", 600);
+    expect(frames.filter((f) => f?.state !== "running")).toEqual([]);
+    expect(frames[frames.length - 1]?.time).toBeGreaterThan(400);
+    expect((await h.animations("vm-top"))[0].state).toBe("running");
+  });
+
+  test("survives an apply that lands while the forced replay is running", async ({ page }) => {
+    const h = await mountBridge(page, `<div class="box" data-vm-id="vm-a">A</div>`);
+    const hover = { trigger: "hover" as const, style: { "animation-duration": "3s" } };
+    await h.send("apply", assignment("vm-a", hover));
+
+    await h.send("replay", { vmId: "vm-a" });
+    expect(await h.animations("vm-a")).toMatchObject([{ name: "vm-fade-v1-0-0", state: "running" }]);
+
+    // The designer keeps editing while the replay runs. A base-styles change restarts the
+    // animation under the same name, which is exactly when a cancel we caused ourselves is
+    // indistinguishable from the animation really going away.
+    await h.send("apply", assignment("vm-a", { ...hover, baseStyles: "transform-origin: top;" }));
+
+    const frames = await h.sample("vm-a", 600);
+    expect(frames.filter((f) => f?.name !== "vm-fade-v1-0-0" || f.state !== "running")).toEqual([]);
+    expect(frames[frames.length - 1]?.time).toBeGreaterThan(400);
+    expect(await h.inline("vm-a", "animation-name")).toBe("vm-fade-v1-0-0");
+  });
+
   test("a forced replay of an infinite animation ends after one iteration", async ({ page }) => {
     const h = await mountBridge(page, `<div class="box" data-vm-id="vm-a">A</div>`);
     await h.send("apply", {
