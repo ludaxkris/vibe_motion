@@ -7,8 +7,8 @@
  * against `schema.json` while `apps/web` types them against the generated
  * OpenAPI schema, and this is the one place the two are reconciled.
  *
- * Two lookups, and the difference matters: `getCurrentCatalog` /
- * `getCatalogEntries` / `getCatalogEntry` are the catalog the editor *authors*
+ * Two lookups, and the difference matters: `getCatalogEntries` /
+ * `getCatalogEntry` are the catalog the editor *authors*
  * against, and `getCatalogEntryAt` resolves an existing assignment against the
  * version it pinned (CLAUDE.md rule 9). Phase 4+ swaps the source for
  * `GET /catalog` where a live catalog is needed; the pinning rule is unchanged
@@ -31,14 +31,6 @@ import { inlineStyle, resolveParams, runtimeStylesheet } from "@/lib/runtime-css
 export const CURRENT_CATALOG_VERSION: string = CURRENT_VERSION;
 
 const catalog = getCatalogByVersion(CURRENT_VERSION) as unknown as Catalog;
-
-/**
- * The catalog the editor currently authors against. Named for the version it
- * returns, so it does not read as the package's own `getCatalog(version)`.
- */
-export function getCurrentCatalog(): Catalog {
-  return catalog;
-}
 
 /** Every entry in the current catalog, in file order. */
 export function getCatalogEntries(): readonly CatalogEntry[] {
@@ -101,9 +93,9 @@ export function catalogCategories(entries: readonly CatalogEntry[]): string[] {
  * non-empty tuple, since the catalog schema requires `minItems: 1`), while
  * this module types entries against the OpenAPI-generated `CatalogEntry`
  * (a plain `triggers: Trigger[]`). Both describe the same runtime object —
- * this is the one place that bridges them (the same way
- * `getCurrentCatalog()` above already bridges the catalog file itself), so no
- * other call site needs its own cast.
+ * this is the one place that bridges them (the same way the module-level
+ * `catalog` above already bridges the catalog file itself), so no other call
+ * site needs its own cast.
  */
 export function resolveCatalogParams(
   entry: CatalogEntry,
