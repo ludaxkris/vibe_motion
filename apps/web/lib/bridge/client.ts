@@ -53,6 +53,17 @@ export type BridgeClientOptions = {
   onUnresolved?: (unresolved: Unresolved[]) => void;
   /** Status changes. `status()` alone cannot re-render a React tree. */
   onStatusChange?: (status: BridgeStatus) => void;
+  /**
+   * An ack the bridge refused (`ok: false`), or one that named vmIds it could
+   * not place. Either way the store and the frame now differ, and only the
+   * panel can say so.
+   */
+  onAckError?: (ack: Ack) => void;
+  /** Injectable for tests; defaults to `setTimeout` / `clearTimeout`. */
+  setTimer?: (callback: () => void, ms: number) => unknown;
+  clearTimer?: (handle: unknown) => void;
+  /** How long a sent message may go unacked before its promise is rejected. */
+  ackTimeoutMs?: number;
 };
 
 export type BridgeClient = {
@@ -75,6 +86,8 @@ type Deferred = {
   resolve: (ack: Ack) => void;
   reject: (error: Error) => void;
   promise: Promise<Ack>;
+  /** Handle of the deadline armed for this seq, cleared when it settles. */
+  timer?: unknown;
 };
 
 /**
@@ -110,9 +123,28 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       window.requestAnimationFrame(callback);
     });
 
+  const setTimer =
+    options.setTimer ??
+    ((callback: () => void, ms: number) => globalThis.setTimeout(callback, ms));
+  const clearTimer =
+    options.clearTimer ??
+    ((handle: unknown) => {
+      globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>);
+    });
+  /** Generous against a measured p95 of about 2 ms; this is a stuck frame, not a slow one. */
+  const ackTimeoutMs = options.ackTimeoutMs ?? 5_000;
+
   let status: BridgeStatus = "connecting";
   let destroyed = false;
   let seq = 0;
+  /**
+   * The element a `preview` is currently showing on, or null.
+   *
+   * A preview sits on top of the applied assignment (spec D6), so an `apply`
+   * or a `state:load` that lands under one is invisible. The client knows when
+   * it started a preview, so it is the right place to end it — see `flush`.
+   */
+  let previewVmId: string | null = null;
 
   const pending = new Map<number, Deferred>();
   /** vmIds whose draft entry changed since the last flush, coalesced per frame (§5). */
@@ -136,31 +168,76 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
   // Sending
   // -------------------------------------------------------------------------
 
-  function post(type: string, payload: unknown): Promise<Ack> {
-    if (destroyed) return refused("bridge client destroyed");
+  /**
+   * Why a post would be refused right now, or null when it would go out.
+   *
+   * "Nothing but `hello` before the handshake" is the load-bearing clause: a
+   * message posted to a frame whose document is not on `expectedOrigin` yet —
+   * still loading, a 5xx page, a network error page — is dropped by the
+   * browser and never acked. Queuing it would be pointless anyway, because the
+   * whole state is re-derived and sent as one `state:load` the moment the
+   * frame announces itself.
+   */
+  function refusalReason(type: string): string | null {
+    if (destroyed) return "bridge client destroyed";
     // Spec D7: on a protocol version we do not know, the shell sends nothing.
-    if (status === "version-mismatch") return refused("bridge protocol version mismatch");
+    if (status === "version-mismatch") return "bridge protocol version mismatch";
+    if (type !== "hello" && status !== "ready") return "bridge is not ready";
+    if (!target()) return "preview frame is not available";
+    return null;
+  }
+
+  /** Post, and report whether the message actually left. */
+  function send(type: string, payload: unknown): { sent: boolean; ack: Promise<Ack> } {
+    const reason = refusalReason(type);
+    if (reason !== null) return { sent: false, ack: refused(reason) };
+
     const frame = target();
-    if (!frame) return refused("preview frame is not available");
+    if (!frame) return { sent: false, ack: refused("preview frame is not available") };
 
     seq += 1;
     const current = seq;
+    // `hello` is deliberately untracked: spec D7 says its ack proves nothing
+    // (it can come back `ok: false` with no `ready` behind it), so waiting on
+    // one would make `whenIdle()` wait for something that means nothing.
+    const tracked = type !== "hello";
     const deferred = defer();
-    pending.set(current, deferred);
+    if (tracked) {
+      pending.set(current, deferred);
+      deferred.timer = setTimer(() => {
+        if (pending.get(current) !== deferred) return;
+        pending.delete(current);
+        deferred.reject(new Error(`the preview frame did not ack ${type} within ${ackTimeoutMs}ms`));
+      }, ackTimeoutMs);
+    }
     try {
       // Never `"*"`: that would hand the draft to whatever happens to be framed.
       frame.postMessage({ source: MESSAGE_SOURCE, type, payload, seq: current }, expectedOrigin);
     } catch (error) {
-      pending.delete(current);
+      settle(current, deferred);
       deferred.reject(error instanceof Error ? error : new Error(String(error)));
+      return { sent: false, ack: deferred.promise };
     }
-    return deferred.promise;
+    return { sent: true, ack: deferred.promise };
+  }
+
+  function post(type: string, payload: unknown): Promise<Ack> {
+    return send(type, payload).ack;
+  }
+
+  /** Take a seq out of flight and disarm its deadline. */
+  function settle(current: number, deferred: Deferred): void {
+    pending.delete(current);
+    if (deferred.timer !== undefined) clearTimer(deferred.timer);
   }
 
   function settleAll(error: Error): void {
-    const owed = [...pending.values()];
+    const owed = [...pending.entries()];
     pending.clear();
-    owed.forEach((deferred) => deferred.reject(error));
+    owed.forEach(([, deferred]) => {
+      if (deferred.timer !== undefined) clearTimer(deferred.timer);
+      deferred.reject(error);
+    });
   }
 
   function report(unresolved: Unresolved[]): void {
@@ -179,6 +256,12 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       else assignments.push(applied);
     }
     return { assignments, unresolved };
+  }
+
+  function clearActivePreview(): void {
+    if (previewVmId === null) return;
+    previewVmId = null;
+    void post("preview:clear", {});
   }
 
   function sendStateLoad(): void {
@@ -208,8 +291,12 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     if (!force && sentSelection && sentSelection.vmId === vmId && sentSelection.label === label) {
       return;
     }
-    sentSelection = { vmId, label };
-    void post("select", label === undefined ? { vmId } : { vmId, label });
+    // Recorded only once it has actually gone out. Remembering a `select` that
+    // was refused — no frame for a moment, not ready yet — would make the
+    // identity guard above suppress every retry, and the ring would sit on the
+    // old element until the selection changed again.
+    const { sent } = send("select", label === undefined ? { vmId } : { vmId, label });
+    if (sent) sentSelection = { vmId, label };
   }
 
   // -------------------------------------------------------------------------
@@ -237,6 +324,13 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       const vmIds = [...changed];
       changed.clear();
       const { draftState } = store.getState();
+
+      // A preview sits on top of the applied assignment (spec D6), so anything
+      // written underneath it is invisible until the preview ends. The client
+      // started the preview, so it ends it — one message, before the batch.
+      const masked =
+        previewVmId !== null && (vmIds.length > BULK_APPLY_LIMIT || vmIds.includes(previewVmId));
+      if (masked) clearActivePreview();
 
       if (vmIds.length > BULK_APPLY_LIMIT) {
         // What Phase 5's auto-generate produces: one stylesheet rebuild in the
@@ -304,6 +398,9 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     changed.clear();
     frameScheduled = false;
     sentSelection = null;
+    // The `state:load` below drops the preview frame-side (spec §3), so the
+    // client's record of one would be stale from here on.
+    previewVmId = null;
     setStatus("ready");
 
     sendStateLoad();
@@ -313,10 +410,39 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
   function onAck(payload: unknown): void {
     const ack = payload as Ack | null;
     if (!ack || typeof ack.seq !== "number") return;
+    // Reported whether or not anyone is awaiting this seq: a refused `apply`
+    // leaves the store and the frame showing different things, and the panel
+    // is the only place that can say so.
+    if (ack.ok === false || (ack.unknownVmIds?.length ?? 0) > 0) options.onAckError?.(ack);
     const deferred = pending.get(ack.seq);
     if (!deferred) return;
-    pending.delete(ack.seq);
+    settle(ack.seq, deferred);
     deferred.resolve(ack);
+  }
+
+  /**
+   * The frame only ever runs our own script under `script-src 'self'`, so this
+   * is robustness rather than a threat model — but `tag` is rendered into the
+   * guard's question and a non-string would throw in React the moment the
+   * dialog opened, long after the message that caused it.
+   */
+  function asElementInfo(payload: unknown): ElementInfo | null {
+    const info = payload as Partial<ElementInfo> | null;
+    if (!info || typeof info !== "object") return null;
+    if (typeof info.vmId !== "string" || typeof info.tag !== "string") return null;
+    if (typeof info.textPreview !== "string") return null;
+    if (info.role !== null && typeof info.role !== "string") return null;
+    if (!isRect(info.rect) || !isRect(info.pageRect)) return null;
+    if (typeof info.order !== "number" || typeof info.visible !== "boolean") return null;
+    return info as ElementInfo;
+  }
+
+  function isRect(value: unknown): boolean {
+    const rect = value as Record<string, unknown> | null;
+    if (!rect || typeof rect !== "object") return false;
+    return (["x", "y", "width", "height"] as const).every(
+      (key) => typeof rect[key] === "number" && Number.isFinite(rect[key]),
+    );
   }
 
   function onMessage(event: MessageEvent): void {
@@ -341,8 +467,8 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
         return;
       }
       case "element:select": {
-        const info = data.payload as ElementInfo | null;
-        if (!info || typeof info.vmId !== "string") return;
+        const info = asElementInfo(data.payload);
+        if (!info) return;
         actions.rememberElement(info);
         // A request, not a move: the guard may refuse it, and then no `select`
         // goes back and the ring stays where it is (spec D10).
@@ -374,14 +500,23 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
         report([applied]);
         return;
       }
-      void post("preview", applied);
+      const { sent } = send("preview", applied);
+      if (sent) previewVmId = vmId;
     },
 
     clearPreview: () => {
+      previewVmId = null;
       void post("preview:clear", {});
     },
 
-    replay: (vmId) => post("replay", { vmId }),
+    replay: (vmId) => {
+      // Flush first: a draft change made in this same turn is still sitting in
+      // the coalescing frame, and `postMessage` to one window is ordered, so
+      // flushing here is enough to guarantee the `apply` arrives before the
+      // `replay` — without a round trip.
+      if (frameScheduled) flush();
+      return post("replay", { vmId });
+    },
 
     whenIdle: async () => {
       if (frameScheduled) flush();

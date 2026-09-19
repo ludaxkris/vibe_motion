@@ -169,11 +169,15 @@ export function EditorShell({ projectId }: { projectId: string }) {
   const handleClearPreview = useCallback(() => client?.clearPreview(), [client]);
   const handleReplay = useCallback(
     (vmId: string) => {
-      if (!client) return;
-      // Flush first: a draft change made in this same turn is still sitting in
-      // the client's coalescing frame, and a `replay` that overtook it would
-      // restart the animation the *old* params describe.
-      void client.whenIdle().then(() => client.replay(vmId));
+      // `replay()` flushes the client's coalescing frame itself, so a draft
+      // change made in this same turn is already on its way and `postMessage`
+      // ordering does the rest — no ack round trip needed.
+      //
+      // The rejection is caught rather than left to `void`: a refused post
+      // (destroyed, not ready, no frame) and a `settleAll` from a reload both
+      // reject this promise, and `.then()` would adopt that rejection into a
+      // promise nobody handles.
+      client?.replay(vmId).catch(() => {});
     },
     [client],
   );

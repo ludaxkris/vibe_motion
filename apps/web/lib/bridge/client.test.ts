@@ -57,6 +57,8 @@ function harness(options: { origin?: string } = {}) {
       if (typeof message.seq === "number") sentSeqs.push(message.seq);
     },
   } as unknown as Window;
+  /** What `target()` answers; a test can take the frame away and give it back. */
+  let currentTarget: Window | null = target;
 
   let listener: ((event: MessageEvent) => void) | null = null;
   const listenOn = {
@@ -72,9 +74,12 @@ function harness(options: { origin?: string } = {}) {
   const store: EditorStoreHook = createEditorStore();
   const unresolved: Unresolved[] = [];
   const statuses: string[] = [];
+  const ackErrors: Array<{ seq: number; ok: boolean; error?: string; unknownVmIds?: string[] }> = [];
+  /** The ack deadlines the client has armed, so a test can fire them by hand. */
+  const timers: Array<{ run: () => void; ms: number; cancelled: boolean }> = [];
 
   const client: BridgeClient = createBridgeClient({
-    target: () => target,
+    target: () => currentTarget,
     expectedOrigin: options.origin ?? FRAME_ORIGIN,
     listenOn,
     store,
@@ -83,6 +88,15 @@ function harness(options: { origin?: string } = {}) {
     },
     onUnresolved: (list) => unresolved.push(...list),
     onStatusChange: (status) => statuses.push(status),
+    onAckError: (ack) => ackErrors.push(ack),
+    setTimer: (run, ms) => {
+      timers.push({ run, ms, cancelled: false });
+      return timers.length - 1;
+    },
+    clearTimer: (handle) => {
+      const timer = timers[handle as number];
+      if (timer) timer.cancelled = true;
+    },
   });
 
   function deliver(
@@ -92,7 +106,7 @@ function harness(options: { origin?: string } = {}) {
   ) {
     listener?.({
       origin: overrides.origin ?? options.origin ?? FRAME_ORIGIN,
-      source: "source" in overrides ? overrides.source : target,
+      source: "source" in overrides ? overrides.source : currentTarget,
       data: { source: MESSAGE_SOURCE, type, payload },
     } as MessageEvent);
   }
@@ -103,7 +117,17 @@ function harness(options: { origin?: string } = {}) {
     posted,
     unresolved,
     statuses,
+    ackErrors,
     target,
+    setTarget(next: Window | null) {
+      currentTarget = next;
+    },
+    /** Deadlines still armed. */
+    liveTimers: () => timers.filter((timer) => !timer.cancelled),
+    /** Fire every armed deadline, the way 5 s of wall clock would. */
+    expireTimers() {
+      timers.filter((timer) => !timer.cancelled).forEach((timer) => timer.run());
+    },
     hasListener: () => listener !== null,
     deliver,
     /** Run every rAF callback queued so far. */
@@ -460,5 +484,198 @@ describe("createBridgeClient — destroy", () => {
     } finally {
       process.off("unhandledRejection", onUnhandled);
     }
+  });
+});
+
+describe("createBridgeClient — hardening", () => {
+  it("says nothing but `hello` before the handshake", () => {
+    const h = harness();
+
+    h.client.hello();
+    h.client.preview("vm-1", assignment());
+    h.client.clearPreview();
+    const replay = h.client.replay("vm-1");
+
+    expect(h.types()).toEqual(["hello"]);
+    // Refused, not queued: the whole state is re-derived and sent at `ready`.
+    return expect(replay).rejects.toThrow(/not ready/i);
+  });
+
+  it("does not track `hello` as a pending ack", async () => {
+    const h = harness();
+
+    h.client.hello();
+
+    // Spec D7: a `hello` ack proves nothing — it can come back `ok: false`
+    // with no `ready` behind it — so it must not be something `whenIdle()`
+    // waits for, and must not arm a deadline.
+    expect(h.liveTimers()).toHaveLength(0);
+    await expect(h.client.whenIdle()).resolves.toBeUndefined();
+  });
+
+  it("rejects a message the frame never acks, rather than waiting forever", async () => {
+    const h = harness();
+    h.ready();
+    // Settle the handshake's own `state:load` and `select` first, so the only
+    // deadline left armed is the one under test.
+    h.ackAll();
+    const replay = h.client.replay("vm-1");
+
+    expect(h.liveTimers()).toHaveLength(1);
+    expect(h.liveTimers()[0].ms).toBe(5_000);
+
+    h.expireTimers();
+
+    await expect(replay).rejects.toThrow(/did not ack/i);
+    // …and the channel is idle again, so `whenIdle()` cannot hang on it.
+    await expect(h.client.whenIdle()).resolves.toBeUndefined();
+  });
+
+  it("disarms the deadline when the ack does arrive", async () => {
+    const h = harness();
+    h.ready();
+    const replay = h.client.replay("vm-1");
+    h.ackAll();
+
+    await expect(replay).resolves.toMatchObject({ ok: true });
+    expect(h.liveTimers()).toHaveLength(0);
+  });
+
+  it("flushes a scheduled frame before posting a replay, so the apply lands first", async () => {
+    const h = harness();
+    h.ready();
+    h.store.getState().setDraftAssignment("vm-1", assignment());
+    h.clear();
+
+    // No `frame()` — the coalescing rAF has not run yet. `replay` has to flush
+    // it itself, or it restarts the animation the *old* params describe.
+    const replay = h.client.replay("vm-1");
+
+    // `select` is absent because nothing is selected and the handshake already
+    // said so; the point is that the `apply` precedes the `replay`.
+    expect(h.types()).toEqual(["apply", "replay"]);
+    h.ackAll();
+    await expect(replay).resolves.toMatchObject({ ok: true });
+  });
+
+  it("remembers a selection only once it has actually gone out", () => {
+    const h = harness();
+    h.ready();
+    h.store.getState().setSelectedVmId("vm-1");
+    h.frame();
+    h.clear();
+
+    // The frame goes away mid-flight: the `select` is refused…
+    h.setTarget(null);
+    h.store.getState().setSelectedVmId("vm-2");
+    h.frame();
+    expect(h.types()).toEqual([]);
+
+    // …so when it comes back, the ring is still told where to go.
+    h.setTarget(h.target);
+    h.store.getState().rememberElement(elementInfo("vm-2", "p"));
+    h.frame();
+    expect(h.types()).toEqual(["select"]);
+    expect(h.posted[0].data.payload).toMatchObject({ vmId: "vm-2" });
+  });
+
+  it("reports an ack the bridge refused", () => {
+    const h = harness();
+    h.ready();
+    h.client.replay("vm-1").catch(() => {});
+    const seq = h.posted.at(-1)?.data.seq;
+
+    h.deliver("ack", { seq, ms: 0.2, ok: false, error: "unknown-element" });
+
+    expect(h.ackErrors).toEqual([{ seq, ms: 0.2, ok: false, error: "unknown-element" }]);
+  });
+
+  it("reports a state:load the frame could only partly place", () => {
+    const h = harness();
+    h.ready();
+    const seq = h.posted[0]?.data.seq;
+
+    h.deliver("ack", { seq, ms: 1, ok: true, unknownVmIds: ["vm-9"] });
+
+    expect(h.ackErrors).toHaveLength(1);
+    expect(h.ackErrors[0]).toMatchObject({ ok: true, unknownVmIds: ["vm-9"] });
+  });
+
+  it("says nothing about an ack that simply succeeded", () => {
+    const h = harness();
+    h.ready();
+    h.deliver("ack", { seq: h.posted[0]?.data.seq, ms: 1, ok: true, unknownVmIds: [] });
+
+    expect(h.ackErrors).toEqual([]);
+  });
+
+  it("drops an element:select whose payload is not an ElementInfo", () => {
+    const h = harness();
+    h.ready();
+
+    h.deliver("element:select", { vmId: "vm-1", tag: 42, role: null, textPreview: "" });
+    h.deliver("element:select", { vmId: "vm-1" });
+    h.deliver("element:select", null);
+
+    // `tag` is rendered into the guard's question; a number would throw in
+    // React the moment the dialog opened.
+    expect(h.store.getState().elements).toEqual({});
+    expect(selectSelectedVmId(h.store.getState())).toBeNull();
+
+    h.deliver("element:select", elementInfo("vm-1", "h1"));
+    expect(h.store.getState().elements["vm-1"]).toMatchObject({ tag: "h1" });
+  });
+
+  it("clears an active preview before an apply that would land under it", () => {
+    const h = harness();
+    h.ready();
+    h.client.preview("vm-1", assignment());
+    h.clear();
+
+    h.store.getState().setDraftAssignment("vm-1", assignment({ params: { duration: "900ms" } }));
+    h.frame();
+
+    // Spec D6: an `apply` during a preview updates the layer *underneath*, so
+    // without this the tuned value is applied and invisible.
+    expect(h.types()).toEqual(["preview:clear", "apply"]);
+  });
+
+  it("clears an active preview before a state:load", () => {
+    const h = harness();
+    h.ready();
+    h.client.preview("vm-1", assignment());
+    h.clear();
+
+    for (let index = 0; index < BULK_APPLY_LIMIT + 1; index += 1) {
+      h.store.getState().setDraftAssignment(`vm-${index}`, assignment());
+    }
+    h.frame();
+
+    expect(h.types()).toEqual(["preview:clear", "state:load"]);
+  });
+
+  it("leaves another element's apply alone while a preview is up", () => {
+    const h = harness();
+    h.ready();
+    h.client.preview("vm-1", assignment());
+    h.clear();
+
+    h.store.getState().setDraftAssignment("vm-2", assignment());
+    h.frame();
+
+    expect(h.types()).toEqual(["apply"]);
+  });
+
+  it("forgets the preview once it has been cleared", () => {
+    const h = harness();
+    h.ready();
+    h.client.preview("vm-1", assignment());
+    h.client.clearPreview();
+    h.clear();
+
+    h.store.getState().setDraftAssignment("vm-1", assignment());
+    h.frame();
+
+    expect(h.types()).toEqual(["apply"]);
   });
 });
