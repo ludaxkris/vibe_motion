@@ -1,7 +1,12 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { CURRENT_CATALOG_VERSION, catalogCategories, getCatalogEntries } from "@/lib/catalog";
+import {
+  CURRENT_CATALOG_VERSION,
+  catalogCategories,
+  categoryLabel,
+  getCatalogEntries,
+} from "@/lib/catalog";
 
 import { CATEGORY_BLURBS, HelpScreen } from "./help-screen";
 
@@ -101,15 +106,21 @@ describe("HelpScreen", () => {
     expect(screen.getByText("No animations match “zzz”.")).toBeInTheDocument();
   });
 
-  it("names the category in the empty copy when one is pressed", () => {
-    renderHelp();
+  it("names the category in the empty copy the way its own chip does", () => {
+    // Through `categoryLabel`, like the chip and the section heading — not off
+    // the raw catalog id, which is only the same string today.
+    for (const category of catalogCategories(entries)) {
+      const label = categoryLabel(category);
+      renderHelp();
 
-    fireEvent.click(screen.getByRole("button", { name: "Attention 5" }));
-    fireEvent.change(search(), { target: { value: "fade" } });
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label} \\d+$`) }));
+      fireEvent.change(search(), { target: { value: "zzz" } });
 
-    expect(
-      screen.getByText("No attention animations match “fade”."),
-    ).toBeInTheDocument();
+      expect(
+        screen.getByText(`No ${label.toLowerCase()} animations match “zzz”.`),
+      ).toBeInTheDocument();
+      cleanup();
+    }
   });
 
   it("replays every visible card, hover-trigger ones included", () => {

@@ -71,6 +71,12 @@ export function HelpScreen({
     }))
     .filter((section) => section.entries.length > 0);
 
+  // "No entrance animations match …": through `categoryLabel`, like the chip
+  // and the section heading. The raw catalog id is only the same string while
+  // every category is one lower-case word.
+  const categoryWord =
+    category === ALL_CATEGORIES ? "" : `${categoryLabel(category).toLowerCase()} `;
+
   return (
     <>
       <TopBar title="Animations" titleTone="full" chip={`catalog ${catalogVersion}`} />
@@ -136,8 +142,7 @@ export function HelpScreen({
         <div className="flex flex-col gap-3.5 px-12 pt-6">
           {sections.length === 0 ? (
             <p className="text-md text-vm-ink-2">
-              No {category === ALL_CATEGORIES ? "" : `${category} `}animations match &ldquo;
-              {search.trim()}&rdquo;.
+              No {categoryWord}animations match &ldquo;{search.trim()}&rdquo;.
             </p>
           ) : (
             sections.map((section, index) => (
