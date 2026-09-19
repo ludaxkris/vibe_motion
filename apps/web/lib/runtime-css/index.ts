@@ -30,6 +30,18 @@ const STANDARD_PROPERTY_BY_KEY: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Whether `key` is one of the standard keys above — a param that maps to an
+ * `animation-*` longhand rather than to a `--vm-*` custom property. Exported
+ * because "standard" is a property of the CSS mapping, not of any one screen:
+ * the help page's defaults line reads standard params as bare CSS values
+ * ("600ms · ease-out") and animation-specific ones as `key value`
+ * ("distance 24px").
+ */
+export function isStandardParamKey(key: string): boolean {
+  return key in STANDARD_PROPERTY_BY_KEY;
+}
+
+/**
  * Every catalog param key on `entry`, mapped to the value in `params` when
  * given, otherwise the catalog `default`. Keys in `params` that are not
  * declared on `entry` are dropped.
