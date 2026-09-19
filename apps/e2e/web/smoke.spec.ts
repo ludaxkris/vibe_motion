@@ -3,9 +3,17 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+/**
+ * Specs that hold for *any* web deployment: they call no API and are as true of
+ * the production build in the Docker stack as of `next dev` with the MSW mocks.
+ * Anything that needs the mock api or a development build lives in `mocked/`;
+ * anything that needs the real api lives in `stack/`.
+ */
+
 // `/help` is driven by the catalog, so the expectation is too. Read from the
 // package's own files rather than importing it: Playwright loads specs as
 // CommonJS, and `animation-catalog` publishes an ESM-only entry point.
+// (The runner image copies these two paths in for exactly this reason.)
 const CATALOG_DIR = path.resolve(__dirname, "../../../packages/animation-catalog");
 const CURRENT_VERSION = readFileSync(path.join(CATALOG_DIR, "current"), "utf8").trim();
 const CATALOG_SIZE: number = JSON.parse(
@@ -23,69 +31,6 @@ test("home page offers a URL input", async ({ page }) => {
   // The scheme is the field's prefix, so a pasted URL loses it.
   await page.getByLabel("Page URL").fill("https://example.com");
   await expect(page.getByLabel("Page URL")).toHaveValue("example.com");
-});
-
-test("submitting a URL clones the page and opens the editor", async ({ page }) => {
-  await page.goto("/");
-
-  await page.getByLabel("Page URL").fill("https://example.com");
-  await page.getByRole("button", { name: "Clone" }).click();
-
-  await page.waitForURL(/\/p\/.+/);
-  const preview = page.getByRole("region", { name: "Preview" });
-  await expect(preview).toBeVisible();
-
-  const iframe = preview.getByTitle("Cloned page preview");
-  await expect(
-    iframe.contentFrame().getByRole("heading", { name: "Welcome to the fixture page" }),
-  ).toBeVisible();
-
-  await expect(page.getByRole("complementary", { name: "Control Panel" })).toBeVisible();
-});
-
-test("the Control Panel separator resizes with the keyboard", async ({ page }) => {
-  await page.goto("/");
-
-  await page.getByLabel("Page URL").fill("https://example.com");
-  await page.getByRole("button", { name: "Clone" }).click();
-  await page.waitForURL(/\/p\/.+/);
-
-  // The separator describes the primary (preview) pane, per APG's
-  // window-splitter pattern: a 25% Control Panel is a 75% preview.
-  const separator = page.getByRole("separator", { name: "Resize Control Panel" });
-  await expect(separator).toHaveAttribute("aria-valuenow", "75");
-
-  // Clicking is enough to focus it: the drag must not preventDefault() the
-  // focus a click gives every other focusable control.
-  await separator.click();
-  await expect(separator).toBeFocused();
-
-  await page.keyboard.press("End");
-  await expect(separator).toHaveAttribute("aria-valuenow", "80");
-
-  await page.keyboard.press("Home");
-  await expect(separator).toHaveAttribute("aria-valuenow", "70");
-
-  // …and the panel really is at its widest, whatever the separator announces.
-  const panel = page.getByRole("complementary", { name: "Control Panel" });
-  const [panelBox, viewport] = [await panel.boundingBox(), page.viewportSize()];
-  expect(panelBox && viewport && Math.round((panelBox.width / viewport.width) * 100)).toBe(30);
-});
-
-test("a cloned project comes back under Recent projects", async ({ page }) => {
-  await page.goto("/");
-
-  // Nothing cloned in this browser yet, so the whole column is absent.
-  await expect(page.getByRole("region", { name: "Recent projects" })).toHaveCount(0);
-
-  await page.getByLabel("Page URL").fill("https://example.com");
-  await page.getByRole("button", { name: "Clone" }).click();
-  await page.waitForURL(/\/p\/.+/);
-
-  await page.goto("/");
-  const recent = page.getByRole("region", { name: "Recent projects" });
-  await expect(recent).toBeVisible();
-  await expect(recent.getByRole("link", { name: "Open example.com" })).toBeVisible();
 });
 
 test("help page plays the whole catalog", async ({ page }) => {
@@ -126,7 +71,9 @@ test.describe("when the reader asks for less motion", () => {
     await page.goto("/help");
 
     // Suppressed by the page's own stylesheet, so this holds from the first
-    // paint — before any JavaScript could have read the preference.
+    // paint — before any JavaScript could have read the preference. Only the
+    // Docker stack's production build really proves that (DT-118): under API
+    // mocking `MockProvider` renders nothing until its worker is up.
     await expect(page.getByTestId("catalog-card-demo").first()).toHaveCSS(
       "animation-name",
       "none",
@@ -176,51 +123,6 @@ test.describe("when the reader asks for less motion", () => {
     await expect(running).toHaveCSS("animation-name", /^vm-/);
     await expect(running).not.toHaveCSS("background-image", "none");
   });
-});
-
-test("the /dev gallery renders every state at the handoff's widths", async ({ page }) => {
-  await page.goto("/dev");
-
-  // jsdom has no layout, so this is the only place the handoff's widths are
-  // actually measured: panel 320, unsaved guard 380, Save dialog 420.
-  const widths: [string, string, number][] = [
-    ["dev-frame-panel-tuning-distance", "[data-dev-frame-body]", 320],
-    ["dev-frame-dialog-unsaved-guard", "[data-slot='dialog-card']", 380],
-    ["dev-frame-dialog-save", "[data-slot='dialog-card']", 420],
-  ];
-  for (const [frame, selector, width] of widths) {
-    const box = await page.getByTestId(frame).locator(selector).boundingBox();
-    expect(box?.width, `${frame} is ${width}px wide`).toBe(width);
-  }
-
-  // Every frame the screenshot runner will ask for is on the page.
-  for (const frame of [
-    "dev-frame-panel-idle-empty",
-    "dev-frame-panel-idle-assignments",
-    "dev-frame-panel-selected",
-    "dev-frame-panel-choosing",
-    "dev-frame-panel-choosing-empty-search",
-    "dev-frame-panel-tuning-scale",
-    "dev-frame-panel-tuning-selects",
-    "dev-frame-dialog-unsaved-guard-many",
-    "dev-frame-toast",
-    "dev-frame-entry-cloning",
-    "dev-frame-entry-error",
-  ]) {
-    await expect(page.getByTestId(frame)).toBeVisible();
-  }
-
-  await page.getByRole("button", { name: "Show a toast for real" }).click();
-  await expect(page.locator("[data-slot='toaster']")).toHaveText("Saved v6");
-  // ~2s auto-dismiss, and nothing left behind.
-  await expect(page.locator("[data-slot='toaster']")).toBeEmpty({ timeout: 5000 });
-});
-
-test("/dev/panel sends the old gallery to /dev", async ({ page }) => {
-  await page.goto("/dev/panel");
-
-  await page.waitForURL("**/dev");
-  await expect(page.getByTestId("dev-frame-panel-idle-empty")).toBeVisible();
 });
 
 test("health endpoint reports ok", async ({ request }) => {

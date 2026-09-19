@@ -5,7 +5,9 @@ import { defineConfig, devices } from "@playwright/test";
  * apps/e2e/README.md). No `webServer`: the stack already runs a production web build, the real
  * api image and Postgres, and the runner reaches them by service name.
  *
- * Runs every web spec: the web-only ones in `web/` and the full-stack ones in `web/stack/`.
+ * Runs the deployment-independent specs in `web/` and the full-stack ones in `web/stack/`.
+ * `web/mocked/` is skipped: those need the MSW mock api or a development build, and this stack is
+ * a production build (`lib/env.ts` forces `apiMocking` off) talking to the real api.
  */
 
 const webOrigin = required("E2E_WEB_ORIGIN");
@@ -19,6 +21,7 @@ function required(name: string): string {
 
 export default defineConfig({
   testDir: "./web",
+  testIgnore: "**/mocked/**",
   outputDir: "/out/test-results",
   fullyParallel: true,
   // Explicit, not CPU-derived: the api admits 2 concurrent clones and queues the rest for 5 s

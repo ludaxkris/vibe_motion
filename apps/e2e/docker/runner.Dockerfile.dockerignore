@@ -1,10 +1,13 @@
-# Per-Dockerfile ignore (BuildKit). The runner needs the lockfile and apps/e2e, nothing else.
+# Per-Dockerfile ignore (BuildKit). The runner needs the lockfile, apps/e2e and the catalog's own
+# data files (`web/smoke.spec.ts` checks /help against them), nothing else.
 *
 !package.json
 !pnpm-lock.yaml
 !pnpm-workspace.yaml
 !.nvmrc
 !apps/e2e
+!packages/animation-catalog/current
+!packages/animation-catalog/versions
 **/node_modules/
 **/playwright-report*/
 **/test-results/

@@ -18,6 +18,11 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .nvmrc ./
 RUN pnpm fetch --config.engine-strict=false
 
 COPY apps/e2e apps/e2e
+# `/help` is the catalog rendered, so `web/smoke.spec.ts` checks it against the catalog itself and
+# reads these two paths off disk (Playwright loads specs as CommonJS; the package is ESM-only).
+# Data files only — the runner drives browsers, it does not build anything.
+COPY packages/animation-catalog/current packages/animation-catalog/current
+COPY packages/animation-catalog/versions packages/animation-catalog/versions
 # Only the e2e package: the runner drives browsers, it does not build the app.
 RUN pnpm install --offline --frozen-lockfile --config.engine-strict=false --filter e2e
 
