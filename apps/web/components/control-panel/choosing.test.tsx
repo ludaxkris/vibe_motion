@@ -1,3 +1,4 @@
+import { keyframesName } from "animation-catalog";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -181,6 +182,24 @@ describe("ChoosingPanel", () => {
   });
 
   it("pins its demos to the catalog version it was given", () => {
+    const onlyFadeIn = entries.filter((entry) => entry.id === "fade-in");
+    const { container } = renderPicker({ entries: onlyFadeIn, catalogVersion: "1.0.0" });
+
+    // The injected `@keyframes` block, and what the demo plays, both name the
+    // version asked for — not whatever `current` happens to be today.
+    const pinnedName = keyframesName("fade-in", "1.0.0");
+    expect(pinnedName).not.toBe(keyframesName("fade-in", CURRENT_CATALOG_VERSION));
+    expect(container.querySelector("style")?.textContent).toContain(
+      `@keyframes ${pinnedName} {`,
+    );
+
+    const demo = within(container).getByTestId("animation-card-demo");
+    // The demo only carries its animation while the card is hovered or focused.
+    fireEvent.focus(within(container).getByTestId("animation-card"));
+    expect(demo.style.animationName).toBe(pinnedName);
+  });
+
+  it("renders one card per entry it is given", () => {
     const { container } = renderPicker({ catalogVersion: CURRENT_CATALOG_VERSION });
 
     expect(within(container).getAllByTestId("animation-card").length).toBe(entries.length);
