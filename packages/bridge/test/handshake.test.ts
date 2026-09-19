@@ -93,6 +93,16 @@ describe("handshake", () => {
     expect(h.acks()).toEqual([]);
   });
 
+  it("does not ack a seq that could never be matched", () => {
+    const h = loadBridge(FIXTURE);
+    h.send({ type: "hello", payload: {}, seq: NaN });
+    h.send({ type: "hello", payload: {}, seq: Infinity });
+
+    // The message is still handled; only the uncorrelatable ack is withheld (NaN !== NaN).
+    expect(h.payloads("ready")).toHaveLength(3);
+    expect(h.acks()).toEqual([]);
+  });
+
   it("fails the ack for a hello it cannot answer yet, rather than claiming success", () => {
     // Only reachable if the script is ever injected without `defer`. The shell must never read
     // a `hello` ack as proof that a `ready` followed (spec D7).

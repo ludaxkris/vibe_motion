@@ -79,14 +79,87 @@ describe("elements:query", () => {
     expect(h.lastAck()).toMatchObject({ seq: 7, ok: true });
   });
 
-  it("accepts a query with no payload at all", () => {
+  it.each([
+    ["no payload key at all", undefined],
+    ["a null payload", null],
+  ])("treats %s as an empty query", (_name, payload) => {
     const h = loadBridge(MIXED);
     stubAll(h, { width: 100, height: 100 });
 
-    h.send({ type: "elements:query", payload: undefined, seq: 1 });
+    h.send({ type: "elements:query", payload, seq: 1 }, { rawPayload: true });
 
     expect(lists(h)).toHaveLength(1);
+    expect(ids(lists(h)[0])).toEqual(["vm-wrap", "vm-h1", "vm-p", "vm-btn", "vm-rolebtn"]);
     expect(h.lastAck()).toMatchObject({ seq: 1, ok: true });
+  });
+
+  it.each([
+    ["an array payload", [{ filter: { tags: ["h1"] } }]],
+    ["a string payload", "h1"],
+    ["a number payload", 5],
+  ])("rejects %s as invalid-payload and posts no list", (_name, payload) => {
+    const h = loadBridge(MIXED);
+    stubAll(h, { width: 100, height: 100 });
+
+    h.send({ type: "elements:query", payload, seq: 4 }, { rawPayload: true });
+
+    expect(lists(h)).toEqual([]);
+    expect(h.lastAck()).toMatchObject({ seq: 4, ok: false, error: "invalid-payload" });
+  });
+
+  it("lower-cases filter.tags before matching", () => {
+    const h = loadBridge(MIXED);
+    stubAll(h, { width: 100, height: 100 });
+
+    h.send({ type: "elements:query", payload: { filter: { tags: ["H1", "Button"] } }, seq: 1 });
+
+    expect(ids(lists(h)[0])).toEqual(["vm-h1", "vm-btn", "vm-rolebtn"]);
+  });
+
+  it("matches nothing for an empty tags list, and measures nothing", () => {
+    const h = loadBridge(MIXED);
+    stubAll(h, { width: 100, height: 100 });
+    const onH1 = stubRect(h.el("vm-h1"), { width: 100, height: 100 });
+
+    h.send({ type: "elements:query", payload: { filter: { tags: [] } }, seq: 1 });
+
+    expect(lists(h)).toHaveLength(1);
+    expect(lists(h)[0].elements).toEqual([]);
+    expect(lists(h)[0].truncated).toBe(false);
+    expect(h.lastAck()).toMatchObject({ seq: 1, ok: true });
+    expect(onH1).not.toHaveBeenCalled();
+  });
+
+  it("matches role by token, so a fallback role list containing button counts", () => {
+    const h = loadBridge(
+      page(`<div data-vm-id="vm-a" role="button link">a</div>
+            <div data-vm-id="vm-b" role="  link	BUTTON ">b</div>
+            <div data-vm-id="vm-c" role="buttonish">c</div>
+            <div data-vm-id="vm-d" role="link">d</div>
+            <div data-vm-id="vm-e">e</div>`),
+    );
+    stubAll(h, { width: 100, height: 100 });
+
+    h.send({ type: "elements:query", payload: { filter: { tags: ["button"] } }, seq: 1 });
+
+    expect(ids(lists(h)[0])).toEqual(["vm-a", "vm-b"]);
+  });
+
+  it("writes nothing synchronously even while an element is selected", () => {
+    const h = loadBridge(MIXED);
+    stubAll(h, { width: 100, height: 100 });
+    h.send({ type: "select", payload: { vmId: "vm-h1", label: "h1" }, seq: 1 });
+    h.flushRaf();
+    const htmlBefore = h.document.documentElement.outerHTML;
+    const cssBefore = h.runtimeCss();
+
+    h.send({ type: "elements:query", payload: { filter: { tags: ["h1", "p"] } }, seq: 2 });
+
+    // No flushRaf: the overlay re-sync the bridge schedules after every message lands in a
+    // later frame, outside the handler and outside ack.ms.
+    expect(lists(h)).toHaveLength(1);
+    expect(h.document.documentElement.outerHTML).toBe(htmlBefore);
+    expect(h.runtimeCss()).toBe(cssBefore);
   });
 
   it("lists elements in document order with ascending order", () => {
@@ -209,7 +282,10 @@ describe("elements:query", () => {
   it.each([
     ["a string filter", { filter: "x" }],
     ["a null filter", { filter: null }],
+    ["an array filter", { filter: [{ tags: ["h1"] }] }],
     ["tags that are not an array", { filter: { tags: "h1" } }],
+    ["a tags entry that is not a string", { filter: { tags: ["h1", 1] } }],
+    ["a null tags entry", { filter: { tags: [null] } }],
     ["a string limit", { limit: "2" }],
     ["a NaN limit", { limit: NaN }],
     ["an infinite limit", { limit: Infinity }],
@@ -235,6 +311,8 @@ describe("elements:query", () => {
     h.send({ type: "elements:query", payload: {} });
     h.send({ type: "elements:query", payload: { filter: "x" } });
     h.send({ type: "elements:query", payload: {}, seq: "7" as unknown as number });
+    h.send({ type: "elements:query", payload: {}, seq: NaN });
+    h.send({ type: "elements:query", payload: {}, seq: Infinity });
 
     expect(h.sent).toEqual([]);
   });

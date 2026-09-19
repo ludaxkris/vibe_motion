@@ -107,6 +107,18 @@
     return typeof x === "number" && isFinite(x);
   }
 
+  /**
+   * `role` is a space-separated fallback list (`role="button link"`), so match by token.
+   *
+   * @param {Element} el
+   */
+  function hasButtonRole(el) {
+    var role = el.getAttribute("role");
+    if (!role) return false;
+    var tokens = role.toLowerCase().split(/\s+/);
+    return tokens.indexOf("button") !== -1;
+  }
+
   function now() {
     return window.performance && window.performance.now ? window.performance.now() : Date.now();
   }
@@ -909,7 +921,17 @@
    */
   function elementInfo(vmId) {
     var el = elements.get(vmId);
-    if (!el) return null;
+    return el ? elementInfoFor(vmId, el) : null;
+  }
+
+  /**
+   * `elementInfo` for a caller that already holds the element (`elements:query` walks the map).
+   *
+   * @param {string} vmId
+   * @param {Element} el
+   * @returns {import("./protocol").ElementInfo}
+   */
+  function elementInfoFor(vmId, el) {
     var rect = el.getBoundingClientRect();
     var computed = window.getComputedStyle ? window.getComputedStyle(el) : null;
     var text = (el.textContent || "").replace(/\s+/g, " ").trim();
@@ -1263,46 +1285,54 @@
      * not a single style write, so the whole query costs at most one layout pass.
      */
     "elements:query": function (payload, seq) {
-      // Without a `seq` the shell could not tell which query a list answers: post nothing.
-      if (typeof seq !== "number") return;
+      // Without a usable `seq` the shell could not tell which query a list answers: post nothing.
+      // `NaN` counts as unusable too, because `NaN !== NaN` can never be matched to a pending query.
+      if (!isFiniteNumber(seq)) return;
+      var invalid = { ok: false, error: "invalid-payload" };
       var p = payload === undefined || payload === null ? {} : payload;
-      if (typeof p !== "object") return { ok: false, error: "invalid-payload" };
+      if (typeof p !== "object" || Array.isArray(p)) return invalid;
       var f = p.filter === undefined ? {} : p.filter;
-      if (!f || typeof f !== "object") return { ok: false, error: "invalid-payload" };
-      if (f.tags !== undefined && !Array.isArray(f.tags)) return { ok: false, error: "invalid-payload" };
-      if (f.minWidth !== undefined && !isFiniteNumber(f.minWidth)) return { ok: false, error: "invalid-payload" };
-      if (f.minHeight !== undefined && !isFiniteNumber(f.minHeight)) return { ok: false, error: "invalid-payload" };
+      if (!f || typeof f !== "object" || Array.isArray(f)) return invalid;
+      if (f.minWidth !== undefined && !isFiniteNumber(f.minWidth)) return invalid;
+      if (f.minHeight !== undefined && !isFiniteNumber(f.minHeight)) return invalid;
       // `NaN` would survive the clamp below and turn the limit off, hence the explicit check.
-      if (p.limit !== undefined && !isFiniteNumber(p.limit)) return { ok: false, error: "invalid-payload" };
+      if (p.limit !== undefined && !isFiniteNumber(p.limit)) return invalid;
       var limit = Math.max(
         1,
         Math.min(ELEMENTS_QUERY_MAX, p.limit === undefined ? ELEMENTS_QUERY_LIMIT : Math.floor(p.limit)),
       );
 
-      var tags = /** @type {string[] | undefined} */ (f.tags);
-      var wantsButtonRole = !!tags && tags.indexOf("button") !== -1;
+      // Lower-cased once, as a lookup. An empty `tags` is a filter nothing passes, not "no filter".
+      var tags = /** @type {Record<string, boolean> | null} */ (null);
+      if (f.tags !== undefined) {
+        if (!Array.isArray(f.tags)) return invalid;
+        tags = Object.create(null);
+        for (var t = 0; t < f.tags.length; t += 1) {
+          if (typeof f.tags[t] !== "string") return invalid;
+          /** @type {Record<string, boolean>} */ (tags)[f.tags[t].toLowerCase()] = true;
+        }
+      }
+      var tagFilter = tags;
+      var wantsButtonRole = !!tagFilter && tagFilter.button === true;
+      var minWidth = /** @type {number | undefined} */ (f.minWidth);
+      var minHeight = /** @type {number | undefined} */ (f.minHeight);
+
       var list = /** @type {import("./protocol").ElementInfo[]} */ ([]);
       var truncated = false;
-      // `buildElementMap` inserts in document order and a Map iterates in insertion order: no sort.
-      var ids = Array.from(elements.keys());
-      for (var i = 0; i < ids.length; i += 1) {
-        if (tags) {
-          // The clone tags every element under <body>, and `elementInfo` reads `textContent`
-          // (the whole subtree, for a wrapper). So tag and role are checked first, and an element
-          // that does not match is never measured and its text is never read.
-          var el = elements.get(ids[i]);
-          if (!el) continue;
-          if (
-            tags.indexOf(el.tagName.toLowerCase()) === -1 &&
-            !(wantsButtonRole && el.getAttribute("role") === "button")
-          ) {
-            continue;
-          }
-        }
-        var info = elementInfo(ids[i]);
-        if (!info || !info.visible) continue;
-        if (f.minWidth !== undefined && info.rect.width < f.minWidth) continue;
-        if (f.minHeight !== undefined && info.rect.height < f.minHeight) continue;
+      // `buildElementMap` inserts in document order and a Map iterates in insertion order: no sort,
+      // no copy of the keys, no second lookup per element.
+      var entries = elements.entries();
+      for (var step = entries.next(); !step.done; step = entries.next()) {
+        var vmId = step.value[0];
+        var el = step.value[1];
+        // The clone tags every element under <body>, and `elementInfo` reads `textContent` (the
+        // whole subtree, for a wrapper). So tag and role are checked first, and an element that
+        // does not match is never measured and its text is never read.
+        if (tagFilter && !tagFilter[el.tagName.toLowerCase()] && !(wantsButtonRole && hasButtonRole(el))) continue;
+        var info = elementInfoFor(vmId, el);
+        if (!info.visible) continue;
+        if (minWidth !== undefined && info.rect.width < minWidth) continue;
+        if (minHeight !== undefined && info.rect.height < minHeight) continue;
         if (list.length === limit) {
           truncated = true;
           break;
@@ -1343,7 +1373,8 @@
     // The overlay may be sitting on a box that just changed size; the measurement itself lands
     // in a frame, outside `ack.ms`.
     if (hoveredVmId || selectedVmId) scheduleOverlaySync();
-    if (typeof data.seq === "number") {
+    // Finite, not just a number: an `ack { seq: NaN }` can never be matched (`NaN !== NaN`).
+    if (isFiniteNumber(data.seq)) {
       var ack = /** @type {{ seq: number; ms: number; ok: boolean; error?: string; unknownVmIds?: string[] }} */ ({
         seq: data.seq,
         ms: now() - started,

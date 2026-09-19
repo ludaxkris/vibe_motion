@@ -19,7 +19,7 @@ import {
   isEnvelope,
   validateApplied,
 } from "../src/protocol";
-import type { AppliedAssignment } from "../src/protocol";
+import type { AppliedAssignment, ElementsQueryEnvelope } from "../src/protocol";
 
 const applied = appliedFixture;
 
@@ -169,5 +169,15 @@ describe("id regexes", () => {
     expect(VM_ID_RE.test("vm-Heading")).toBe(false);
     expect(KEYFRAMES_NAME_RE.test("vm-fade-in-up-v1-1-0")).toBe(true);
     expect(KEYFRAMES_NAME_RE.test("fade-in")).toBe(false);
+  });
+});
+
+describe("ElementsQueryEnvelope", () => {
+  it("makes the seq mandatory at compile time", () => {
+    const ok: ElementsQueryEnvelope = { source: MESSAGE_SOURCE, type: "elements:query", payload: {}, seq: 1 };
+    // @ts-expect-error a query without a seq is answered with silence, so the type refuses it
+    const missing: ElementsQueryEnvelope = { source: MESSAGE_SOURCE, type: "elements:query", payload: {} };
+    expect(ok.seq).toBe(1);
+    expect(missing.type).toBe("elements:query");
   });
 });

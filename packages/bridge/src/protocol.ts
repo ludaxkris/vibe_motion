@@ -73,7 +73,9 @@ export type ToShell =
   | {
       /**
        * The answer to `elements:query`, posted before that query's `ack`. `seq` is the query's
-       * envelope `seq`. Visible elements only, in document order; `truncated` when more matched
+       * envelope `seq`. Only elements with `visible === true` (a non-zero box, not
+       * `visibility:hidden` / `display:none`; opacity, off-canvas and clipped still count), in
+       * document order; `truncated` when more matched
        * than `limit`. `viewport` is the frame's `innerWidth` / `innerHeight`, so the receiver can
        * tell above-the-fold (`pageRect.y < viewport.height`) from below.
        */
@@ -94,9 +96,12 @@ export type ToBridge =
   | {
       /**
        * Bridge >= 1.1.0 (older bridges ignore it: check `ready.bridgeVersion`). Must be sent with
-       * an envelope `seq`, or the bridge posts nothing. `tags` are lower-case tag names, and
-       * `"button"` also matches `role="button"`; sizes are border-box px; `limit` defaults to
-       * `ELEMENTS_QUERY_LIMIT` and is clamped to `[1, ELEMENTS_QUERY_MAX]`.
+       * a finite envelope `seq` (see `ElementsQueryEnvelope`), or the bridge posts nothing. `tags`
+       * are tag names, matched case-insensitively; every entry must be a string; `[]` matches
+       * nothing; `"button"` also matches an element whose `role` tokens include `button`. Sizes
+       * are border-box px; `limit` defaults to `ELEMENTS_QUERY_LIMIT` and is clamped to
+       * `[1, ELEMENTS_QUERY_MAX]`. Always send `tags` on a large page: the budget only covers
+       * tag-filtered queries.
        */
       type: "elements:query";
       payload: { filter?: { tags?: string[]; minWidth?: number; minHeight?: number }; limit?: number };
@@ -106,6 +111,14 @@ export type Envelope<M extends { type: string; payload: unknown }> = M & {
   source: typeof MESSAGE_SOURCE;
   seq?: number;
 };
+
+/**
+ * What the shell must actually put on the wire for `elements:query`: the same envelope, with the
+ * `seq` that is optional everywhere else made mandatory. The bridge answers a query that has no
+ * finite `seq` with total silence (no list, no ack), because nothing could be correlated to it,
+ * so type the outgoing message with this and let the compiler catch the omission.
+ */
+export type ElementsQueryEnvelope = Envelope<Extract<ToBridge, { type: "elements:query" }>> & { seq: number };
 
 export function isEnvelope(data: unknown): data is Envelope<{ type: string; payload: unknown }> {
   return (

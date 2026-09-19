@@ -414,6 +414,7 @@ test("keyframes css that is not exactly one matching @keyframes rule is rejected
 type ListedElement = {
   vmId: string;
   tag: string;
+  role: string | null;
   order: number;
   visible: boolean;
   rect: { x: number; y: number; width: number; height: number };
@@ -497,13 +498,16 @@ test.describe("elements:query", () => {
     expect(after.rect.y).toBe(before.rect.y - 1500);
   });
 
-  test("answers the Phase 5 query on a 2,000-element page inside the 50 ms budget, with no writes", async ({ page }) => {
+  test("answers the Phase 5 query on a 2,000-element page inside the 50 ms budget (p95), with no writes", async ({ page }) => {
     // What a clone looks like: every element under <body> tagged, targets buried in wrappers.
+    // The copy sits inside <article> wrappers, one around the whole page and one per section:
+    // `article` is in the Phase 5 filter and `elementInfo` reads a matched element's whole
+    // subtree `textContent`, so this is the worst case that filter permits.
     const sentence = "The quick brown fox jumps over the lazy dog while the designer tunes an easing curve. ";
     const paragraph = sentence.repeat(11); // ~950 chars
     let n = 0;
     const id = () => `data-vm-id="vm-e${(n += 1)}"`;
-    let body = "";
+    let sections = "";
     for (let s = 0; s < 40; s += 1) {
       let items = "";
       for (let i = 0; i < 10; i += 1) {
@@ -511,73 +515,106 @@ test.describe("elements:query", () => {
       }
       let paras = "";
       for (let p = 0; p < 8; p += 1) paras += `<div ${id()}><p ${id()}>${paragraph}</p></div>`;
-      body += `<section ${id()}><div ${id()}><div ${id()}>
+      sections += `<article ${id()}><div ${id()}><div ${id()}>
         <h2 ${id()} style="min-height:44px">Section ${s}</h2>
         <ul ${id()}>${items}</ul>
         ${paras}
         <button ${id()} style="width:120px;height:44px">Go</button>
         <div ${id()} role="button" style="width:120px;height:44px">Also go</div>
-      </div></div></section>`;
+      </div></div></article>`;
     }
+    const body = `<article ${id()}>${sections}</article>`;
     expect(n).toBeGreaterThanOrEqual(2000);
     expect(body.length).toBeGreaterThanOrEqual(300_000);
 
-    const h = await mountBridge(page, body);
+    // Installed from <head>, so before the (deferred) bridge script registers its own `message`
+    // listener: listeners on the same target run in registration order, so this one runs first,
+    // in the SAME event dispatch as the bridge's handler. When `__dirty` is set it invalidates
+    // the whole page's layout in the very task that answers the query. No frame can be rendered,
+    // and so no layout flushed, between the write and the measurement: every dirty sample pays
+    // for the one layout pass a query is allowed to cost. (A write made from a separate
+    // Playwright round trip only costs the query a layout when no frame happens to land first.)
+    // The MutationObserver sees any DOM or inline-style write; the test's own write is dropped
+    // from its count on the spot.
+    const head = `<script>
+      window.__mutations = 0; window.__dirty = false; window.__dirtied = 0;
+      (function () {
+        var observer = new MutationObserver(function (records) { window.__mutations += records.length; });
+        window.__resetMutations = function () { observer.takeRecords(); window.__mutations = 0; };
+        observer.observe(document.documentElement, { attributes: true, childList: true, characterData: true, subtree: true });
+        var step = 0;
+        window.addEventListener("message", function (event) {
+          if (!window.__dirty || !event.data || event.data.type !== "elements:query") return;
+          // A width the page has never had, far from the last one, so the lines re-break and
+          // no cached layout result can be reused.
+          step += 1;
+          document.body.style.width = (500 + ((step * 37) % 281)) + "px";
+          observer.takeRecords();
+          window.__dirtied += 1;
+        });
+      })();
+    </script>`;
+
+    const h = await mountBridge(page, body, head);
     const ready = (await h.messages("ready"))[0].payload;
     expect(ready.elementCount).toBe(n);
     expect(ready.bridgeVersion).toBe("1.1.0");
+    // Parsing the page and the bridge's own start-up (overlay, runtime sheet) are not the query's.
+    await h.frame.evaluate(() => (window as unknown as { __resetMutations: () => void }).__resetMutations());
 
-    // Any DOM or inline-style write during the queries would show up here.
-    await h.frame.evaluate(() => {
-      const w = window as unknown as { __mutations: number; __observer: MutationObserver };
-      w.__mutations = 0;
-      w.__observer = new MutationObserver((records) => {
-        w.__mutations += records.length;
-      });
-      w.__observer.observe(document.documentElement, { attributes: true, childList: true, characterData: true, subtree: true });
-    });
-    /** Invalidate layout for the whole page (the test's own write is dropped from the count). */
-    const dirtyLayout = (width: number) =>
-      h.frame.evaluate((px) => {
-        document.body.style.width = `${px}px`;
-        (window as unknown as { __observer: MutationObserver }).__observer.takeRecords();
-      }, width);
+    const setDirty = (on: boolean) =>
+      h.frame.evaluate((value) => {
+        (window as unknown as { __dirty: boolean }).__dirty = value;
+      }, on);
 
+    const RUNS = 40;
     const measure = async (payload: unknown) => {
       const samples: number[] = [];
-      for (let i = 0; i < 15; i += 1) {
-        // Dirty on alternate runs, so the budget includes the one layout pass a query may cost
-        // (the first run is cold too), not only the cached case.
-        if (i % 2 === 1) await dirtyLayout(780 - i);
-        samples.push((await h.send("elements:query", payload)).ms);
-      }
+      for (let i = 0; i < RUNS; i += 1) samples.push((await h.send("elements:query", payload)).ms);
       return samples;
     };
+    const p95 = (samples: number[]) => [...samples].sort((x, y) => x - y)[Math.ceil(samples.length * 0.95) - 1];
     const describeSamples = (label: string, samples: number[]) => {
       const sorted = [...samples].sort((x, y) => x - y);
-      const dirty = samples.filter((_, i) => i % 2 === 1);
-      const line = `elements:query ack.ms, ${n} elements, ${label}: first=${samples[0].toFixed(1)} min=${sorted[0].toFixed(1)} median=${sorted[7].toFixed(1)} max=${sorted[14].toFixed(1)} dirty-layout max=${Math.max(...dirty).toFixed(1)}`;
+      const line = `elements:query ack.ms, ${n} elements, ${label}: median=${sorted[Math.floor(RUNS / 2)].toFixed(1)} p95=${p95(samples).toFixed(1)} max=${sorted[RUNS - 1].toFixed(1)}`;
       test.info().annotations.push({ type: "perf", description: line });
       console.log(line);
+      if (process.env.VM_PERF_RAW) console.log(samples.map((x) => x.toFixed(1)).join(" "));
     };
 
-    // What the shell sends, then the most a query can ever cost: the ceiling limit, which walks
-    // further down the page, and a filter so narrow that all 2,000 elements are scanned.
-    const samples = await measure({ filter: PHASE_5_FILTER, limit: 200 });
-    const atCeiling = await measure({ filter: PHASE_5_FILTER, limit: 500 });
-    const fullScan = await measure({ filter: { ...PHASE_5_FILTER, minWidth: 5000 } });
-    describeSamples("Phase 5 filter limit 200", samples);
-    describeSamples("Phase 5 filter limit 500", atCeiling);
-    describeSamples("Phase 5 filter, nothing wide enough (full scan)", fullScan);
+    // What the shell sends; then the most a tag-filtered query can cost: the ceiling limit, which
+    // walks further down the page, and sizes nothing reaches, so every element is scanned.
+    const scenarios: Array<[string, unknown]> = [
+      ["limit 200", { filter: PHASE_5_FILTER, limit: 200 }],
+      ["limit 500", { filter: PHASE_5_FILTER, limit: 500 }],
+      ["full scan (nothing wide enough)", { filter: { ...PHASE_5_FILTER, minWidth: 5000 } }],
+    ];
+    const results: Array<[string, number[]]> = [];
+    for (const [label, payload] of scenarios) {
+      await setDirty(false);
+      results.push([`${label}, clean layout`, await measure(payload)]);
+      await setDirty(true);
+      results.push([`${label}, dirty layout`, await measure(payload)]);
+    }
+    await setDirty(false);
+    for (const [label, samples] of results) describeSamples(label, samples);
+
+    // The dirtying really ran once per dirty sample, and nothing else wrote anything.
+    expect(await h.frame.evaluate(() => (window as unknown as { __dirtied: number }).__dirtied)).toBe(RUNS * scenarios.length);
+    expect(await h.frame.evaluate(() => (window as unknown as { __mutations: number }).__mutations)).toBe(0);
 
     const list = (await h.messages("elements:list"))[0].payload as unknown as ElementsList;
     expect(list.elements).toHaveLength(200);
     expect(list.truncated).toBe(true);
-    expect(list.elements.every((e) => PHASE_5_FILTER.tags.includes(e.tag) || e.tag === "div")).toBe(true);
+    for (const e of list.elements) {
+      const roleButton = e.tag === "div" && (e.role ?? "").split(/\s+/).includes("button");
+      expect(PHASE_5_FILTER.tags.includes(e.tag) || roleButton, `${e.vmId} <${e.tag} role=${e.role}>`).toBe(true);
+    }
     expect(list.elements.some((e) => e.tag === "h2")).toBe(true);
-    expect(list.elements.some((e) => e.tag === "div")).toBe(true); // role="button"
+    expect(list.elements.some((e) => e.tag === "article")).toBe(true);
+    expect(list.elements.some((e) => e.tag === "div" && e.role === "button")).toBe(true);
 
-    expect(await h.frame.evaluate(() => (window as unknown as { __mutations: number }).__mutations)).toBe(0);
-    for (const ms of [...samples, ...atCeiling, ...fullScan]) expect(ms).toBeLessThan(50);
+    // p95, not max, for the reason spec §6 gives for the slider budget: CI is noisy.
+    for (const [label, samples] of results) expect(p95(samples), label).toBeLessThan(50);
   });
 });
