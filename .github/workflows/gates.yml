@@ -32,6 +32,48 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm gates:catalog
 
+  bridge:
+    name: bridge gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Cache the browser download, not the apt packages: `playwright install` re-downloads
+      # ~150MB of Chromium on every run otherwise, for a suite that takes five seconds. Keyed on
+      # the resolved Playwright version so a bump invalidates it. The web and e2e jobs do not
+      # cache today; this is deliberately scoped to the bridge job.
+      - id: pw-version
+        # Assign first and assert: `echo "$(cmd)"` exits 0 even when the substitution fails, and
+        # an empty version silently degrades the key to `ms-playwright-Linux--chromium`, which
+        # keeps hitting after the next Playwright bump and restores the wrong browser revision.
+        run: |
+          version=$(node -p "require('./packages/bridge/node_modules/@playwright/test/package.json').version")
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}-chromium
+      - if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter bridge exec playwright install-deps chromium
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter bridge exec playwright install --with-deps chromium
+      - run: pnpm gates:bridge
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          # `trace: "on-first-retry"` writes here. The CI reporter is github + list, so no HTML
+          # report directory is ever created.
+          name: bridge-playwright-traces
+          path: packages/bridge/test-results
+          retention-days: 7
+
   web:
     name: web gates
     runs-on: ubuntu-latest
@@ -101,7 +143,7 @@ jobs:
 
   gate-flag:
     name: Gate Flag
-    needs: [catalog, web, api, e2e, e2e-docker]
+    needs: [catalog, bridge, web, api, e2e, e2e-docker]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Vibe Motion quality gates. This is what CI runs and what every agent runs
-// before marking a PR ready. Usage: node scripts/gates.mjs [web|api|catalog|e2e|e2e-docker|all]
+// before marking a PR ready. Usage: node scripts/gates.mjs [web|api|catalog|bridge|e2e|e2e-docker|all]
 //
 // Every gate runs even if an earlier one fails, so a single run reports the
 // full picture. Exit code is non-zero if any gate failed.
@@ -22,6 +22,15 @@ const gates = [
   // Generated artifacts (catalog TS types, web API client) must be committed in sync with
   // their sources, otherwise a contract edit can silently leave another app on a stale client.
   { group: "catalog", name: "generated artifacts up to date", cmd: "node", args: ["scripts/check-generated.mjs"] },
+  // ---- bridge --------------------------------------------------------------
+  // `typecheck` runs tsc with checkJs over src/vm-bridge.js, so the plain browser script is
+  // type-checked against protocol.ts through its JSDoc imports even though it never imports it.
+  { group: "bridge", name: "bridge typecheck", cmd: "pnpm", args: ["--filter", "bridge", "typecheck"] },
+  { group: "bridge", name: "bridge test", cmd: "pnpm", args: ["--filter", "bridge", "test"] },
+  // Real-browser specs for what jsdom structurally cannot see: real animations, real layout, a
+  // real IntersectionObserver and a real cascade. No app and no API: the parent page, the framed
+  // page and the script are all fulfilled by `page.route` on three different origins.
+  { group: "bridge", name: "bridge e2e (playwright)", cmd: "pnpm", args: ["--filter", "bridge", "e2e"] },
   // ---- web -----------------------------------------------------------------
   { group: "web", name: "web lint", cmd: "pnpm", args: ["--filter", "web", "lint"] },
   { group: "web", name: "web typecheck", cmd: "pnpm", args: ["--filter", "web", "typecheck"] },
@@ -39,7 +48,7 @@ const gates = [
 
 const selected = gates.filter((g) => group === "all" || g.group === group);
 if (selected.length === 0) {
-  console.error(`Unknown gate group "${group}". Use web | api | catalog | e2e | e2e-docker | all.`);
+  console.error(`Unknown gate group "${group}". Use web | api | catalog | bridge | e2e | e2e-docker | all.`);
   process.exit(2);
 }
 
