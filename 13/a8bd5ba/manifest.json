@@ -1,0 +1,30 @@
+{
+  "branch": "feat/3-web-shell-help",
+  "sha": "a8bd5ba6207e3eb0c0e5115f3246f9a9ecd04678",
+  "viewport": "1440x900",
+  "names": [
+    "dev-dialog-save.png",
+    "dev-dialog-unsaved-guard.png",
+    "dev-entry-cloning.png",
+    "dev-entry-error.png",
+    "dev-gallery.png",
+    "dev-panel-choosing-empty-search.png",
+    "dev-panel-choosing.png",
+    "dev-panel-idle-assignments.png",
+    "dev-panel-idle-empty.png",
+    "dev-panel-selected.png",
+    "dev-panel-tuning-distance.png",
+    "dev-panel-tuning-scale.png",
+    "dev-toast.png",
+    "editor-idle.png",
+    "entry-default.png",
+    "help-default.png",
+    "help-filtered.png",
+    "help-reduced-motion.png",
+    "not-found.png",
+    "ref-editor.png",
+    "ref-entry.png",
+    "ref-help.png"
+  ],
+  "diffs": {}
+}
