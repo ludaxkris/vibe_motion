@@ -1,4 +1,16 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { expect, test } from "@playwright/test";
+
+// `/help` is driven by the catalog, so the expectation is too. Read from the
+// package's own files rather than importing it: Playwright loads specs as
+// CommonJS, and `animation-catalog` publishes an ESM-only entry point.
+const CATALOG_DIR = path.resolve(__dirname, "../../../packages/animation-catalog");
+const CURRENT_VERSION = readFileSync(path.join(CATALOG_DIR, "current"), "utf8").trim();
+const CATALOG_SIZE: number = JSON.parse(
+  readFileSync(path.join(CATALOG_DIR, "versions", `${CURRENT_VERSION}.json`), "utf8"),
+).entries.length;
 
 test("home page offers a URL input", async ({ page }) => {
   await page.goto("/");
@@ -65,16 +77,22 @@ test("a cloned project comes back under Recent projects", async ({ page }) => {
   await expect(recent.getByRole("link", { name: "Open example.com" })).toBeVisible();
 });
 
-test("help page lists catalog entries", async ({ page }) => {
+test("help page plays the whole catalog", async ({ page }) => {
   await page.goto("/help");
 
-  await expect(
-    page.getByRole("heading", { name: "Animation catalog" }),
-  ).toBeVisible();
+  await expect(page.getByText(`catalog ${CURRENT_VERSION}`)).toBeVisible();
 
   const cards = page.getByTestId("catalog-card");
-  expect(await cards.count()).toBeGreaterThan(0);
+  await expect(cards).toHaveCount(CATALOG_SIZE);
   await expect(cards.first()).toBeVisible();
+
+  // The keyframes come from the server as one stylesheet, and the first card's
+  // block really is running them — this page is the catalog's visual test.
+  await expect(page.locator("#vm-runtime")).toBeAttached();
+  await expect(page.getByTestId("catalog-card-demo").first()).toHaveCSS(
+    "animation-name",
+    /^vm-/,
+  );
 });
 
 test("the /dev gallery renders every state at the handoff's widths", async ({ page }) => {
