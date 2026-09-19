@@ -1,0 +1,17 @@
+{
+  "name": "e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "End-to-end tests for every Vibe Motion client. web/ today; mobile/ when there is one.",
+  "scripts": {
+    "test": "playwright test",
+    "test:docker": "../../scripts/e2e-docker.sh",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^20",
+    "typescript": "^5"
+  },
+  "packageManager": "pnpm@10.34.5"
+}

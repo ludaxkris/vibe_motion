@@ -12,6 +12,7 @@ node_modules/
 out/
 coverage/
 playwright-report/
+playwright-report-docker/
 test-results/
 
 # kotlin / gradle

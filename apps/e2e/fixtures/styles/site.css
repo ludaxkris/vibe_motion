@@ -1,0 +1,6 @@
+/* Linked, not inline: the cloner has to fetch and inline this through the SSRF guard. */
+body { font-family: system-ui, sans-serif; margin: 0; color: #14213d; }
+.hero { padding: 64px 24px; background: #fca311; }
+.cta { display: inline-block; padding: 12px 20px; background: #14213d; color: #fff; border-radius: 8px; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 24px; }
+.card { border: 1px solid #e5e5e5; border-radius: 12px; padding: 16px; }
