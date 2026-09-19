@@ -745,3 +745,69 @@ describe("selectDirtyVmIds cost", () => {
     expect(selectDirtyVmIds(a.getState())).toEqual(["vm-a"]);
   });
 });
+
+describe("the element the guard named", () => {
+  function dirtyThenRequest(store = createEditorStore()) {
+    store.getState().setSelectedVmId("vm-1");
+    store.getState().setDraftAssignment("vm-1", assignmentFor("fade-in"));
+    store.getState().requestSelect("vm-2");
+    return store;
+  }
+
+  it("is recorded when the guard opens", () => {
+    const store = dirtyThenRequest();
+
+    expect(store.getState().guardedVmId).toBe("vm-1");
+    expect(store.getState().pendingSelectVmId).toBe("vm-2");
+    expect(selectGuardOpen(store.getState())).toBe(true);
+  });
+
+  it("is what Discard reverts, not whatever happens to be selected by then", () => {
+    const store = createEditorStore();
+    store.setState({ currentVersionState: { "vm-1": assignmentFor("pulse") } });
+    store.getState().setSelectedVmId("vm-1");
+    store.getState().setDraftAssignment("vm-1", assignmentFor("shake"));
+    store.getState().requestSelect("vm-2");
+    // Phase 5's result-list rows and Phase 6's version load both move the
+    // selection programmatically; the dialog named `vm-1` and may only take
+    // `vm-1`.
+    store.setState({ panel: { status: "selected", vmId: "vm-3" } });
+    store.getState().setDraftAssignment("vm-3", assignmentFor("glow"));
+
+    store.getState().resolveGuard("discard");
+
+    expect(store.getState().draftState["vm-1"]).toEqual(assignmentFor("pulse"));
+    expect(store.getState().draftState["vm-3"]).toEqual(assignmentFor("glow"));
+  });
+
+  it("is cleared, with the pending selection, by the editor's own selection move", () => {
+    const store = dirtyThenRequest();
+
+    store.getState().setSelectedVmId("vm-7");
+
+    expect(store.getState().guardedVmId).toBeNull();
+    expect(store.getState().pendingSelectVmId).toBeNull();
+    expect(selectGuardOpen(store.getState())).toBe(false);
+  });
+
+  it("is cleared by revertDraft and by reset", () => {
+    const store = dirtyThenRequest();
+    store.getState().revertDraft();
+    expect(store.getState().guardedVmId).toBeNull();
+    expect(store.getState().pendingSelectVmId).toBeNull();
+
+    dirtyThenRequest(store);
+    store.getState().reset();
+    expect(store.getState().guardedVmId).toBeNull();
+    expect(store.getState().pendingSelectVmId).toBeNull();
+  });
+
+  it("is cleared by every guard outcome", () => {
+    for (const outcome of ["discard", "keep", "saved"] as const) {
+      const store = dirtyThenRequest();
+      store.getState().resolveGuard(outcome);
+      expect(store.getState().guardedVmId, outcome).toBeNull();
+      expect(store.getState().pendingSelectVmId, outcome).toBeNull();
+    }
+  });
+});

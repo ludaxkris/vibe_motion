@@ -75,6 +75,18 @@ export type EditorState = {
    * that test, which is why "the dialog is open" is not a second field.
    */
   pendingSelectVmId: string | null;
+  /**
+   * The element the open guard is *about* — the one it named and the only one
+   * Discard may revert.
+   *
+   * Not the same question as {@link selectGuardedVmId}, which asks whether the
+   * dialog's copy may name an element at all. This is recorded when the guard
+   * opens, because by the time it is answered the selection may have moved on
+   * its own: Phase 5's result-list rows and Phase 6's version load both call
+   * `setSelectedVmId` programmatically, and reading the selection at that
+   * point would revert an element the dialog never mentioned.
+   */
+  guardedVmId: string | null;
 };
 
 export type EditorActions = {
@@ -140,6 +152,7 @@ export const initialEditorState: EditorState = {
   hoverVmId: null,
   elements: {},
   pendingSelectVmId: null,
+  guardedVmId: null,
 };
 
 /** `data-vm-id` of the element selected in the preview iframe, or null when nothing is selected. */
@@ -257,6 +270,15 @@ function withDraftAnimationId(state: EditorState, event: PanelEvent): PanelEvent
   return { ...event, draftAnimationId: state.draftState[vmId]?.animationId };
 }
 
+/** Drop an open guard without answering it. */
+function closeGuard(
+  set: (partial: Partial<EditorState>) => void,
+  get: () => EditorState,
+): void {
+  if (get().pendingSelectVmId === null && get().guardedVmId === null) return;
+  set({ pendingSelectVmId: null, guardedVmId: null });
+}
+
 const createEditorState: StateCreator<EditorStore> = (set, get) => ({
   ...initialEditorState,
 
@@ -291,6 +313,10 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
 
   setSelectedVmId: (vmId) => {
     const { draftState, dispatchPanel } = get();
+    // The editor's own selection move always wins, and it invalidates any
+    // open guard: the question was about the element being left, and the
+    // editor has just left it by another route.
+    closeGuard(set, get);
     if (vmId === null) {
       dispatchPanel({ type: "DESELECT" });
       return;
@@ -321,7 +347,8 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
       return { draftState };
     }),
 
-  revertDraft: () =>
+  revertDraft: () => {
+    closeGuard(set, get);
     set((state) => {
       const draftState = { ...state.currentVersionState };
       const vmId = selectSelectedVmId(state);
@@ -335,7 +362,8 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
       });
 
       return { draftState, panel };
-    }),
+    });
+  },
 
   setMode: (mode) => set({ mode }),
 
@@ -362,34 +390,35 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
     // nothing at all rather than raise a dialog the user did not ask for
     // (spec §5). Dirty and another element: hold the selection and ask.
     if (vmId === null) return;
-    set({ pendingSelectVmId: vmId });
+    set({ pendingSelectVmId: vmId, guardedVmId: current });
   },
 
   resolveGuard: (outcome) => {
     const state = get();
     const pending = state.pendingSelectVmId;
     if (pending === null) return;
+    const guarded = state.guardedVmId;
 
     if (outcome === "keep") {
-      set({ pendingSelectVmId: null });
+      set({ pendingSelectVmId: null, guardedVmId: null });
       return;
     }
 
-    if (outcome === "discard") {
-      const vmId = selectSelectedVmId(state);
-      if (vmId !== null) {
-        const saved = state.currentVersionState[vmId];
-        const draftState = { ...state.draftState };
-        if (saved) draftState[vmId] = saved;
-        else delete draftState[vmId];
-        set({ draftState });
-      }
+    if (outcome === "discard" && guarded !== null) {
+      // The element the dialog named, read from when it opened — not whatever
+      // is selected now.
+      const saved = state.currentVersionState[guarded];
+      const draftState = { ...state.draftState };
+      if (saved) draftState[guarded] = saved;
+      else delete draftState[guarded];
+      set({ draftState });
     }
 
     // Clear the guard before moving, so a subscriber that reacts to the
     // selection (the bridge client) never sees a selection change with a
-    // dialog still nominally open.
-    set({ pendingSelectVmId: null });
+    // dialog still nominally open. `setSelectedVmId` closes it too, which is
+    // harmless: it is already closed.
+    set({ pendingSelectVmId: null, guardedVmId: null });
     get().setSelectedVmId(pending);
   },
 

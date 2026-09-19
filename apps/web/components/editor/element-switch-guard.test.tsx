@@ -1,5 +1,5 @@
 import type { ElementInfo } from "bridge";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
@@ -173,5 +173,42 @@ describe("ElementSwitchGuard", () => {
       expect(useEditorStore.getState().pendingSelectVmId).toBe("vm-2");
     });
     expect(selectSelectedVmId(useEditorStore.getState())).toBe("vm-1");
+  });
+});
+
+describe("ElementSwitchGuard copy", () => {
+  it("asks the generic, counted question when more than one element is dirty", () => {
+    const store = useEditorStore.getState();
+    store.rememberElement(elementInfo("vm-1", "h1"));
+    store.setDraftAssignment("vm-1", assignmentFor("fade-in-up"));
+    store.setDraftAssignment("vm-2", assignmentFor("pulse"));
+    store.setSelectedVmId("vm-1");
+    useEditorStore.getState().requestSelect("vm-3");
+
+    render(<ElementSwitchGuard currentVersionLabel="v5" />);
+
+    // Naming one element while two are unsaved would describe a smaller loss
+    // than the page is carrying.
+    expect(screen.getByText("Save changes?")).toBeInTheDocument();
+    expect(screen.getByText(/unsaved changes on 2 elements/)).toBeInTheDocument();
+    expect(screen.queryByText("Save changes to h1?")).not.toBeInTheDocument();
+  });
+
+  it("names the element the guard was opened about, even after the selection moves", () => {
+    const store = useEditorStore.getState();
+    store.rememberElement(elementInfo("vm-1", "h1"));
+    store.setDraftAssignment("vm-1", assignmentFor("fade-in-up"));
+    store.setSelectedVmId("vm-1");
+    useEditorStore.getState().requestSelect("vm-2");
+
+    render(<ElementSwitchGuard />);
+    expect(screen.getByText("Save changes to h1?")).toBeInTheDocument();
+
+    // A programmatic move (Phase 5 result rows, Phase 6 version load) closes
+    // the guard rather than leaving it pointing at the wrong element.
+    act(() => {
+      useEditorStore.getState().setSelectedVmId("vm-9");
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

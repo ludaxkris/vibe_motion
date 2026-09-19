@@ -18,7 +18,7 @@ import { useState } from "react";
 
 import { UnsavedGuardDialog } from "@/components/dialogs/unsaved-guard-dialog";
 import { getCatalogEntryAt } from "@/lib/catalog";
-import { selectGuardOpen, selectSelectedVmId, useEditorStore } from "@/lib/store";
+import { selectDirtyVmIdCount, selectGuardOpen, useEditorStore } from "@/lib/store";
 
 export function ElementSwitchGuard({
   currentVersionLabel,
@@ -34,7 +34,10 @@ export function ElementSwitchGuard({
 }) {
   const open = useEditorStore(selectGuardOpen);
   const resolveGuard = useEditorStore((state) => state.resolveGuard);
-  const vmId = useEditorStore(selectSelectedVmId);
+  // The element the guard was opened *about*, which is also the only one
+  // Discard will revert — not whatever is selected by the time it is answered.
+  const vmId = useEditorStore((state) => state.guardedVmId);
+  const unsavedElementCount = useEditorStore(selectDirtyVmIdCount);
   // Scalars, not objects: a selector that built one would hand Zustand a fresh
   // snapshot on every render.
   const tag = useEditorStore((state) => (vmId === null ? undefined : state.elements[vmId]?.tag));
@@ -43,14 +46,22 @@ export function ElementSwitchGuard({
   );
   const [saving, setSaving] = useState(false);
 
-  const animationName = assignment
-    ? (getCatalogEntryAt(assignment.catalogVersion, assignment.animationId)?.name ??
-      assignment.animationId)
-    : undefined;
+  // `UnsavedGuardDialog` documents the invariant that a *named* question only
+  // describes what Discard would take. Discard takes one element, so the name
+  // may only appear while that element's changes are all there are — otherwise
+  // "…or discard to leave v5 as is" is simply false. Unreachable in Phase 4,
+  // where at most one element is dirty at a time; Phase 5's page-level
+  // auto-generate is the exception spec §5 names.
+  const namesTheOnlyChange = vmId !== null && unsavedElementCount === 1;
+  const animationName =
+    namesTheOnlyChange && assignment
+      ? (getCatalogEntryAt(assignment.catalogVersion, assignment.animationId)?.name ??
+        assignment.animationId)
+      : undefined;
 
   // The tag the bridge reported ("h1") reads as the handoff's question; the
   // vmId is the honest fallback before any `element:select` has arrived.
-  const elementLabel = vmId === null ? undefined : (tag ?? vmId);
+  const elementLabel = namesTheOnlyChange ? (tag ?? vmId ?? undefined) : undefined;
 
   const handleSave = onSave
     ? () => {
@@ -75,6 +86,7 @@ export function ElementSwitchGuard({
       open={open}
       elementLabel={elementLabel}
       animationName={animationName}
+      unsavedElementCount={unsavedElementCount}
       currentVersionLabel={currentVersionLabel}
       onDiscard={() => resolveGuard("discard")}
       onKeepEditing={() => resolveGuard("keep")}
