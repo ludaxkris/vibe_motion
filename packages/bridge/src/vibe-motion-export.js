@@ -45,12 +45,36 @@
   }
 
   /**
+   * The largest fraction of `size` that can ever be inside a root of `rootSize`, per axis.
+   *
+   * @param {number} size
+   * @param {number} rootSize
+   * @returns {number}
+   */
+  function reachableFraction(size, rootSize) {
+    // A zero box never intersects, so it never gets here; the guard is against dividing by it.
+    if (!(size > 0)) return 1;
+    return Math.min(1, rootSize / size);
+  }
+
+  /**
    * Whether this entry counts as "on screen".
    *
-   * The ratio test alone is unreachable for an element taller than `1 / IN_VIEW_THRESHOLD`
-   * viewports, which would hold a tall hero on its first keyframe forever, so such an element
-   * fires as soon as it intersects at all. `rootBounds` is null when this page is itself inside a
-   * cross-origin iframe, and reading `.height` off null would throw.
+   * `intersectionRatio` is intersected area over the element's whole area, so an element bigger
+   * than the viewport can never reach 1 — and one big enough can never reach the threshold at all,
+   * which would hold it on its first keyframe for ever. The best ratio it could ever reach is the
+   * fraction that fits, in each axis, multiplied: when even that is under the threshold the ratio
+   * test is unreachable and the element fires as soon as it intersects.
+   *
+   * An **area**, not a height: a 4000px-wide track in a horizontal scroller reaches 0.16 with
+   * nothing wrong with its height at all, and a 1280x1200 element is short of the threshold on
+   * neither axis alone.
+   *
+   * `rootBounds` is null when this page is itself inside a cross-origin iframe, so the viewport
+   * stands in for both axes; reading `.height` off null would throw and hold everything for ever.
+   *
+   * Still not covered, and logged: a clip container narrower than the root, which bounds the
+   * intersection without appearing in `rootBounds`.
    *
    * @param {IntersectionObserverEntry} entry
    * @returns {boolean}
@@ -58,8 +82,12 @@
   function isOnScreen(entry) {
     if (!entry.isIntersecting) return false;
     if (entry.intersectionRatio >= IN_VIEW_THRESHOLD) return true;
-    var rootHeight = entry.rootBounds ? entry.rootBounds.height : window.innerHeight;
-    return entry.boundingClientRect.height * IN_VIEW_THRESHOLD >= rootHeight;
+    var box = entry.boundingClientRect;
+    var rootBounds = entry.rootBounds;
+    var rootWidth = rootBounds ? rootBounds.width : window.innerWidth;
+    var rootHeight = rootBounds ? rootBounds.height : window.innerHeight;
+    var reachable = reachableFraction(box.width, rootWidth) * reachableFraction(box.height, rootHeight);
+    return reachable < IN_VIEW_THRESHOLD;
   }
 
   function start() {
@@ -96,11 +124,56 @@
     }
 
     try {
-      var targets = document.querySelectorAll(MARKER_SELECTOR);
-      for (var j = 0; j < targets.length; j++) observer.observe(targets[j]);
+      observeWithin(observer, document);
+      watchForLateArrivals(observer);
     } catch (observeError) {
       playEverything();
     }
+  }
+
+  /**
+   * Observe every marked element in `root`, `root` itself included.
+   *
+   * @param {IntersectionObserver} observer
+   * @param {Document | Element} root
+   */
+  function observeWithin(observer, root) {
+    if (root.nodeType === 1 && /** @type {Element} */ (root).classList.contains(MARKER_CLASS)) {
+      observer.observe(/** @type {Element} */ (root));
+    }
+    var targets = root.querySelectorAll(MARKER_SELECTOR);
+    for (var i = 0; i < targets.length; i++) observer.observe(targets[i]);
+  }
+
+  /**
+   * Pick up marked elements that arrive after `DOMContentLoaded`.
+   *
+   * Snippet mode is made to be pasted into someone else's site, and those are frequently
+   * client-rendered: an element that appears later must be observed like any other — held, then
+   * played when it is reached — not force-played and not left hidden for ever.
+   *
+   * A browser with `IntersectionObserver` and no `MutationObserver` does not exist; if one did,
+   * the elements present at load would still work and only late arrivals would be missed, so
+   * there is nothing here worth playing everything over.
+   *
+   * @param {IntersectionObserver} observer
+   */
+  function watchForLateArrivals(observer) {
+    if (typeof window.MutationObserver !== "function") return;
+
+    new window.MutationObserver(function (records) {
+      try {
+        for (var i = 0; i < records.length; i++) {
+          var added = records[i].addedNodes;
+          for (var j = 0; j < added.length; j++) {
+            var node = added[j];
+            if (node.nodeType === 1) observeWithin(observer, /** @type {Element} */ (node));
+          }
+        }
+      } catch (mutationError) {
+        playEverything();
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
   }
 
   if (document.readyState === "loading") {

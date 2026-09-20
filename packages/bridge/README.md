@@ -82,12 +82,15 @@ interpolated into it, ever, which is what makes it something a reviewer can read
   on a first keyframe of `opacity: 0`. The `<script>` is in `<head>` and **not deferred** for that
   one line: the class has to be set before the first paint.
 - At `DOMContentLoaded`, one `IntersectionObserver` at `threshold: [0, IN_VIEW_THRESHOLD]` watches
-  every `.vm-in-view`. An entry fires when
-  `isIntersecting && (intersectionRatio >= T || boundingClientRect.height * T >= rootHeight)` —
-  the second clause is DT-095, so an element taller than `1 / T` viewports, which can never reach
-  ratio `T`, fires on first intersection. `rootBounds` is null when the exported page is itself in
-  a cross-origin iframe, so `window.innerHeight` is the fallback; reading `.height` off null would
-  throw and leave everything held forever.
+  every `.vm-in-view`, and a `MutationObserver` on `documentElement` picks up marked elements that
+  arrive later — snippet mode is pasted into sites that render on the client.
+- An entry fires when `isIntersecting && (intersectionRatio >= T || reachable < T)`, where
+  `reachable = min(1, rootW/w) * min(1, rootH/h)` is the largest ratio the element could ever
+  attain. That second clause is DT-095: `intersectionRatio` is an **area** ratio, so an element
+  big enough can never reach `T` at all and would stay held for ever. Area, not height — a 4000px
+  track in a horizontal scroller tops out at 0.16 with a perfectly ordinary height. `rootBounds`
+  is null when the exported page is itself in a cross-origin iframe, so the viewport stands in for
+  both axes; reading off null would throw and leave everything held.
 - On firing it adds `vm-play` and unobserves, so the animation plays **once** — a deliberate
   divergence from the preview, which re-arms on every entry (spec §6a).
 - **Nothing may be left held at `opacity: 0`.** No `IntersectionObserver`, a constructor that

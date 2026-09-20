@@ -57,10 +57,27 @@ describe("vibe-motion-export.js", () => {
 
   it("guards every path that could leave an element held at opacity: 0", () => {
     // One release function, called from the no-observer path, the constructor path, the callback
-    // path and the observe path. `e2e/export-script.spec.ts` drives three of them for real.
+    // path, the observe path and the mutation path. `e2e/export-script.spec.ts` drives them for
+    // real, including a mutant check that the callback's own guard is load-bearing.
     const releases = SOURCE.match(/playEverything\(\);/g) ?? [];
-    expect(releases.length).toBeGreaterThanOrEqual(4);
-    expect(SOURCE).toContain("entry.rootBounds ? entry.rootBounds.height : window.innerHeight");
-    expect(SOURCE).toContain("entry.boundingClientRect.height * IN_VIEW_THRESHOLD >= rootHeight");
+    expect(releases.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("decides reachability by area, with a viewport fallback on both axes", () => {
+    // Height alone leaves a wide track — 4000px in a horizontal scroller — held for ever, because
+    // `intersectionRatio` is an area ratio.
+    expect(SOURCE).toContain("rootBounds ? rootBounds.width : window.innerWidth");
+    expect(SOURCE).toContain("rootBounds ? rootBounds.height : window.innerHeight");
+    expect(SOURCE).toContain(
+      "reachableFraction(box.width, rootWidth) * reachableFraction(box.height, rootHeight)",
+    );
+    expect(SOURCE).toContain("reachable < IN_VIEW_THRESHOLD");
+  });
+
+  it("watches for marked elements that arrive after DOMContentLoaded", () => {
+    // Snippet mode is pasted into client-rendered sites; an element that appears later has to be
+    // observed like any other rather than left hidden.
+    expect(SOURCE).toContain("new window.MutationObserver(");
+    expect(SOURCE).toContain('{ childList: true, subtree: true }');
   });
 });
