@@ -9,9 +9,10 @@
  * `REVERT` transition `revertDraft` uses, so a selected element lands on
  * `tuning` or `selected` according to the *new* draft. The first three also
  * close an open element-switch guard — they take the draft away, so its
- * question is moot — while `rebaseDraft` keeps it, for the reason below.
- * `markSaved` touches neither: it only moves
- * `currentVersionState`/`currentVersionId`.
+ * question is moot — while `rebaseDraft` keeps it, for the reason below. All
+ * four also forget Phase 5's agent provenance (`generated`, `lastRun`), which
+ * describes the draft they are replacing. `markSaved` touches none of that: it
+ * only moves `currentVersionState`/`currentVersionId`.
  */
 import type { EditorStateMap, Version } from "@/lib/api-client";
 import {
@@ -33,9 +34,9 @@ function selectedVmId(panel: PanelState): string | null {
 /**
  * Apply a slice that replaces `draftState` wholesale: merge it in, run the
  * panel through `REVERT` against the *new* draft so the selected element's
- * `tuning`/`selected` status follows it, and close any open element-switch
- * guard — unless `keepGuard`, which is for the one replacement that takes
- * nothing away (a rebase, see below).
+ * `tuning`/`selected` status follows it, forget Phase 5's agent provenance
+ * (below), and close any open element-switch guard — unless `keepGuard`, which
+ * is for the one replacement that takes nothing away (a rebase, see below).
  */
 function applyDraftReplacement(
   set: (partial: Partial<EditorState>) => void,
@@ -50,11 +51,33 @@ function applyDraftReplacement(
     draftAnimationId: vmId === null ? undefined : slice.draftState[vmId]?.animationId,
   });
 
+  // The agreed hand-off with Phase 5 (memory.md, 2026-09-19): `generated` and
+  // `lastRun` describe the draft this call is throwing away, so they go with
+  // it — here and only here. `markSaved` keeps them, because after a Save the
+  // draft is still the one the agent filled (plan D2: untouched agent work
+  // stays agent-owned, so Regenerate may re-roll it).
+  //
+  // Written explicitly rather than left out: `enterViewing` and `exitViewing`
+  // spread the previous slice, so provenance not cleared here is put straight
+  // back over a draft that no longer holds the assignments it describes. The
+  // same empty object is reused when there is nothing to forget, so a
+  // subscriber to `generated` is not woken by every load.
+  //
+  // For a rebase this loses provenance an agent run had already earned: the
+  // assignments stay, as the designer's rather than the agent's. That is the
+  // agreed safe degradation — nothing of the user's work is lost, and the
+  // agent simply may not re-roll or remove it any more. (DT-149's run epoch,
+  // when it lands, is bumped in this same place.)
+  const provenance = {
+    generated: Object.keys(state.generated).length > 0 ? {} : state.generated,
+    lastRun: null,
+  };
+
   if (keepGuard) {
-    set({ ...slice, panel });
+    set({ ...slice, ...provenance, panel });
     return;
   }
-  set({ ...slice, panel, pendingSelectVmId: null, guardedVmId: null });
+  set({ ...slice, ...provenance, panel, pendingSelectVmId: null, guardedVmId: null });
 }
 
 export function createVersionActions(

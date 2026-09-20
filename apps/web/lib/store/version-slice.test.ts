@@ -13,6 +13,7 @@ import type { EditorStateMap, Version } from "@/lib/api-client";
 import {
   createEditorStore,
   initialEditorState,
+  selectAgentOwnedVmIds,
   selectDirtyVmIdCount,
   selectGuardedVmId,
   selectSelectedVmId,
@@ -286,6 +287,139 @@ describe("rebaseDraft", () => {
     // the guard was holding, instead of finding nothing pending.
     store.getState().resolveGuard("saved");
     expect(selectSelectedVmId(store.getState())).toBe("vm-2");
+  });
+});
+
+/**
+ * Phase 5's client-only provenance (`generated`, `lastRun`) against Phase 6's
+ * draft replacements. The hand-off agreed on `memory.md` (2026-09-19): every
+ * writer that swaps `draftState` wholesale forgets what the agent made, and
+ * `markSaved` — which swaps nothing — does not.
+ *
+ * Necessary rather than tidy: `enterViewing` / `exitViewing` / `markSaved`
+ * spread the previous slice, so provenance left alone here would be written
+ * straight back over a draft that no longer contains the assignments it
+ * describes — and an element whose draft assignment is gone but whose
+ * `generated` entry survives would come back as agent-owned the moment the
+ * same animation reappeared.
+ */
+describe("agent provenance across a draft replacement", () => {
+  /** A page run's worth of provenance: one agent-made assignment and a `lastRun`. */
+  function withAgentRun() {
+    const store = createEditorStore();
+    store.getState().loadVersion("version-1", {});
+    store.getState().applyPageSuggestion({
+      suggestion: {
+        assignments: { "vm-1": assignmentFor("fade-in") },
+        skipped: [{ vmId: "vm-9", reason: "too-small" }],
+      },
+      seed: 7,
+      prompt: "playful",
+      truncated: false,
+      viewport: { width: 1280, height: 800 },
+    });
+    expect(store.getState().generated).not.toEqual({});
+    expect(store.getState().lastRun).not.toBeNull();
+    return store;
+  }
+
+  it("loadVersion forgets the run", () => {
+    const store = withAgentRun();
+
+    store.getState().loadVersion("version-2", { "vm-2": assignmentFor("pulse") });
+
+    expect(store.getState().generated).toEqual({});
+    expect(store.getState().lastRun).toBeNull();
+  });
+
+  it("rebaseDraft forgets the run — the assignments stay, now the user's", () => {
+    const store = withAgentRun();
+
+    store.getState().rebaseDraft("version-2", { "vm-3": assignmentFor("pulse") });
+
+    const after = store.getState();
+    expect(after.generated).toEqual({});
+    expect(after.lastRun).toBeNull();
+    // The agreed safe degradation: nothing the agent wrote is taken away, it
+    // is simply no longer the agent's to re-roll or remove.
+    expect(after.draftState["vm-1"]).toEqual(assignmentFor("fade-in"));
+    expect(selectUnsaved(after)).toBe(true);
+  });
+
+  it("enterViewing and exitViewing each forget the run", () => {
+    const store = withAgentRun();
+    // A version can only be viewed from a clean draft, so the agent's work is
+    // saved first — which is exactly the case `markSaved` must not clear.
+    store.getState().markSaved(version({ id: "version-2" }));
+    expect(store.getState().generated).not.toEqual({});
+
+    store.getState().enterViewing("version-1", {});
+
+    expect(store.getState().generated).toEqual({});
+    expect(store.getState().lastRun).toBeNull();
+
+    // And again on the way out: `exitViewing` spreads the viewing slice, so a
+    // run that somehow survived the entry must not be spread back in.
+    const store2 = withAgentRun();
+    store2.getState().markSaved(version({ id: "version-2" }));
+    store2.getState().enterViewing("version-1", {});
+    store2.setState({
+      generated: { "vm-1": assignmentFor("fade-in") },
+      lastRun: { seed: 7, prompt: "", vmIds: ["vm-1"], skippedCount: 0, truncated: false, viewport: { width: 1280, height: 800 } },
+    });
+
+    store2.getState().exitViewing();
+
+    expect(store2.getState().generated).toEqual({});
+    expect(store2.getState().lastRun).toBeNull();
+  });
+
+  it("keeps the same empty object when there was nothing to forget", () => {
+    const store = createEditorStore();
+    store.getState().loadVersion("version-1", {});
+    const empty = store.getState().generated;
+
+    store.getState().loadVersion("version-2", { "vm-1": assignmentFor("fade-in") });
+    expect(store.getState().generated).toBe(empty);
+
+    store.getState().enterViewing("version-1", {});
+    expect(store.getState().generated).toBe(empty);
+
+    store.getState().exitViewing();
+    expect(store.getState().generated).toBe(empty);
+
+    store.getState().rebaseDraft("version-3", {});
+    expect(store.getState().generated).toBe(empty);
+  });
+
+  it("markSaved leaves the run alone — untouched agent work stays agent-owned", () => {
+    const store = withAgentRun();
+    const generated = store.getState().generated;
+    const lastRun = store.getState().lastRun;
+
+    store.getState().markSaved(version({ id: "version-2" }));
+
+    expect(store.getState().generated).toBe(generated);
+    expect(store.getState().lastRun).toBe(lastRun);
+    // …so Regenerate may still re-roll it as a new unsaved change (plan D2).
+    expect(selectAgentOwnedVmIds(store.getState())).toEqual(["vm-1"]);
+  });
+
+  it("rebaseDraft still keeps an open element-switch guard while forgetting the run", () => {
+    const store = withAgentRun();
+    store.getState().setSelectedVmId("vm-1");
+    // A hand edit, so the element is the user's and the guard has something
+    // to ask about (`selectElementDirty` lets untouched agent work go).
+    store.getState().updateDraftParam("vm-1", "duration", "900ms");
+    store.getState().requestSelect("vm-2");
+    expect(store.getState().pendingSelectVmId).toBe("vm-2");
+
+    store.getState().rebaseDraft("version-2", {});
+
+    expect(store.getState().pendingSelectVmId).toBe("vm-2");
+    expect(store.getState().guardedVmId).toBe("vm-1");
+    expect(store.getState().generated).toEqual({});
+    expect(store.getState().lastRun).toBeNull();
   });
 });
 
