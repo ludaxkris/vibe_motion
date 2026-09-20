@@ -275,9 +275,28 @@ function validateDiff(diff: Diff): ApiError | undefined {
 
 export type CreateVersionResult =
   | { status: 201; body: Version }
+  | { status: 400; body: ApiError }
   | { status: 404; body: ApiError }
   | { status: 409; body: StaleParentError }
   | { status: 422; body: ApiError };
+
+/** The contract's `label` cap (`apps/api/openapi.yaml`), same value the service enforces. */
+const MAX_LABEL_LENGTH = 200;
+
+/**
+ * A blank (or whitespace-only) label means "generate one", exactly like
+ * `VersionService.kt`'s `requestedLabel`; an over-long one is a 400 with the
+ * same message the service would give, so the mock rejects what production
+ * would reject rather than silently accepting it.
+ */
+function requestedLabel(raw: string | undefined): { label: string | undefined } | { error: ApiError } {
+  const trimmed = raw?.trim();
+  if (!trimmed) return { label: undefined };
+  if (trimmed.length > MAX_LABEL_LENGTH) {
+    return { error: err("bad_request", `label must be at most ${MAX_LABEL_LENGTH} characters`) };
+  }
+  return { label: trimmed };
+}
 
 export function createVersion(
   projectId: string,
@@ -298,6 +317,9 @@ export function createVersion(
     };
   }
 
+  const requested = requestedLabel(input.label);
+  if ("error" in requested) return { status: 400, body: requested.error };
+
   const invalid = validateDiff(input.diff);
   if (invalid) return { status: 422, body: invalid };
 
@@ -307,7 +329,7 @@ export function createVersion(
     projectId,
     parentVersionId: input.parentVersionId,
     seq: last.seq + 1,
-    label: input.label ?? defaultLabel(input.diff),
+    label: requested.label ?? defaultLabel(input.diff),
     catalogVersion: input.catalogVersion,
     diff: input.diff,
     createdAt: new Date().toISOString(),
@@ -357,7 +379,10 @@ export function restoreVersion(
   return createVersion(projectId, {
     parentVersionId: record.project.currentVersionId,
     catalogVersion: targetVersion.catalogVersion,
-    label: label ?? `Restored to "${targetVersion.label}"`,
+    // Exactly what the service writes when the caller sends no label
+    // (`apps/api/src/main/kotlin/.../versions/VersionService.kt`), so mocked
+    // runs and screenshots read like production.
+    label: label ?? `Restored v${targetVersion.seq}`,
     diff: { set, remove },
   });
 }

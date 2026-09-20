@@ -5,10 +5,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, type ReactNode } from "react";
 
 import { ControlPanel } from "@/components/control-panel";
+import { useVersionHistory } from "@/components/history/use-version-history";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { autoGeneratePage, generateForElement } from "@/lib/agent/run";
-import { apiClient, type Assignment, type Project, type Version } from "@/lib/api-client";
+// `Version` is no longer named here: the versions list moved to
+// `useProjectVersions` / `lib/versions/queries.ts` (Phase 6).
+import { apiClient, type Assignment, type Project } from "@/lib/api-client";
 import { env } from "@/lib/env";
 import { atLeast, ELEMENTS_QUERY_MIN_BRIDGE } from "@/lib/bridge";
 import { useBridge } from "@/lib/bridge/use-bridge";
@@ -18,7 +21,12 @@ import { hostAndPath } from "@/lib/source-url";
 import { useEditorStore, useUnsaved } from "@/lib/store";
 
 import { ElementSwitchGuard } from "./element-switch-guard";
+import { SaveFlowDialogs } from "./save-flow-dialogs";
 import { SplitPane } from "./split-pane";
+import { useProjectVersions } from "./use-project-versions";
+import { useSaveFlow } from "./use-save-flow";
+import { VersionLoadErrorBanner } from "./version-load-error-banner";
+import { ViewingOverlay } from "./viewing-overlay";
 
 /** Thrown by `fetchProject` so the shell can tell a 404 apart from any other failure. */
 class ProjectFetchError extends Error {
@@ -36,14 +44,6 @@ async function fetchProject(projectId: string): Promise<Project> {
     throw new ProjectFetchError(response.status, error.message);
   }
   return data;
-}
-
-async function fetchVersions(projectId: string): Promise<Version[]> {
-  const { data, error } = await apiClient.GET("/projects/{projectId}/versions", {
-    params: { path: { projectId } },
-  });
-  if (error) throw new Error(error.message);
-  return data.versions;
 }
 
 /** The screen's own chrome: the bar is a banner, so it cannot live inside `<main>`. */
@@ -156,8 +156,8 @@ function HelpLink() {
  * Loads the project, then hosts the preview iframe in its white sheet (left)
  * and the Control Panel (right) behind a resizable split. Element selection
  * and live preview come over the bridge mounted on that iframe
- * (`lib/bridge/use-bridge.ts`); Save opens the save dialog in Phase 6 and is
- * deliberately inert here.
+ * (`lib/bridge/use-bridge.ts`); Save runs the flow in `use-save-flow.ts`,
+ * which is the only thing on this screen that may create a version.
  */
 export function EditorShell({ projectId }: { projectId: string }) {
   const reset = useEditorStore((state) => state.reset);
@@ -244,14 +244,27 @@ export function EditorShell({ projectId }: { projectId: string }) {
   // The version chip is `v<seq>` of the project's current version, which only
   // the versions list carries. Fetched once the project is there (it supplies
   // the id to match) and never polled: a version appears only when this
-  // browser saves one (Phase 6).
+  // browser saves one. The same hook forks the draft from that version's
+  // state when the project opens.
   const project = query.data;
-  const versionsQuery = useQuery({
-    queryKey: ["project", projectId, "versions"],
-    queryFn: () => fetchVersions(projectId),
-    enabled: project !== undefined,
-    retry: false,
+  const { currentVersionLabel, nextVersionLabel, loadError, retryLoad } = useProjectVersions(
+    projectId,
+    project,
+  );
+  const { requestSave, dialogs } = useSaveFlow(projectId, {
+    currentVersionLabel,
+    nextVersionLabel,
+    retryLoad,
   });
+  // Mounted here, not in the History tab: the tab's rows and the preview's
+  // banner offer the same Restore, so they have to share one hook — and one
+  // `restoring` flag (`components/history/use-version-history.ts`).
+  const history = useVersionHistory(projectId, {
+    currentVersionLabel,
+    nextVersionLabel,
+    enabled: project !== undefined,
+  });
+  const { viewing, back } = history;
 
   // Opening a project is what makes it recent, so the Entry screen's column
   // also lists projects reached by link or by Back (`lib/recent-projects.ts`).
@@ -279,11 +292,30 @@ export function EditorShell({ projectId }: { projectId: string }) {
       if (event.key !== "Escape") return;
       if (event.defaultPrevented) return;
       if (isTextEntry(event.target)) return;
+      // Viewing is read-only, so there is no selection to drop: Esc is the
+      // way back to the current version (docs/user_flow.md §4).
+      if (viewing) {
+        back();
+        return;
+      }
       dispatchPanel({ type: "DESELECT" });
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [unsaved, dispatchPanel]);
+    // `back` is stable; `history` itself is a fresh object every render and
+    // would re-bind this listener on each one.
+  }, [unsaved, dispatchPanel, viewing, back]);
+
+  // The draft lives in this tab and nowhere else until Save writes a version
+  // (CLAUDE.md rule 9), so a reload or a closed tab is the one way to lose it
+  // that no dialog of ours can stand in front of — hence the browser's own
+  // (docs/user_flow.md §3, "unsaved indicator and beforeunload warning").
+  useEffect(() => {
+    if (!unsaved) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsaved]);
 
   // A 404 says the project is gone; a 400 says the id in the link was never a
   // project id at all. Both leave the reader on the same dead link, so they
@@ -336,28 +368,41 @@ export function EditorShell({ projectId }: { projectId: string }) {
   }
 
   const loaded = query.data;
-  const currentVersion = versionsQuery.data?.find((v) => v.id === loaded.currentVersionId);
 
   return (
     <EditorFrame
       title={hostAndPath(loaded.sourceUrl)}
       heading={`Editing ${hostAndPath(loaded.sourceUrl)}`}
-      chip={currentVersion ? `v${currentVersion.seq}` : undefined}
+      chip={currentVersionLabel}
       status={unsaved ? <UnsavedIndicator /> : null}
       actions={
         <>
           <HelpLink />
-          <Button variant="bar-outline" disabled={!unsaved} onClick={revertDraft}>
-            Cancel
-          </Button>
-          {/* Inert until Phase 6 gives it the save dialog and POST /versions. */}
-          <Button variant="bar-primary" disabled={!unsaved}>
-            Save
-          </Button>
+          {/* docs/user_flow.md §6, "viewing vN": controls disabled, Save
+              hidden. A read-only screen has no draft to cancel and nothing of
+              its own to save, so neither control is rendered at all — the
+              banner over the preview carries Restore and Back instead. */}
+          {viewing ? null : (
+            <>
+              <Button variant="bar-outline" disabled={!unsaved} onClick={revertDraft}>
+                Cancel
+              </Button>
+              {/* The rejection is the user cancelling the dialog, and is nobody's
+                  news: `requestSave` reports it that way to the guards. */}
+              <Button
+                variant="bar-primary"
+                disabled={!unsaved}
+                onClick={() => void requestSave().catch(() => {})}
+              >
+                Save
+              </Button>
+            </>
+          )}
         </>
       }
     >
       {status === "version-mismatch" ? <VersionMismatchBanner /> : null}
+      {loadError ? <VersionLoadErrorBanner message={loadError} onRetry={retryLoad} /> : null}
 
       <SplitPane
         left={(isDragging) => (
@@ -367,7 +412,8 @@ export function EditorShell({ projectId }: { projectId: string }) {
             // bottom — the sheet runs off the bottom of the window.
             className="flex min-w-0 flex-1 flex-col overflow-hidden p-4 pb-0"
           >
-            <div className="min-h-0 flex-1 overflow-hidden rounded-t-lg bg-vm-surface shadow-sheet">
+            {/* `relative`: the viewing overlay covers this sheet and nothing else. */}
+            <div className="relative min-h-0 flex-1 overflow-hidden rounded-t-lg bg-vm-surface shadow-sheet">
               {refusesToFrame ? (
                 <div
                   role="alert"
@@ -409,18 +455,31 @@ export function EditorShell({ projectId }: { projectId: string }) {
                 // (`lib/preview-url.ts`, spec §2).
                 sandbox="allow-scripts allow-same-origin"
                 className="size-full border-0 bg-vm-surface"
-                style={isDragging ? { pointerEvents: "none" } : undefined}
+                // While viewing, the frame shows `stateAt(vN)` and there is
+                // nothing on it to select: the overlay covers it, and this
+                // makes sure nothing reaches it even if that layer moves.
+                style={isDragging || viewing ? { pointerEvents: "none" } : undefined}
+                // The keyboard's half of the same fact — Tab must not walk
+                // into the clone behind the overlay. On the frame itself, not
+                // on the sheet around it: the banner is that sheet's child,
+                // and an inert sheet would take its buttons with it.
+                inert={viewing}
               />
               )}
+              {/* The white 45% layer and the "Viewing v3 · read-only" pill,
+                  over the preview only (`docs/design/README.md`). */}
+              <ViewingOverlay history={history} />
             </div>
           </section>
         )}
         right={
           <aside aria-label="Control Panel" className="h-full bg-vm-panel">
             {/* The guard's "…or discard to leave v5 as is" needs the version
-                the draft forked from, which only this query knows. */}
+                the draft forked from, which only the versions list knows. */}
             <ControlPanel
-              currentVersionLabel={currentVersion ? `v${currentVersion.seq}` : undefined}
+              currentVersionLabel={currentVersionLabel}
+              history={history}
+              onSave={requestSave}
               // Gated on the handshake, not merely on the client existing:
               // while `connecting` or `version-mismatch` the client refuses
               // every post, so an enabled Replay, live card hovers and the
@@ -439,9 +498,11 @@ export function EditorShell({ projectId }: { projectId: string }) {
           in the Control Panel, because the click that raises it comes from the
           iframe this screen owns. DT-099 tracks folding the two mountings into
           one. */}
-      <ElementSwitchGuard
-        currentVersionLabel={currentVersion ? `v${currentVersion.seq}` : undefined}
-      />
+      <ElementSwitchGuard currentVersionLabel={currentVersionLabel} onSave={requestSave} />
+
+      {/* The Save dialog and the 409's rebase/discard question, driven by
+          `useSaveFlow` — the only thing here that may create a version. */}
+      <SaveFlowDialogs {...dialogs} />
     </EditorFrame>
   );
 }

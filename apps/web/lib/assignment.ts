@@ -4,7 +4,7 @@
  * The draft store asks it of `draftState` against `currentVersionState` (the
  * unsaved indicator, the set of dirty elements) and `lib/diff-summary` asks it
  * per element (the Save dialog's change list). Two copies of the comparison
- * would drift the moment `Assignment` gains a field in Phase 6, and only one
+ * would drift the moment `Assignment` gains a field, and only one
  * of the two screens would notice.
  *
  * Structural, not by identity: the draft rebuilds the assignment on every

@@ -128,15 +128,15 @@ describe("ElementSwitchGuard", () => {
     });
   });
 
-  it("renders Save disabled, and says why, while version history does not exist", () => {
+  it("renders Save disabled, and says why, when no save flow is wired in", () => {
     openGuard();
 
     render(<ElementSwitchGuard />);
 
     const save = screen.getByRole("button", { name: "Save" });
     expect(save).toBeDisabled();
-    expect(save).toHaveAttribute("title", "Saving arrives with version history.");
-    expect(screen.getByText("Saving arrives with version history.")).toBeInTheDocument();
+    expect(save).toHaveAttribute("title", "Saving isn’t available here.");
+    expect(screen.getByText("Saving isn’t available here.")).toBeInTheDocument();
   });
 
   it("awaits the injected Save and only then lets the pending selection through", async () => {

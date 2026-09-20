@@ -8,8 +8,12 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 /** The handoff's width for the guard (`docs/design/README.md` "3. Dialogs & toast"). */
 export const UNSAVED_GUARD_DIALOG_WIDTH = "w-[380px]";
 
-/** Why Save is inert here — version history is Phase 6, and nothing may fake a save. */
-const SAVE_NOTE = "Saving arrives with version history.";
+/**
+ * Why Save is inert. Only reachable where this dialog has no save handler to
+ * run — `/dev`, or a Control Panel with no project behind it — because nothing
+ * may fake a save. The editor's own mountings always pass one.
+ */
+const SAVE_NOTE = "Saving isn’t available here.";
 
 export type UnsavedGuardDialogContentProps = {
   /**
@@ -37,7 +41,7 @@ export type UnsavedGuardDialogContentProps = {
    * before letting the pending selection through (spec §5).
    */
   onSave?: () => void | Promise<void>;
-  /** Phase 6 passes `false` once Save has a version to write. */
+  /** The editor passes `false`: it has a Save flow to run. */
   saveDisabled?: boolean;
   /** Supplied by the modal wrapper so the popup can point `aria-labelledby` here. */
   titleId?: string;

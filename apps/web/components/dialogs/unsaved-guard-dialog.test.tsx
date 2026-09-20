@@ -94,7 +94,7 @@ describe("UnsavedGuardDialogContent", () => {
     fireEvent.click(save);
     expect(onSave).not.toHaveBeenCalled();
 
-    expect(screen.getByText("Saving arrives with version history.")).toHaveClass(
+    expect(screen.getByText("Saving isn’t available here.")).toHaveClass(
       "text-xs",
       "text-vm-ink-2",
     );
@@ -104,7 +104,7 @@ describe("UnsavedGuardDialogContent", () => {
     render(<UnsavedGuardDialogContent elementLabel="h1" saveDisabled={false} {...callbacks()} />);
 
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
-    expect(screen.queryByText("Saving arrives with version history.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Saving isn’t available here.")).not.toBeInTheDocument();
   });
 });
 

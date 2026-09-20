@@ -4,6 +4,9 @@ import { ELEMENTS_QUERY_LIMIT } from "bridge";
 import { useCallback, useMemo, useState } from "react";
 
 import { UnsavedGuardDialog } from "@/components/dialogs/unsaved-guard-dialog";
+import { HistoryTab } from "@/components/history/history-tab";
+import { ReadOnlyNote } from "@/components/history/read-only-note";
+import type { VersionHistory } from "@/components/history/use-version-history";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { RunFailure, RunOutcome } from "@/lib/agent/run";
 import type { Assignment, Trigger } from "@/lib/api-client";
@@ -375,18 +378,33 @@ const TABS = [
  */
 export function ControlPanel({
   currentVersionLabel,
+  history,
   onPreview,
   onClearPreview,
   onReplay,
+  onSave,
   onGenerateElement,
   onAutoGeneratePage,
 }: {
   currentVersionLabel?: string;
+  /**
+   * The shell's `useVersionHistory` — the History tab's list, and the view /
+   * back / restore it offers. Mounted there rather than here so the tab's
+   * rows and the preview's banner share one `restoring` flag. Absent (no
+   * project behind the panel) leaves the tab on its placeholder.
+   */
+  history?: VersionHistory;
   /** Show an animation transiently on the page (spec D4). Absent until the bridge is mounted. */
   onPreview?: (vmId: string, assignment: Assignment) => void;
   onClearPreview?: () => void;
   /** Restart one element's animation in the preview iframe, or every one when `null`. */
   onReplay?: (vmId: string | null) => void;
+  /**
+   * The shell's Save flow, for the tab guard's Save. It resolves once a
+   * version exists and rejects on every exit that wrote nothing, so a
+   * cancelled save leaves the guard standing. Absent leaves Save disabled.
+   */
+  onSave?: () => Promise<void>;
   /** "✦ Auto-generate for this element". Absent (button disabled) until the bridge is ready. */
   onGenerateElement?: (vmId: string) => Promise<RunOutcome>;
   /** "✦ Auto-generate for this page" and the result list's Regenerate. Absent until the bridge is ready. */
@@ -396,6 +414,9 @@ export function ControlPanel({
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
   const revertDraft = useEditorStore((state) => state.revertDraft);
   const unsaved = useUnsaved();
+  // The store is what makes viewing read-only (every draft writer returns
+  // early); this is the same fact where the reader can see it.
+  const viewing = useEditorStore((state) => state.mode === "viewing");
 
   // "‹" on selected/tuning exists only for an element opened from the result
   // list; everywhere else there is no level above to go back up to.
@@ -408,8 +429,16 @@ export function ControlPanel({
   // parks the requested tab here and `onValueChange` is simply not honoured
   // until the user says what to do with the draft (docs/user_flow.md §1,
   // "unsaved → History/Export → guard").
-  const [tab, setTab] = useState<string>(TABS[0].value);
+  const [committedTab, setCommittedTab] = useState<string>(TABS[0].value);
   const [pendingTab, setPendingTab] = useState<string | null>(null);
+  // A guard with nothing left to lose is no longer a question. The draft can
+  // go clean without this component's promise resolving — the 409's "Discard
+  // my changes" loads their version, so `requestSave()` rightly rejects — and
+  // the guard used to stay open over a clean draft, claiming unsaved changes,
+  // with a Save that could do nothing at all. Derived rather than reconciled
+  // in an effect, so there is no render in which that is true.
+  const guardHeld = unsaved && pendingTab !== null;
+  const tab = guardHeld ? committedTab : (pendingTab ?? committedTab);
 
   // Guard-on-element-click and guard-on-Export/Restore are later phases; this
   // is the tab switch only.
@@ -436,6 +465,21 @@ export function ControlPanel({
   const { run } = agentRun;
   const replayAll = useMemo(() => (onReplay ? () => onReplay(null) : undefined), [onReplay]);
 
+  // Discard's success path minus the revert: the draft has just *become* the
+  // saved version, so only the tab still has to move — and only once the
+  // version actually exists, which is what the resolved promise says.
+  const handleGuardSave = onSave
+    ? () =>
+        onSave().then(
+          () => {
+            if (pendingTab !== null) setCommittedTab(pendingTab);
+            setPendingTab(null);
+          },
+          // Cancelled or failed: the guard stays open with its question intact.
+          () => {},
+        )
+    : undefined;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <Tabs
@@ -447,7 +491,17 @@ export function ControlPanel({
             setPendingTab(value);
             return;
           }
-          setTab(value);
+          // Viewing is a read-only detour that belongs to the History tab, so
+          // leaving the tab returns to the current version first — the editor
+          // is never in viewing mode with History closed
+          // (docs/user_flow.md §4). Called even when nothing is on screen
+          // yet: `back()` is also what cancels a version still loading.
+          if (tab === "history") history?.back();
+          // Any tab the user picks with a clean draft is the whole answer:
+          // a `pendingTab` left over from a guard that went away with the
+          // unsaved work has nothing left to say.
+          setPendingTab(null);
+          setCommittedTab(value);
         }}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
@@ -468,7 +522,22 @@ export function ControlPanel({
         </TabsList>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3">
-          <TabsContent value="animate">
+          {/* Above the inert content below, so it stays readable. */}
+          {tab === "animate" && viewing && history?.viewingLabel && history.currentLabel ? (
+            <ReadOnlyNote
+              viewingLabel={history.viewingLabel}
+              currentLabel={history.currentLabel}
+            />
+          ) : null}
+          <TabsContent
+            value="animate"
+            // A past version on screen is read-only: the store refuses every
+            // draft write — the agent runs included — and `inert` keeps these
+            // controls from taking a click or the keyboard at all
+            // (docs/user_flow.md §6).
+            inert={viewing}
+            className={viewing ? "opacity-40" : undefined}
+          >
             {panel.status === "idle" && (
               <IdleSection
                 {...runProps}
@@ -520,9 +589,13 @@ export function ControlPanel({
           </TabsContent>
 
           <TabsContent value="history">
-            <PlaceholderTab>
-              Saved versions appear here. A version is only created when you click Save.
-            </PlaceholderTab>
+            {history ? (
+              <HistoryTab history={history} />
+            ) : (
+              <PlaceholderTab>
+                Saved versions appear here. A version is only created when you click Save.
+              </PlaceholderTab>
+            )}
           </TabsContent>
 
           <TabsContent value="export">
@@ -536,17 +609,19 @@ export function ControlPanel({
       </p>
 
       <UnsavedGuardDialog
-        open={pendingTab !== null}
+        open={guardHeld}
         elementLabel={guardedVmId ?? undefined}
         animationName={guardedAnimationName}
         unsavedElementCount={unsavedElementCount}
         currentVersionLabel={currentVersionLabel}
         onDiscard={() => {
           revertDraft();
-          if (pendingTab !== null) setTab(pendingTab);
+          if (pendingTab !== null) setCommittedTab(pendingTab);
           setPendingTab(null);
         }}
         onKeepEditing={() => setPendingTab(null)}
+        onSave={handleGuardSave}
+        saveDisabled={onSave === undefined}
       />
     </div>
   );

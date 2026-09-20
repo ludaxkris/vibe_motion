@@ -92,7 +92,7 @@ describe("Toast", () => {
     show("Saved v6");
     const first = useToastStore.getState().current?.id;
 
-    // A Phase 6 Save clearing one confirmation and raising another lands both
+    // A Save clearing one confirmation and raising another lands both
     // in a single React batch: same `key` would mean React reuses the element
     // and the entrance never plays again.
     act(() => {

@@ -236,6 +236,15 @@ describe("/dev", () => {
     expect(screen.getByTestId("dev-frame-dialog-save")).toBeInTheDocument();
   });
 
+  it("links to the History tab's own page, which it is too tall to inline", async () => {
+    await renderGallery();
+
+    expect(screen.getByRole("link", { name: "/dev/history" })).toHaveAttribute(
+      "href",
+      "/dev/history",
+    );
+  });
+
   it("shows a standing toast and offers a real one", async () => {
     await renderGallery();
 
