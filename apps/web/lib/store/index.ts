@@ -23,6 +23,11 @@
  * `resolveGuard`); `createEditorStore()` hands out an independent instance so
  * the bridge client's tests are not sharing the module-scope default.
  *
+ * Phase 5 adds what the agent did (`prompt`, `generated`, `lastRun`). All three
+ * are client-only — they never enter a diff — and "agent-owned" is, once more,
+ * derived: an element is agent-owned while its draft assignment still equals
+ * what the agent produced for it (plan D2), so no edit path keeps a flag.
+ *
  * Live preview edits stay in `draftState` and never hit the API;
  * `currentVersionState` only changes when a version is saved, loaded or
  * restored (Phase 6). No action in this module calls the API.
@@ -30,6 +35,7 @@
 import type { ElementInfo } from "bridge";
 import { create, type StateCreator, type StoreApi, type UseBoundStore } from "zustand";
 
+import type { PageSuggestion, Viewport } from "@/lib/agent/types";
 import type { Assignment, EditorStateMap } from "@/lib/api-client";
 import { assignmentsEqual } from "@/lib/assignment";
 import { defaultAssignmentFor, getCatalogEntry } from "@/lib/catalog";
@@ -49,6 +55,33 @@ export type EditorMode = "editing" | "viewing";
 
 /** What the unsaved-changes guard on an element switch was answered with. */
 export type GuardOutcome = "discard" | "keep" | "saved";
+
+/** What the last page auto-generate (or Regenerate) run did — the result list's source. */
+export type LastRun = {
+  /** Regenerate re-rolls with `seed + 1` (plan D7). */
+  seed: number;
+  /** The prompt as it was when the run started; the result view quotes it. */
+  prompt: string;
+  /**
+   * The result list's elements: the previous run's that still had an assignment
+   * (so a hand-tuned row survives a Regenerate), then the ones this run
+   * assigned, in the suggestion's order. No duplicates.
+   */
+  vmIds: string[];
+  skippedCount: number;
+  /** The bridge had more matching elements than it listed. */
+  truncated: boolean;
+  viewport: Viewport;
+};
+
+/** What `applyPageSuggestion` takes: the agent's answer plus the facts of the run. */
+export type PageSuggestionInput = {
+  suggestion: PageSuggestion;
+  seed: number;
+  prompt: string;
+  truncated: boolean;
+  viewport: Viewport;
+};
 
 export type EditorState = {
   /** Control Panel state machine (idle / selected / choosing / tuning). */
@@ -87,6 +120,16 @@ export type EditorState = {
    * point would revert an element the dialog never mentioned.
    */
   guardedVmId: string | null;
+  /** The idle panel's prompt textarea (plan D8). Client-only. */
+  prompt: string;
+  /**
+   * Each assignment exactly as the agent produced it, keyed by vmId (plan D2).
+   * Client-only provenance: never saved, never sent to the frame. An element is
+   * agent-owned while `draftState[vmId]` still equals its entry here.
+   */
+  generated: Record<string, Assignment>;
+  /** The last page run, or null before the first one (and after a revert). */
+  lastRun: LastRun | null;
 };
 
 export type EditorActions = {
@@ -117,6 +160,11 @@ export type EditorActions = {
   /** Record what the bridge reported about an element (`element:select`). */
   rememberElement: (info: ElementInfo) => void;
   /**
+   * The same for a whole `elements:list`, in one update: 200 `rememberElement`
+   * calls would be 200 store notifications. The newer report wins.
+   */
+  rememberElements: (infos: ElementInfo[]) => void;
+  /**
    * Selection *asked for* from inside the iframe, which the guard may refuse —
    * as opposed to {@link EditorActions.setSelectedVmId}, which is the editor's
    * own UI moving the selection and always wins. Spec §5: same element is a
@@ -134,6 +182,31 @@ export type EditorActions = {
    * ran (Phase 6). All three end with the guard closed.
    */
   resolveGuard: (outcome: GuardOutcome) => void;
+  setPrompt: (prompt: string) => void;
+  /**
+   * "✦ Auto-generate for this element": write the agent's assignment into the
+   * draft, remember it as agent-made, and — when the panel is still `selected`
+   * on `vmId` — move it to `tuning`, keeping `returnTo`. The agent is async: if
+   * the designer moved on meanwhile (another element, or the picker on this
+   * one) the draft is still written but the panel is left where they put it;
+   * if they gave the element an animation of their own meanwhile, nothing is
+   * written at all. A no-op while viewing.
+   */
+  applyGenerated: (vmId: string, assignment: Assignment) => void;
+  /**
+   * A page run, applied in one `set()` so the bridge subscriber sees one
+   * change. Assigns every suggested element that is unassigned or agent-owned;
+   * a user-owned one is never overwritten, whatever the suggestion says. A
+   * no-op while viewing.
+   */
+  applyPageSuggestion: (input: PageSuggestionInput) => void;
+  /**
+   * The result list's "Remove all": drops agent-owned assignments only and
+   * forgets all provenance. `lastRun` stays (hand-tuned rows remain listed);
+   * `auto` closes to `idle` once no row of the last run is left. An identity
+   * no-op with nothing to forget, and while viewing.
+   */
+  removeAllGenerated: () => void;
   reset: () => void;
 };
 
@@ -153,6 +226,9 @@ export const initialEditorState: EditorState = {
   elements: {},
   pendingSelectVmId: null,
   guardedVmId: null,
+  prompt: "",
+  generated: {},
+  lastRun: null,
 };
 
 /** `data-vm-id` of the element selected in the preview iframe, or null when nothing is selected. */
@@ -244,7 +320,89 @@ export function selectGuardedVmId(state: EditorState): string | null {
  */
 export function selectElementDirty(state: EditorState, vmId: string | null): boolean {
   if (vmId === null) return false;
-  return !assignmentsEqual(state.draftState[vmId], state.currentVersionState[vmId]);
+  if (assignmentsEqual(state.draftState[vmId], state.currentVersionState[vmId])) return false;
+  // Plan D2: untouched agent work is unsaved (every selector above still counts
+  // it) but it is not something the designer would lose by clicking away, so
+  // the element-switch guard — this function's one caller — lets it go.
+  return !isAgentOwned(state, vmId);
+}
+
+/** `vmId` has a draft assignment and it is still exactly what the agent produced. */
+function isAgentOwned(
+  state: Pick<EditorState, "draftState" | "generated">,
+  vmId: string,
+): boolean {
+  const draft = state.draftState[vmId];
+  const made = state.generated[vmId];
+  return draft !== undefined && made !== undefined && assignmentsEqual(draft, made);
+}
+
+/**
+ * One-entry memos for the two array selectors below, keyed on the identity of
+ * exactly the maps each one reads — deliberately not `dirtyCache`, which knows
+ * nothing of `generated` or `lastRun`. Same contract as `selectDirtyVmIds`:
+ * the arrays are shared, callers must not mutate them.
+ */
+let agentOwnedCache: {
+  draft: EditorStateMap;
+  generated: Record<string, Assignment>;
+  vmIds: string[];
+} | null = null;
+let autoResultCache: { draft: EditorStateMap; lastRun: LastRun | null; vmIds: string[] } | null =
+  null;
+
+/** Elements whose draft assignment is still exactly what the agent produced (plan D2). */
+export function selectAgentOwnedVmIds(state: EditorState): string[] {
+  const { draftState, generated } = state;
+  if (
+    agentOwnedCache &&
+    agentOwnedCache.draft === draftState &&
+    agentOwnedCache.generated === generated
+  ) {
+    return agentOwnedCache.vmIds;
+  }
+  const vmIds = Object.keys(generated).filter((vmId) => isAgentOwned(state, vmId));
+  agentOwnedCache = { draft: draftState, generated, vmIds };
+  return vmIds;
+}
+
+/**
+ * Split what the bridge listed into what a page run may assign and what it must
+ * leave alone (plan D2): `candidates` have no draft assignment or an
+ * agent-owned one; every user-owned element's assignment goes to the agent as
+ * `existing` context instead. Allocates — call it per run, not per render.
+ */
+export function selectAutoCandidates(
+  state: EditorState,
+  elements: ElementInfo[],
+): { candidates: ElementInfo[]; existing: Record<string, Assignment> } {
+  const candidates: ElementInfo[] = [];
+  const existing: Record<string, Assignment> = {};
+  for (const element of elements) {
+    const draft = state.draftState[element.vmId];
+    if (draft === undefined || isAgentOwned(state, element.vmId)) candidates.push(element);
+    else existing[element.vmId] = draft;
+  }
+  return { candidates, existing };
+}
+
+/** The result list's rows: the last run's elements that still have a draft assignment (plan D3). */
+export function selectAutoResultVmIds(state: EditorState): string[] {
+  const { draftState, lastRun } = state;
+  if (autoResultCache && autoResultCache.draft === draftState && autoResultCache.lastRun === lastRun) {
+    return autoResultCache.vmIds;
+  }
+  const vmIds = (lastRun?.vmIds ?? []).filter((vmId) => draftState[vmId] !== undefined);
+  autoResultCache = { draft: draftState, lastRun, vmIds };
+  return vmIds;
+}
+
+/** `map` without `key`; `map` itself when `key` is not in it. */
+function without<T>(map: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in map)) return map;
+  const next = { ...map };
+  delete next[key];
+  return next;
 }
 
 /**
@@ -302,6 +460,9 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
           return {
             panel,
             draftState: { ...state.draftState, [panel.vmId]: defaultAssignmentFor(entry) },
+            // A hand pick, even one that happens to equal what the agent once
+            // made here, is the designer's: forget the provenance (plan D2).
+            generated: without(state.generated, panel.vmId),
           };
         }
       }
@@ -339,10 +500,12 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
 
   removeDraftAssignment: (vmId) =>
     set((state) => {
-      if (!(vmId in state.draftState)) return state;
-      const draftState = { ...state.draftState };
-      delete draftState[vmId];
-      return { draftState };
+      if (!(vmId in state.draftState) && !(vmId in state.generated)) return state;
+      return {
+        draftState: without(state.draftState, vmId),
+        // Stale provenance (plan D2): see `PICK` above.
+        generated: without(state.generated, vmId),
+      };
     }),
 
   revertDraft: () => {
@@ -359,7 +522,10 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
         draftAnimationId: vmId === null ? undefined : draftState[vmId]?.animationId,
       });
 
-      return { draftState, panel };
+      // The whole draft is gone, agent work included (plan D2). `prompt` is
+      // what the designer typed, not part of the draft: it stays.
+      const generated = Object.keys(state.generated).length > 0 ? {} : state.generated;
+      return { draftState, panel, generated, lastRun: null };
     });
   },
 
@@ -373,6 +539,14 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
 
   rememberElement: (info) =>
     set((state) => ({ elements: { ...state.elements, [info.vmId]: info } })),
+
+  rememberElements: (infos) =>
+    set((state) => {
+      if (infos.length === 0) return state;
+      const elements = { ...state.elements };
+      for (const info of infos) elements[info.vmId] = info;
+      return { elements };
+    }),
 
   requestSelect: (vmId) => {
     const state = get();
@@ -405,9 +579,12 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
     if (outcome === "discard" && guarded !== null) {
       // The element the dialog named, read from when it opened — not whatever
       // is selected now.
-      const saved = state.currentVersionState[guarded];
+      // …back to the saved version when there is one; else back to what the
+      // agent made, when it made something (plan D2: discarding a hand edit of
+      // generated work must not also discard the generated work); else gone.
+      const restored = state.currentVersionState[guarded] ?? state.generated[guarded];
       const draftState = { ...state.draftState };
-      if (saved) draftState[guarded] = saved;
+      if (restored) draftState[guarded] = restored;
       else delete draftState[guarded];
       set({ draftState });
     }
@@ -419,6 +596,98 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
     set({ pendingSelectVmId: null, guardedVmId: null });
     get().setSelectedVmId(pending);
   },
+
+  setPrompt: (prompt) => set((state) => (state.prompt === prompt ? state : { prompt })),
+
+  applyGenerated: (vmId, assignment) =>
+    set((state) => {
+      if (state.mode === "viewing") return state;
+      // The agent is async: the designer may have picked something for this
+      // element meanwhile, and one click never discards hand work (plan D2).
+      if (state.draftState[vmId] !== undefined && !isAgentOwned(state, vmId)) return state;
+      // Only from the panel the button lives on. Same element but `choosing`
+      // means the designer opened the picker while the agent was thinking: the
+      // draft is written, the picker stays.
+      const onSelected = state.panel.status === "selected" && state.panel.vmId === vmId;
+      return {
+        draftState: { ...state.draftState, [vmId]: assignment },
+        generated: { ...state.generated, [vmId]: assignment },
+        // `SELECT` with the new `draftAnimationId` is the machine's existing
+        // "this element, tuning this animation, keep `returnTo`" — no new event.
+        panel: onSelected
+          ? transition(state.panel, {
+              type: "SELECT",
+              vmId,
+              draftAnimationId: assignment.animationId,
+            })
+          : state.panel,
+      };
+    }),
+
+  applyPageSuggestion: ({ suggestion, seed, prompt, truncated, viewport }) =>
+    set((state) => {
+      if (state.mode === "viewing") return state;
+      const draftState = { ...state.draftState };
+      const generated = { ...state.generated };
+      const assigned: string[] = [];
+      for (const [vmId, assignment] of Object.entries(suggestion.assignments)) {
+        // User-owned: in the draft and no longer (or never) what the agent made.
+        if (state.draftState[vmId] !== undefined && !isAgentOwned(state, vmId)) continue;
+        draftState[vmId] = assignment;
+        generated[vmId] = assignment;
+        assigned.push(vmId);
+      }
+      // The previous run's rows that still have an assignment stay listed —
+      // a hand-tuned row survives a Regenerate as "edited" (plan D3) — then
+      // whatever this run added. A Set keeps first-seen order and de-duplicates.
+      const vmIds = [
+        ...new Set([
+          ...(state.lastRun?.vmIds ?? []).filter((vmId) => draftState[vmId] !== undefined),
+          ...assigned,
+        ]),
+      ];
+      return {
+        draftState,
+        generated,
+        lastRun: {
+          seed,
+          prompt,
+          vmIds,
+          skippedCount: suggestion.skipped.length,
+          truncated,
+          viewport,
+        },
+        // Inside this updater, not via `dispatchPanel`: that is a second `set()`.
+        panel: transition(state.panel, { type: "AUTO_DONE" }),
+      };
+    }),
+
+  removeAllGenerated: () =>
+    set((state) => {
+      if (state.mode === "viewing") return state;
+      const owned = Object.keys(state.generated).filter((vmId) => isAgentOwned(state, vmId));
+      // `generated` non-empty with nothing owned still forgets the provenance.
+      if (owned.length === 0 && Object.keys(state.generated).length === 0) return state;
+
+      let draftState = state.draftState;
+      if (owned.length > 0) {
+        draftState = { ...state.draftState };
+        for (const vmId of owned) delete draftState[vmId];
+      }
+
+      let panel = state.panel;
+      const selected = selectSelectedVmId(state);
+      if (selected !== null && state.draftState[selected] && !draftState[selected]) {
+        // The element the panel is on just lost its assignment. The button
+        // only exists on `auto`, where nothing is selected, but the action is
+        // public and `tuning` without a draft assignment is a broken panel.
+        panel = transition(panel, { type: "CLEAR" });
+      }
+      const rowLeft = (state.lastRun?.vmIds ?? []).some((vmId) => draftState[vmId] !== undefined);
+      if (!rowLeft) panel = transition(panel, { type: "AUTO_CLOSE" });
+
+      return { draftState, generated: {}, panel };
+    }),
 
   reset: () => set({ ...initialEditorState }),
 });

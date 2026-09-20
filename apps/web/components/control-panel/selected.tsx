@@ -3,7 +3,9 @@
 import { Button } from "@/components/ui/button";
 import { ElementTag } from "@/components/ui/element-tag";
 import { SectionLabel } from "@/components/ui/section-label";
+import type { RunFailure } from "@/lib/agent/run";
 
+import { AgentRunError } from "./agent-run-error";
 import { PanelBackButton } from "./panel-back-button";
 import { PanelCard, PanelSection } from "./panel-card";
 
@@ -18,6 +20,9 @@ export function SelectedPanel({
   elementText,
   onChooseCustom,
   onBack,
+  onGenerate,
+  busy = false,
+  error,
 }: {
   /** `data-vm-id` of the selected element — its tag until the bridge sends a nicer one (Phase 4). */
   vmId: string;
@@ -29,6 +34,12 @@ export function SelectedPanel({
    * back to only when the element was opened from the auto-generate result list.
    */
   onBack?: () => void;
+  /** Ask the agent for this element. Absent (button disabled) until the bridge is ready. */
+  onGenerate?: () => void;
+  /** An agent run is in flight: the button says so and takes no clicks. */
+  busy?: boolean;
+  /** Why the last run did nothing (plan D10). */
+  error?: RunFailure | null;
 }) {
   return (
     <PanelCard data-testid="panel-selected">
@@ -54,10 +65,16 @@ export function SelectedPanel({
 
       <PanelSection className="gap-2">
         <SectionLabel>Add animation</SectionLabel>
-        {/* The mock agent (Phase 5) is what fills this in. */}
-        <Button size="lg" glyph="✦" disabled>
-          Auto-generate for this element
+        <Button
+          size="lg"
+          glyph="✦"
+          disabled={!onGenerate || busy}
+          aria-busy={busy || undefined}
+          onClick={onGenerate}
+        >
+          {busy ? "Generating…" : "Auto-generate for this element"}
         </Button>
+        <AgentRunError error={error} busy={busy} />
         <Button variant="secondary" size="lg" onClick={onChooseCustom}>
           Choose custom animation
         </Button>
