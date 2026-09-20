@@ -32,7 +32,7 @@ import { atLeast } from "./semver";
 import { isUnresolved, toApplied, type Unresolved } from "./to-applied";
 
 /** The first bridge that answers `elements:query`; an older one ignores it (protocol.ts). */
-const ELEMENTS_QUERY_MIN_BRIDGE = "1.1.0";
+export const ELEMENTS_QUERY_MIN_BRIDGE = "1.1.0";
 
 /**
  * `connecting` — no usable `ready` yet; only `hello` goes out.
@@ -90,6 +90,13 @@ export type ElementsList = {
 
 export type BridgeClient = {
   status: () => BridgeStatus;
+  /**
+   * `bridgeVersion` of the frame's last `ready`, or null before one and when it
+   * carried no string. Set before the status turns `ready`, so a consumer that
+   * re-renders on the status reads this frame's version. Feature checks go
+   * through `atLeast()`, which fails closed on null.
+   */
+  bridgeVersion: () => string | null;
   /** Ask the frame to re-send `ready`. Call on mount and on the iframe's `load` event. */
   hello: () => void;
   /** Show an assignment transiently, without touching the draft (spec D4). */
@@ -667,6 +674,8 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
 
   return {
     status: () => status,
+
+    bridgeVersion: () => bridgeVersion,
 
     hello: () => {
       void post("hello", {});

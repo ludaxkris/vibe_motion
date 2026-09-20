@@ -450,16 +450,24 @@ describe("EditorShell bridge", () => {
     expect(Object.keys(useEditorStore.getState().draftState)).toEqual(["vm-1", "vm-2"]);
   });
 
-  it("says it could not read the page when the frame's bridge predates elements:query", async () => {
+  it("keeps the generate buttons disabled against a bridge that predates elements:query", async () => {
     const project = await createProject();
     renderShell(project.id);
     await screen.findByText("example.com/pricing");
     handshake(PROTOCOL_VERSION, "1.0.0");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Auto-generate for this page" }));
+    // The bridge is ready (Replay works), it just cannot answer a query.
+    act(() => useEditorStore.getState().setDraftAssignment("vm-1", {
+      animationId: "fade-in",
+      catalogVersion: "1.1.0",
+      trigger: "load",
+      params: {},
+    }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Replay all" })).toBeEnabled());
+    expect(screen.getByRole("button", { name: "Auto-generate for this page" })).toBeDisabled();
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Couldn't read the page. Try again.");
-    expect(useEditorStore.getState().draftState).toEqual({});
+    act(() => useEditorStore.getState().setSelectedVmId("vm-2"));
+    expect(screen.getByRole("button", { name: "Auto-generate for this element" })).toBeDisabled();
   });
 
   it("shows a reload banner when the frame speaks a protocol this build does not know", async () => {

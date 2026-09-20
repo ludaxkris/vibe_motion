@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { autoGeneratePage, generateForElement } from "@/lib/agent/run";
 import { apiClient, type Assignment, type Project, type Version } from "@/lib/api-client";
 import { env } from "@/lib/env";
+import { atLeast, ELEMENTS_QUERY_MIN_BRIDGE } from "@/lib/bridge";
 import { useBridge } from "@/lib/bridge/use-bridge";
 import { previewIsSameOrigin, previewOrigin, previewPageUrl } from "@/lib/preview-url";
 import { forgetRecentProject, rememberRecentProject } from "@/lib/recent-projects";
@@ -186,6 +187,9 @@ export function EditorShell({ projectId }: { projectId: string }) {
   }, [sameOrigin]);
   const { frameRef, handleFrameLoad, status, client } = useBridge({ expectedOrigin });
   const bridgeReady = client !== null && status === "ready";
+  // Deploy skew: an older api image serves a bridge that cannot list elements.
+  // Disabled buttons, rather than a failure on every click.
+  const canQuery = bridgeReady && atLeast(client.bridgeVersion(), ELEMENTS_QUERY_MIN_BRIDGE);
 
   const handlePreview = useCallback(
     (vmId: string, assignment: Assignment) => client?.preview(vmId, assignment),
@@ -424,8 +428,8 @@ export function EditorShell({ projectId }: { projectId: string }) {
               onPreview={bridgeReady ? handlePreview : undefined}
               onClearPreview={bridgeReady ? handleClearPreview : undefined}
               onReplay={bridgeReady ? handleReplay : undefined}
-              onGenerateElement={bridgeReady ? handleGenerateElement : undefined}
-              onAutoGeneratePage={bridgeReady ? handleAutoGeneratePage : undefined}
+              onGenerateElement={canQuery ? handleGenerateElement : undefined}
+              onAutoGeneratePage={canQuery ? handleAutoGeneratePage : undefined}
             />
           </aside>
         }

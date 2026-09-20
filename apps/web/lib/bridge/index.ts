@@ -6,7 +6,7 @@
  * The wire types and constants live in the `bridge` workspace package, which
  * the API and the Phase 7 exporter share.
  */
-export { createBridgeClient } from "./client";
+export { createBridgeClient, ELEMENTS_QUERY_MIN_BRIDGE } from "./client";
 export type {
   Ack,
   BridgeClient,

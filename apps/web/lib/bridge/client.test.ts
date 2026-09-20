@@ -1036,6 +1036,20 @@ describe("createBridgeClient — queryElements", () => {
     expect(old.liveTimers()).toHaveLength(0);
   });
 
+  it("reports the frame's bridgeVersion: null before `ready`, this frame's after, null when unusable", () => {
+    const h = harness();
+    expect(h.client.bridgeVersion()).toBeNull();
+
+    h.ready(PROTOCOL_VERSION, "1.1.1");
+    expect(h.client.bridgeVersion()).toBe("1.1.1");
+
+    h.ready(PROTOCOL_VERSION, "1.0.0");
+    expect(h.client.bridgeVersion()).toBe("1.0.0");
+
+    h.readyWith({ elementCount: 1, protocolVersion: PROTOCOL_VERSION, bridgeVersion: 1.1 });
+    expect(h.client.bridgeVersion()).toBeNull();
+  });
+
   it("refuses a `ready` with no usable bridgeVersion as bridge-too-old", async () => {
     for (const bridgeVersion of [undefined, 1.1, "latest"]) {
       const h = harness();
