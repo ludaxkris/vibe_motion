@@ -584,8 +584,11 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       options.onAckError?.(ack);
     }
     // The bridge posts the list *before* this ack, so a query still waiting
-    // at a refusal is never getting one.
-    if (ack.ok === false) takeQuery(ack.seq)?.reject(new Error("elements-query-rejected"));
+    // at its ack is never getting one: refused, or (on `ok: true`) a bridge
+    // that broke the contract. Either way, now rather than after the timeout.
+    takeQuery(ack.seq)?.reject(
+      new Error(ack.ok === false ? "elements-query-rejected" : "elements-query-invalid"),
+    );
     const deferred = pending.get(ack.seq);
     if (!deferred) return;
     settle(ack.seq, deferred);

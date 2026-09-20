@@ -62,7 +62,11 @@ export type LastRun = {
   seed: number;
   /** The prompt as it was when the run started; the result view quotes it. */
   prompt: string;
-  /** The elements this run actually assigned, in the suggestion's order. */
+  /**
+   * The result list's elements: the previous run's that still had an assignment
+   * (so a hand-tuned row survives a Regenerate), then the ones this run
+   * assigned, in the suggestion's order. No duplicates.
+   */
   vmIds: string[];
   skippedCount: number;
   /** The bridge had more matching elements than it listed. */
@@ -611,14 +615,23 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
     set((state) => {
       const draftState = { ...state.draftState };
       const generated = { ...state.generated };
-      const vmIds: string[] = [];
+      const assigned: string[] = [];
       for (const [vmId, assignment] of Object.entries(suggestion.assignments)) {
         // User-owned: in the draft and no longer (or never) what the agent made.
         if (state.draftState[vmId] !== undefined && !isAgentOwned(state, vmId)) continue;
         draftState[vmId] = assignment;
         generated[vmId] = assignment;
-        vmIds.push(vmId);
+        assigned.push(vmId);
       }
+      // The previous run's rows that still have an assignment stay listed —
+      // a hand-tuned row survives a Regenerate as "edited" (plan D3) — then
+      // whatever this run added. A Set keeps first-seen order and de-duplicates.
+      const vmIds = [
+        ...new Set([
+          ...(state.lastRun?.vmIds ?? []).filter((vmId) => draftState[vmId] !== undefined),
+          ...assigned,
+        ]),
+      ];
       return {
         draftState,
         generated,

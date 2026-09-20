@@ -923,6 +923,18 @@ describe("createBridgeClient — queryElements", () => {
     await expect(h.client.whenIdle()).resolves.toBeUndefined();
   });
 
+  it("rejects at once when the ack says ok but no list ever came (the list always precedes the ack)", async () => {
+    const h = readyHarness();
+    const query = h.client.queryElements(QUERY);
+    const seq = h.lastSeq("elements:query");
+
+    h.deliver("ack", { seq, ms: 1, ok: true });
+
+    await expect(query).rejects.toThrow("elements-query-invalid");
+    expect(h.liveTimers()).toHaveLength(0);
+    expect(h.ackErrors).toEqual([]);
+  });
+
   it("honours `queryTimeoutMs`", () => {
     const posted: unknown[] = [];
     const armed: number[] = [];

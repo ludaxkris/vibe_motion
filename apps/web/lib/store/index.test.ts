@@ -969,7 +969,31 @@ describe("agent provenance (Phase 5, D2)", () => {
       expect(store.getState().draftState["vm-a"]).toEqual(assignmentFor("pulse"));
       expect(store.getState().draftState["vm-b"]).toBe(tuned);
       expect(store.getState().lastRun?.seed).toBe(8);
-      expect(store.getState().lastRun?.vmIds).toEqual(["vm-a"]);
+      expect(store.getState().lastRun?.vmIds).toEqual(["vm-a", "vm-b"]);
+    });
+
+    it("keeps a hand-tuned row of the previous run listed across a Regenerate (plan D3)", () => {
+      const store = createEditorStore();
+      store.getState().applyPageSuggestion(
+        pageRun({ "vm-h1": assignmentFor("fade-in"), "vm-p": assignmentFor("fade-in") }),
+      );
+      store.getState().updateDraftParam("vm-h1", "duration", "1250ms");
+      const tuned = store.getState().draftState["vm-h1"];
+      store.getState().removeDraftAssignment("vm-p");
+
+      store.getState().applyPageSuggestion(
+        pageRun(
+          { "vm-new": assignmentFor("pulse"), "vm-h1": assignmentFor("pulse"), "vm-p": assignmentFor("pulse") },
+          8,
+        ),
+      );
+
+      // Previous rows that have an assignment after this run keep their place,
+      // then the new ones; no duplicates.
+      expect(store.getState().lastRun?.vmIds).toEqual(["vm-h1", "vm-p", "vm-new"]);
+      expect(selectAutoResultVmIds(store.getState())).toContain("vm-h1");
+      expect(selectAgentOwnedVmIds(store.getState())).not.toContain("vm-h1");
+      expect(store.getState().draftState["vm-h1"]).toBe(tuned);
     });
 
     it("while tuning keeps the panel on tuning and adds returnTo: auto", () => {
