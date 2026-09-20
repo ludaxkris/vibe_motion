@@ -170,6 +170,15 @@ export function useVersionHistory(
       const token = (generation.current += 1);
       setError(null);
 
+      if (before.mode === "viewing" && versionId === before.viewingVersionId) {
+        // Re-clicking the already-open row: collapse it, the same as Back —
+        // not a wholesale exitViewing()+enterViewing() of the same version,
+        // which would make the bridge re-apply and replay every differing
+        // assignment for no reason and never actually collapse the row.
+        exitViewing();
+        return;
+      }
+
       if (versionId === (before.currentVersionId ?? listVersionId)) {
         // The current version's row is where "back" lives: it is already what
         // the editor would return to.
@@ -258,6 +267,14 @@ export function useVersionHistory(
             const created = outcome.version;
             try {
               const state = await fetchVersionState(projectId, created.id);
+              // The version really was created — the server-side restore
+              // stands, it was a user click — but the reader may have moved
+              // to another project while this `/state` was in flight, and
+              // that project's editor must never receive this one's state:
+              // it would both mix the two projects' work and permanently
+              // block the project the reader is now on from ever loading its
+              // own current version (`currentVersionId !== null` stops it).
+              if (activeProject.current !== projectId) return;
               // Bumped again as the store write happens, not only when the
               // restore started: anything still in the air belongs to the
               // screen as it was before this version existed.

@@ -95,7 +95,14 @@ export function useProjectVersions(
    * that has to remember to.
    */
   const [failure, setFailure] = useState<{ projectId: string; message: string } | null>(null);
-  const loadError = failure?.projectId === projectId ? failure.message : null;
+  // Derived, not cleared imperatively: a successful `load()` — via either
+  // branch, `loadVersion` or `rebaseDraft` — always moves the store off
+  // `null`, so a load that later succeeds (A fails → B → back to A lands
+  // clean) reads as no error here without `load()` having to remember to say
+  // so. Only `retryLoad` used to clear `failure`, so a return visit that
+  // simply worked kept re-showing a banner that no longer described anything.
+  const loadError =
+    storeVersionId === null && failure?.projectId === projectId ? failure.message : null;
 
   /**
    * The `<projectId>:<versionId>` a load is *in flight* for, and nothing more:

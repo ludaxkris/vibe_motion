@@ -182,6 +182,49 @@ describe("useProjectVersions", () => {
     expect(client.getQueryData(versionStateKey(project.id, v1.id))).toEqual({ "vm-1": saved });
   });
 
+  it("clears a failed load once a later load for the same project succeeds", async () => {
+    // A fails → B (unrelated) → back to A, and this time it loads fine. Only
+    // `retryLoad` used to clear `failure`, so the banner from A's first visit
+    // kept re-showing even though the draft A is looking at right now is the
+    // one that just loaded successfully.
+    const a = projectWithOneSave("fade-in");
+    const b = projectWithOneSave("pulse");
+    const { Wrapper } = harness();
+    server.use(
+      http.get(
+        api("/projects/:projectId/versions/:versionId/state"),
+        ({ params }) => {
+          if (String(params.projectId) === a.project.id) {
+            return HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 });
+          }
+          return HttpResponse.json({ versionId: b.v1.id, state: { "vm-1": b.saved } });
+        },
+        { once: true },
+      ),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ projectId, project }: { projectId: string; project: Project | undefined }) =>
+        useProjectVersions(projectId, project),
+      { wrapper: Wrapper, initialProps: { projectId: a.project.id, project: a.project as Project | undefined } },
+    );
+    await waitFor(() => expect(result.current.loadError).toBe(VERSION_LOAD_FAILED));
+
+    act(() => {
+      useEditorStore.getState().reset();
+    });
+    rerender({ projectId: b.project.id, project: b.project });
+    await waitFor(() => expect(useEditorStore.getState().currentVersionId).toBe(b.v1.id));
+
+    act(() => {
+      useEditorStore.getState().reset();
+    });
+    rerender({ projectId: a.project.id, project: a.project });
+
+    await waitFor(() => expect(useEditorStore.getState().currentVersionId).toBe(a.v1.id));
+    expect(result.current.loadError).toBeNull();
+  });
+
   it("loads again on a return visit, whatever the last visit to that project left behind", async () => {
     // A → B → A without a remount: the shell `reset()`s on a project change,
     // so what says "already loaded" has to be the store rather than a token

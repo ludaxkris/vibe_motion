@@ -15,7 +15,7 @@
  * rejects on every exit that wrote nothing, including Cancel, so a guard can
  * never mistake an abandoned save for a save.
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useToast } from "@/components/ui/toast";
 import type { CreateVersionRequest, Version } from "@/lib/api-client";
@@ -110,6 +110,24 @@ export function useSaveFlow(
   const markSaved = useEditorStore((state) => state.markSaved);
   const loadVersion = useEditorStore((state) => state.loadVersion);
   const rebaseDraft = useEditorStore((state) => state.rebaseDraft);
+
+  /**
+   * The project this hook is on *now*: the shell `reset()`s on a project
+   * change rather than remounting, so an answer for the project the reader
+   * left must not land in the one they are on (same guard as
+   * `useProjectVersions`' `active` and `useVersionHistory`'s `activeProject`).
+   */
+  const activeProject = useRef(projectId);
+  useEffect(() => {
+    activeProject.current = projectId;
+  }, [projectId]);
+  /** False once this hook is gone; a busy retry's timer can outlive it. */
+  const mounted = useRef(true);
+  useEffect(() => {
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   /** Close every dialog and settle the outstanding promise, exactly once. */
   const finish = useCallback((written: boolean) => {
@@ -245,13 +263,22 @@ export function useSaveFlow(
     conflictBusy(true);
     try {
       const theirState = await fetchVersionState(projectId, theirs.id);
+      if (activeProject.current !== projectId) {
+        // The reader moved to another project while `theirs` was in flight.
+        // Rebasing it onto *this* draft would mix the two projects' states,
+        // and it is not this project's conflict to ask about any more — but
+        // the promise `requestSave` handed out must still settle rather than
+        // dangle for a caller (a guard) that is still awaiting it.
+        finish(false);
+        return;
+      }
       rebaseDraft(theirs.id, theirState);
 
       const rebased = useEditorStore.getState();
       if (!selectUnsaved(rebased)) {
         // Their save already contains my change, so there is no diff left to
         // write — and an empty diff is not a version (CLAUDE.md rule 9).
-        toast(`Already saved in v${theirs.seq}`);
+        if (mounted.current) toast(`Already saved in v${theirs.seq}`);
         finish(true);
         return;
       }
@@ -274,8 +301,15 @@ export function useSaveFlow(
     conflictBusy(true);
     try {
       const theirState = await fetchVersionState(projectId, theirs.id);
+      if (activeProject.current !== projectId) {
+        // Same guard as `rebase`: theirs belongs to the project the reader
+        // has left, and must never land in the one they are on now. Nothing
+        // was saved either way, so the promise still rejects.
+        finish(false);
+        return;
+      }
       loadVersion(theirs.id, theirState);
-      toast(`Loaded v${theirs.seq}`);
+      if (mounted.current) toast(`Loaded v${theirs.seq}`);
       finish(false);
     } catch (cause) {
       failConflict(cause);

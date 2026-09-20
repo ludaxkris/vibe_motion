@@ -161,7 +161,33 @@ describe("VersionRow", () => {
       />,
     );
 
-    expect(screen.getByText("Current · 2h ago · 42 elements")).toBeInTheDocument();
+    // The badge already says "Current"; the meta line must not say it again.
+    expect(screen.getByText("2h ago · 42 elements")).toBeInTheDocument();
+    expect(screen.queryByText(/Current ·/)).not.toBeInTheDocument();
+  });
+
+  it("says the current version's meta as just the time, not doubling the Current badge", () => {
+    render(
+      <VersionRow version={version()} rows={[]} isCurrent isViewing={false} now={NOW} {...callbacks()} />,
+    );
+
+    expect(screen.getByText("2h ago")).toBeInTheDocument();
+    expect(screen.queryByText(/Current ·/)).not.toBeInTheDocument();
+  });
+
+  it("omits aria-controls while collapsed, since the region it would name does not render", () => {
+    render(
+      <VersionRow
+        version={version()}
+        rows={ROWS}
+        isCurrent={false}
+        isViewing={false}
+        now={NOW}
+        {...callbacks()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /^v5/ })).not.toHaveAttribute("aria-controls");
   });
 
   it("points aria-controls at the expanded region's own id", () => {

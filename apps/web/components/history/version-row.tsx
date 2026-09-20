@@ -26,12 +26,19 @@ export type VersionRowProps = {
   restoring?: boolean;
 };
 
-/** "Current · 2h ago", or "Mon · 42 elements" for v0 (`docs/design/README.md` "History tab"). */
-function meta(version: Version, isCurrent: boolean, now: Date, elementCount?: number): string {
+/**
+ * "2h ago", or "Mon · 42 elements" for v0 (`docs/design/README.md` "History
+ * tab"). Never says "Current" — the badge next to the label already does,
+ * and doubling it up (badge + "Current · …") reads oddly, especially when
+ * `when` comes back empty for a timestamp that does not parse and the line
+ * would otherwise dangle as "Current · ".
+ */
+function meta(version: Version, now: Date, elementCount?: number): string {
   const when = relativeTime(version.createdAt, now);
-  const base = isCurrent ? `Current · ${when}` : when;
-  if (version.seq === 0 && elementCount !== undefined) return `${base} · ${elementCount} elements`;
-  return base;
+  if (version.seq === 0 && elementCount !== undefined) {
+    return when ? `${when} · ${elementCount} elements` : `${elementCount} elements`;
+  }
+  return when;
 }
 
 /**
@@ -68,7 +75,9 @@ export function VersionRow({
         type="button"
         onClick={() => onView(version.id)}
         aria-expanded={isViewing}
-        aria-controls={regionId}
+        // Only when the region it names actually renders: collapsed, there
+        // is nothing at `regionId` for a screen reader to find.
+        aria-controls={isViewing ? regionId : undefined}
         // A restore is about to land the editor on the version it creates, so
         // the hook refuses a view while one is in flight. Disabled rather than
         // silently swallowed (same reason Restore is).
@@ -92,7 +101,7 @@ export function VersionRow({
               </span>
             ) : null}
           </div>
-          <span className="text-xs text-vm-ink-2">{meta(version, isCurrent, now, elementCount)}</span>
+          <span className="text-xs text-vm-ink-2">{meta(version, now, elementCount)}</span>
         </div>
       </button>
 

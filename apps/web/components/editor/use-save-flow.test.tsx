@@ -619,4 +619,141 @@ describe("useSaveFlow · saved somewhere else", () => {
     expect(flow.status).toBe("pending");
     expect(useEditorStore.getState().draftState).toEqual({ "vm-1": assignment("fade-in") });
   });
+
+  it("rejects rather than rebasing onto a project the reader has since left", async () => {
+    // Same hazard `useProjectVersions` and `useVersionHistory` already guard
+    // against: theirs' `/state` answers after the reader has moved to another
+    // project (the shell resets the store and changes `projectId` without
+    // remounting this hook), and must not be replayed into whatever draft is
+    // in the store now.
+    const project = openProject();
+    const other = openProject();
+    animate("vm-1");
+    const view = renderFlow(project.id);
+    const flow = startSave();
+    await screen.findByRole("dialog", { name: "Save as v1" });
+    await otherTabSaves(project, "vm-2", "pulse");
+    fireEvent.click(screen.getByRole("button", { name: "Save version" }));
+    await screen.findByRole("dialog", { name: "v1 was saved somewhere else" });
+
+    let release = () => {};
+    let asked = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inFlight = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), async ({ params }) => {
+        asked();
+        await gate;
+        return HttpResponse.json({ versionId: params.versionId, state: {} });
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply my changes on top" }));
+    await act(async () => {
+      await inFlight;
+    });
+
+    // What the shell does on a project change: same mount, new `projectId`.
+    view.rerender(<Harness projectId={other.id} />);
+    await act(async () => {
+      release();
+      await gate;
+    });
+
+    // Rejected — not resolved, not left pending — and theirs never landed in
+    // the draft this project's editor is still showing.
+    await waitFor(() => expect(flow.status).toBe("rejected"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(useEditorStore.getState().draftState).toEqual({ "vm-1": assignment("fade-in") });
+  });
+
+  it("rejects rather than discarding into a project the reader has since left", async () => {
+    const project = openProject();
+    const other = openProject();
+    animate("vm-1");
+    const view = renderFlow(project.id);
+    const flow = startSave();
+    await screen.findByRole("dialog", { name: "Save as v1" });
+    const theirs = await otherTabSaves(project, "vm-2", "pulse");
+    fireEvent.click(screen.getByRole("button", { name: "Save version" }));
+    await screen.findByRole("dialog", { name: "v1 was saved somewhere else" });
+
+    let release = () => {};
+    let asked = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inFlight = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), async ({ params }) => {
+        asked();
+        await gate;
+        return HttpResponse.json({ versionId: params.versionId, state: theirs.assignment });
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard my changes" }));
+    await act(async () => {
+      await inFlight;
+    });
+
+    view.rerender(<Harness projectId={other.id} />);
+    await act(async () => {
+      release();
+      await gate;
+    });
+
+    await waitFor(() => expect(flow.status).toBe("rejected"));
+    expect(useEditorStore.getState().draftState).toEqual({ "vm-1": assignment("fade-in") });
+    expect(useToastStore.getState().current).toBeNull();
+  });
+
+  it("says nothing into the void when the rebase's own project outlives the tab", async () => {
+    const project = openProject();
+    animate("vm-1");
+    const view = renderFlow(project.id);
+    const flow = startSave();
+    await screen.findByRole("dialog", { name: "Save as v1" });
+    await otherTabSaves(project, "vm-1", "fade-in");
+    fireEvent.click(screen.getByRole("button", { name: "Save version" }));
+    await screen.findByRole("dialog", { name: "v1 was saved somewhere else" });
+
+    let release = () => {};
+    let asked = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inFlight = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), async ({ params }) => {
+        asked();
+        await gate;
+        const found = getVersionState(String(params.projectId), String(params.versionId));
+        return HttpResponse.json(found);
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply my changes on top" }));
+    await act(async () => {
+      await inFlight;
+    });
+    view.unmount();
+    await act(async () => {
+      release();
+      await gate;
+    });
+
+    // The rebase concluded "already saved" — a real outcome — but a toast for
+    // a screen that is gone belongs to nobody.
+    await waitFor(() => expect(flow.status).toBe("resolved"));
+    expect(useToastStore.getState().current).toBeNull();
+  });
 });

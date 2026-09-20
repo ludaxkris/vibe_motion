@@ -249,6 +249,41 @@ describe("useVersionHistory · viewing", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("collapses the already-viewed row on a re-click, rather than exiting and re-entering it", async () => {
+    const { project, versions, states } = await projectWithHistory();
+    let fetched = 0;
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), async ({ params }) => {
+        fetched += 1;
+        return HttpResponse.json({
+          versionId: params.versionId,
+          state: states[versions.findIndex((v) => v.id === params.versionId)] ?? {},
+        });
+      }),
+    );
+    const { result } = renderHistory(project.id);
+    await waitFor(() => expect(result.current.versions).toHaveLength(4));
+    await act(async () => {
+      await result.current.view(versions[1].id);
+    });
+    expect(fetched).toBe(1);
+
+    // Clicking the same (already open) row again: the row's own click-to-
+    // collapse, not a fresh view of the same version.
+    await act(async () => {
+      await result.current.view(versions[1].id);
+    });
+
+    const store = useEditorStore.getState();
+    expect(store.mode).toBe("editing");
+    expect(store.viewingVersionId).toBeNull();
+    expect(store.draftState).toEqual(states[3]);
+    expect(result.current.viewing).toBe(false);
+    // No second `/state` fetch: the row collapsed without re-fetching or
+    // re-applying anything.
+    expect(fetched).toBe(1);
+  });
+
   it("says so and stays put when a version's state cannot be loaded", async () => {
     const { project, versions } = await projectWithHistory();
     server.use(
@@ -512,6 +547,67 @@ describe("useVersionHistory · restore", () => {
     expect(selectUnsaved(store)).toBe(false);
     expect(useToastStore.getState().current?.message).toBe("Restored v1 as v4");
     expect(result.current.restoring).toBe(false);
+  });
+
+  it("never lands a restore's state in a project the reader has since left", async () => {
+    // Same hazard `view()` already guards against (see "never lands one
+    // project's version in another project's editor" above): the restore's
+    // own `/state` fetch answers after the reader has moved to another
+    // project, and must not write into that project's editor — nor leave it
+    // pinned to a version id that blocks its own open load for ever
+    // (`useProjectVersions`' `needsCurrentVersion` checks `currentVersionId
+    // !== null`).
+    const a = await projectWithHistory();
+    const b = await projectWithHistory();
+    let release = () => {};
+    let ask = () => {};
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const asked = new Promise<void>((resolve) => {
+      ask = resolve;
+    });
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), async ({ params }) => {
+        // Only the restore's own fetch (for the version it just created) is
+        // gated; nothing else in this test asks for a's state.
+        if (String(params.projectId) !== a.project.id) {
+          return HttpResponse.json({ versionId: params.versionId, state: {} });
+        }
+        ask();
+        await blocked;
+        return HttpResponse.json({
+          versionId: params.versionId,
+          state: a.states[1],
+        });
+      }),
+    );
+    const { result, rerender } = renderHistory(a.project.id);
+    await waitFor(() => expect(result.current.versions).toHaveLength(4));
+
+    let pending: Promise<void> = Promise.resolve();
+    await act(async () => {
+      pending = result.current.restore(a.versions[1].id);
+      await asked;
+    });
+
+    // What the shell does on a project change: `reset()`, same mount.
+    act(() => {
+      useEditorStore.getState().reset();
+      useEditorStore.getState().loadVersion(b.versions[3].id, b.states[3]);
+    });
+    rerender({ id: b.project.id });
+    await act(async () => {
+      release();
+      await pending;
+    });
+
+    // The version really was created on the server (the restore click was
+    // real and stands), but the editor — now on b — must be untouched by it.
+    const store = useEditorStore.getState();
+    expect(store.currentVersionId).toBe(b.versions[3].id);
+    expect(store.draftState).toEqual(b.states[3]);
+    expect(useToastStore.getState().current).toBeNull();
   });
 
   it("keeps the version on screen and says why when the restore fails", async () => {
