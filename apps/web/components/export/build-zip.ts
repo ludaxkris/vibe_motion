@@ -4,6 +4,9 @@ import type { ExportBundle } from "@/lib/api-client";
 
 type ExportFile = ExportBundle["files"][number];
 
+/** Which of the bundle's three text fields a listed file carries. */
+export type ExportFileKind = "html" | "css" | "js";
+
 /** The one file the client adds to the zip; the API's bundle never lists it. */
 export const README_FILE_NAME = "README.txt";
 
@@ -11,7 +14,8 @@ export const README_FILE_NAME = "README.txt";
 const MAX_SLUG_LENGTH = 48;
 
 /**
- * Which of the bundle's three text fields a listed file carries.
+ * Which of the bundle's three text fields a listed file carries, or `null`
+ * when the bundle carries none for it.
  *
  * Keyed on `contentType` rather than on the name: the names are the plan's
  * (`index.html` / `vibe-motion.css` / `vibe-motion.js`) but they are data, not
@@ -19,7 +23,7 @@ const MAX_SLUG_LENGTH = 48;
  * Phase 0 names until Track C aligns it. The extension is the fallback for a
  * content type this build has not seen.
  */
-function kindOf(file: ExportFile): "html" | "css" | "js" | null {
+export function bundleFileKind(file: ExportFile): ExportFileKind | null {
   const type = (file.contentType.split(";")[0] ?? "").trim().toLowerCase();
   if (type === "text/html") return "html";
   if (type === "text/css") return "css";
@@ -34,7 +38,7 @@ function kindOf(file: ExportFile): "html" | "css" | "js" | null {
 
 /** The text of one listed file, or `null` when the bundle carries none for it. */
 export function bundleFileText(bundle: ExportBundle, file: ExportFile): string | null {
-  switch (kindOf(file)) {
+  switch (bundleFileKind(file)) {
     case "html":
       return bundle.html;
     case "css":
