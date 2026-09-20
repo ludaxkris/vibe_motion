@@ -1,13 +1,12 @@
 "use client";
 
-import { useCallback } from "react";
-
 /**
  * The async Clipboard API. Absent on `http://` origins other than localhost,
  * and its promise rejects when the permission is denied or the document is not
  * focused — neither of which is a copy, so both fall through to the textarea.
  */
 async function copyViaClipboardApi(text: string): Promise<boolean> {
+  if (typeof navigator === "undefined") return false;
   const clipboard: Clipboard | undefined = navigator.clipboard;
   if (typeof clipboard?.writeText !== "function") return false;
   try {
@@ -30,24 +29,27 @@ function copyViaTextarea(text: string): boolean {
   const execCommand = document.execCommand as ((command: string) => boolean) | undefined;
   if (typeof execCommand !== "function") return false;
 
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.readOnly = true;
-  textarea.tabIndex = -1;
-  textarea.setAttribute("aria-hidden", "true");
-  textarea.style.cssText =
-    "position:fixed;top:0;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none";
+  // Everything from here on is inside the guard, the element's creation
+  // included: `copyText` promises never to throw, and a caller that turned a
+  // throw into an unhandled rejection would show no toast at all.
+  let textarea: HTMLTextAreaElement | undefined;
   const previouslyFocused = document.activeElement;
-  document.body.append(textarea);
-
   try {
+    textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.readOnly = true;
+    textarea.tabIndex = -1;
+    textarea.setAttribute("aria-hidden", "true");
+    textarea.style.cssText =
+      "position:fixed;top:0;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none";
+    document.body.append(textarea);
     textarea.select();
     textarea.setSelectionRange(0, text.length);
     return execCommand.call(document, "copy") === true;
   } catch {
     return false;
   } finally {
-    textarea.remove();
+    textarea?.remove();
     // Taking focus to copy and not giving it back would strand a keyboard
     // reader on `<body>`.
     if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
@@ -64,9 +66,4 @@ function copyViaTextarea(text: string): boolean {
 export async function copyText(text: string): Promise<boolean> {
   if (await copyViaClipboardApi(text)) return true;
   return copyViaTextarea(text);
-}
-
-/** `const copy = useClipboard(); await copy(bundle.css)`. */
-export function useClipboard(): (text: string) => Promise<boolean> {
-  return useCallback((text: string) => copyText(text), []);
 }

@@ -46,6 +46,26 @@ function toastMessage(): string | undefined {
   return useToastStore.getState().current?.message;
 }
 
+/** jsdom has neither object URLs nor downloads; the test installs both. */
+function stubDownload() {
+  const blobs: Blob[] = [];
+  const clicked: HTMLAnchorElement[] = [];
+  Object.defineProperty(URL, "createObjectURL", {
+    value: vi.fn((blob: Blob) => {
+      blobs.push(blob);
+      return "blob:vitest/1";
+    }),
+    configurable: true,
+  });
+  Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), configurable: true });
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    clicked.push(this);
+  });
+  return { blobs, clicked };
+}
+
 /** jsdom has no async clipboard; each test says which one it is exercising. */
 function stubClipboard(writeText: () => Promise<void>) {
   const spy = vi.fn(writeText);
@@ -94,6 +114,10 @@ describe("ExportPanel", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: "Snippet" }));
     expect(props.onModeChange).toHaveBeenCalledWith("snippet");
+    // Nothing to explain while both modes are live.
+    expect(
+      screen.getByRole("radiogroup", { name: "Export mode" }),
+    ).not.toHaveAttribute("aria-describedby");
   });
 
   it("disables Snippet, and says why, until an animated element is selected", () => {
@@ -101,9 +125,12 @@ describe("ExportPanel", () => {
 
     const snippet = screen.getByRole("radio", { name: "Snippet" });
     expect(snippet).toHaveAttribute("data-disabled");
-    expect(
-      screen.getByText("Select an animated element on the page to export a snippet."),
-    ).toBeInTheDocument();
+    const hint = screen.getByText("Select an animated element on the page to export a snippet.");
+    // Said out loud, not just shown: "Snippet, radio, dimmed" on its own
+    // tells a screen-reader reader nothing about why.
+    expect(screen.getByRole("radiogroup", { name: "Export mode" })).toHaveAccessibleDescription(
+      hint.textContent ?? "",
+    );
 
     fireEvent.click(snippet);
     expect(props.onModeChange).not.toHaveBeenCalled();
@@ -206,6 +233,19 @@ describe("ExportPanel", () => {
     );
   });
 
+  it("turns a throw in the clipboard machinery into the same toast", async () => {
+    renderPanel();
+    // Installed after the render, or React would have nothing to render with.
+    // Not an unhandled rejection: the reader is told, either way.
+    vi.spyOn(document, "createElement").mockImplementation(() => {
+      throw new Error("no elements for you");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy vibe-motion.css" }));
+
+    await waitFor(() => expect(toastMessage()).toBe("Copy failed"));
+  });
+
   it("says so when the copy did not happen", async () => {
     stubClipboard(async () => {
       throw new DOMException("denied", "NotAllowedError");
@@ -217,45 +257,63 @@ describe("ExportPanel", () => {
     await waitFor(() => expect(toastMessage()).toBe("Copy failed"));
   });
 
-  it("downloads a zip named for the project and the version", () => {
-    const blobs: Blob[] = [];
-    Object.defineProperty(URL, "createObjectURL", {
-      value: vi.fn((blob: Blob) => {
-        blobs.push(blob);
-        return "blob:vitest/1";
-      }),
-      configurable: true,
-    });
-    Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), configurable: true });
-    const clicked: HTMLAnchorElement[] = [];
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
-      this: HTMLAnchorElement,
-    ) {
-      clicked.push(this);
-    });
+  it("downloads a zip named for the project and the version", async () => {
+    const { blobs, clicked } = stubDownload();
     renderPanel();
 
     fireEvent.click(screen.getByRole("button", { name: "Download .zip" }));
 
+    await waitFor(() => expect(clicked).toHaveLength(1));
     expect(clicked[0].download).toBe("vibe-motion-nimbus-app-v5.zip");
     expect(blobs[0].type).toBe("application/zip");
   });
 
-  it("puts the bundle and a README in that zip", async () => {
-    const blobs: Blob[] = [];
-    Object.defineProperty(URL, "createObjectURL", {
-      value: vi.fn((blob: Blob) => {
-        blobs.push(blob);
-        return "blob:vitest/1";
-      }),
-      configurable: true,
-    });
-    Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), configurable: true });
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  it("says it is zipping, and cannot be asked twice while it is", async () => {
+    stubDownload();
     renderPanel();
 
     fireEvent.click(screen.getByRole("button", { name: "Download .zip" }));
 
+    // Checked in the same turn as the click: the encoder is loaded and run off
+    // the main thread, and the button must say so before the first await —
+    // asserting it after one would be racing the zip.
+    const busy = screen.getByRole("button", { name: "Zipping…" });
+    expect(busy).toBeDisabled();
+    expect(busy).toHaveAttribute("aria-busy", "true");
+
+    await screen.findByRole("button", { name: "Download .zip" });
+  });
+
+  it("turns a failed download into a toast rather than a dead click", async () => {
+    // No object URLs at all: `downloadZip` declines rather than throwing.
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Download .zip" }));
+
+    await waitFor(() => expect(toastMessage()).toBe("Download failed"));
+  });
+
+  it("turns a throw inside the zip into the same toast", async () => {
+    stubDownload();
+    vi.spyOn(globalThis, "Blob").mockImplementation(() => {
+      throw new Error("no blobs for you");
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Download .zip" }));
+
+    await waitFor(() => expect(toastMessage()).toBe("Download failed"));
+    // And the button comes back rather than staying stuck on "Zipping…".
+    await screen.findByRole("button", { name: "Download .zip" });
+  });
+
+  it("puts the bundle and a README in that zip", async () => {
+    const { blobs } = stubDownload();
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Download .zip" }));
+
+    await waitFor(() => expect(blobs).toHaveLength(1));
     // The blob the browser was handed is the zip; read it back out of it.
     const unzipped = unzipSync(new Uint8Array(await blobs[0].arrayBuffer()));
     expect(Object.keys(unzipped)).toEqual(["index.html", "vibe-motion.css", "README.txt"]);

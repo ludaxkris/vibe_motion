@@ -102,10 +102,16 @@ export function ExportTab({
       ? { [vmId]: snippetAssignment }
       : state;
 
+  // `isFetching` as well as `isPending`: TanStack keeps `status: "error"`
+  // while a refetch is in flight, so Retry would otherwise leave the same red
+  // message and a live button on screen — and the reader clicks it again,
+  // queueing work behind the API's suspending `Semaphore(2)`.
+  const busy = query.isPending || query.isFetching;
+
   return (
     <ExportPanel
-      bundle={query.data}
-      status={query.isPending ? "pending" : query.isError ? "error" : "ready"}
+      bundle={busy ? undefined : query.data}
+      status={busy ? "pending" : query.isError ? "error" : "ready"}
       errorMessage={query.error instanceof ExportFetchError ? query.error.message : undefined}
       versionSeq={versionSeq}
       versionLabel={versionLabel}

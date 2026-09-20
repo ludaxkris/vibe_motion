@@ -53,7 +53,7 @@ function snippetBundle(): ExportBundle {
 }
 
 describe("bundleFileText", () => {
-  it("routes each listed file to the bundle field its content type names", () => {
+  it("routes each listed file to the bundle field its content type names", async () => {
     const bundle = fullBundleWithJs();
 
     expect(bundleFileText(bundle, bundle.files[0])).toBe(bundle.html);
@@ -184,10 +184,10 @@ describe("bundleEntries", () => {
 });
 
 describe("buildZip", () => {
-  it("round-trips through fflate to exactly the bundle's files plus README.txt", () => {
+  it("round-trips through fflate to exactly the bundle's files plus README.txt", async () => {
     const bundle = fullBundleWithJs();
 
-    const unzipped = unzipSync(buildZip(bundle, "how to use these files"));
+    const unzipped = unzipSync(await buildZip(bundle, "how to use these files"));
 
     expect(Object.keys(unzipped)).toEqual([
       "index.html",
@@ -201,16 +201,16 @@ describe("buildZip", () => {
     expect(strFromU8(unzipped[README_FILE_NAME])).toBe("how to use these files");
   });
 
-  it("carries a snippet's single file", () => {
+  it("carries a snippet's single file", async () => {
     const bundle = snippetBundle();
 
-    const unzipped = unzipSync(buildZip(bundle, "r"));
+    const unzipped = unzipSync(await buildZip(bundle, "r"));
 
     expect(Object.keys(unzipped)).toEqual(["vibe-motion.css", README_FILE_NAME]);
     expect(strFromU8(unzipped["vibe-motion.css"])).toBe(bundle.css);
   });
 
-  it("never puts a path, or two files under one name, into the archive", () => {
+  it("never puts a path, or two files under one name, into the archive", async () => {
     const bundle = fullBundleWithJs();
     bundle.files = [
       { name: "../../etc/index.html", contentType: "text/html" },
@@ -218,7 +218,7 @@ describe("buildZip", () => {
       { name: "styles.css", contentType: "text/javascript" },
     ];
 
-    const unzipped = unzipSync(buildZip(bundle, "r"));
+    const unzipped = unzipSync(await buildZip(bundle, "r"));
 
     expect(Object.keys(unzipped)).toEqual([
       "index.html",
@@ -231,10 +231,19 @@ describe("buildZip", () => {
     expect(strFromU8(unzipped["styles-2.css"])).toBe(bundle.js);
   });
 
-  it("survives text outside the Latin-1 range", () => {
+  it("is asynchronous: the encoder is loaded, and runs, off the hot path", async () => {
+    // A 10 MB export (DT-175) compressed on the main thread would freeze the
+    // editor and its preview iframe. The promise is the contract the panel's
+    // busy state hangs off.
+    const pending = buildZip(fullBundle(), "r");
+    expect(pending).toBeInstanceOf(Promise);
+    expect(Object.keys(unzipSync(await pending))).toContain(README_FILE_NAME);
+  });
+
+  it("survives text outside the Latin-1 range", async () => {
     const bundle = fullBundle({ css: "/* Vibe Motion · v5 · caté */" });
 
-    const unzipped = unzipSync(buildZip(bundle, "r"));
+    const unzipped = unzipSync(await buildZip(bundle, "r"));
 
     expect(strFromU8(unzipped["vibe-motion.css"])).toBe("/* Vibe Motion · v5 · caté */");
   });

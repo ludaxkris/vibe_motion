@@ -15,6 +15,20 @@ import { strFromU8, unzipSync } from "fflate";
 
 const WITH_JS = "dev-frame-export-full-js";
 
+/**
+ * Landmarks from the stylesheet `/dev/export` stages
+ * (`apps/web/app/dev/export/export-frames.tsx`). Compared against the
+ * clipboard directly rather than against `innerText()` of the `<pre>`, which
+ * normalises whitespace and trailing newlines and would drift for reasons that
+ * have nothing to do with copying.
+ */
+const CSS_LANDMARKS = [
+  "/* Vibe Motion · format 1 · v5 · saved 2026-09-20 (UTC) · catalog 1.1.0 */",
+  "@keyframes vm-fade-in-up-v1-1-0",
+  "@media (prefers-reduced-motion: no-preference)",
+  ":where(.vm-js) .vm-in-view:not(.vm-play)",
+];
+
 test.describe("/dev/export", () => {
   test("stages every state in a 320px panel", async ({ page }) => {
     await page.goto("/dev/export");
@@ -44,12 +58,11 @@ test.describe("/dev/export", () => {
     await expect(page.locator("[data-slot='toaster']")).toHaveText("Copied CSS");
 
     const clipboard = await page.evaluate(() => navigator.clipboard.readText());
-    // The real stylesheet, not a placeholder.
-    expect(clipboard).toContain("@keyframes vm-fade-in-up-v1-1-0");
-    expect(clipboard).toContain("@media (prefers-reduced-motion: no-preference)");
-    expect(clipboard).toBe(
-      await frame.getByRole("region", { name: "vibe-motion.css" }).innerText(),
-    );
+    // The real stylesheet, not a placeholder, and whole.
+    for (const landmark of CSS_LANDMARKS) {
+      expect(clipboard).toContain(landmark);
+    }
+    expect(clipboard.endsWith("\n")).toBe(true);
   });
 
   test("downloads a zip of the bundle plus a README", async ({ page }) => {
@@ -59,6 +72,12 @@ test.describe("/dev/export", () => {
       page.waitForEvent("download"),
       page.getByTestId(WITH_JS).getByRole("button", { name: "Download .zip" }).click(),
     ]);
+
+    // The encoder is loaded and run off the main thread, so the button says so
+    // and comes back on its own.
+    await expect(
+      page.getByTestId(WITH_JS).getByRole("button", { name: "Download .zip" }),
+    ).toBeEnabled();
 
     expect(download.suggestedFilename()).toBe("vibe-motion-nimbus-app-v5.zip");
 

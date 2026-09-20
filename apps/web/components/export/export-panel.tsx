@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { PanelCard, PanelSection } from "@/components/control-panel/panel-card";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import { type ExportFileView, FileTabs, bundleFileViews } from "./file-tabs";
 import { type ExportCounts, formatExportStats } from "./export-stats";
 import { buildReadme } from "./readme";
 import { downloadZip } from "./download";
-import { useClipboard } from "./use-clipboard";
+import { copyText } from "./use-clipboard";
 
 export type ExportMode = ExportBundle["mode"];
 
@@ -88,8 +88,11 @@ export function ExportPanel({
   projectSlug,
 }: ExportPanelProps) {
   const { toast } = useToast();
-  const copy = useClipboard();
+  const hintId = useId();
   const [openFile, setOpenFile] = useState<string | null>(null);
+  // The zip runs off the main thread and can take a moment on a big export;
+  // a second click while it runs would build the whole thing twice.
+  const [zipping, setZipping] = useState(false);
 
   const files = useMemo(() => (bundle ? bundleFileViews(bundle) : []), [bundle]);
   // Derived rather than kept in an effect: the tab a mode switch opens on is a
@@ -106,6 +109,11 @@ export function ExportPanel({
   const label = versionLabel ?? `v${versionSeq}`;
   const ready = status === "ready" && bundle !== undefined;
 
+  /** Copying is best-effort by contract; a throw is still just "it did not". */
+  async function copy(text: string): Promise<boolean> {
+    return copyText(text).catch(() => false);
+  }
+
   async function copyOne(file: ExportFileView) {
     if (file.code === null) return;
     toast((await copy(file.code)) ? copiedMessage(file) : "Copy failed");
@@ -120,14 +128,21 @@ export function ExportPanel({
     toast((await copy(text)) ? "Copied all" : "Copy failed");
   }
 
-  function download() {
-    if (!bundle) return;
-    const readme = buildReadme(bundle, { versionLabel: label });
-    const saved = downloadZip(
-      zipFileName({ slug: projectSlug, versionSeq }),
-      buildZip(bundle, readme),
-    );
-    if (!saved) toast("Download failed");
+  async function download() {
+    if (!bundle || zipping) return;
+    setZipping(true);
+    try {
+      const readme = buildReadme(bundle, { versionLabel: label });
+      const zip = await buildZip(bundle, readme);
+      if (!downloadZip(zipFileName({ slug: projectSlug, versionSeq }), zip)) {
+        toast("Download failed");
+      }
+    } catch {
+      // A throw anywhere in here used to leave the click silently dead.
+      toast("Download failed");
+    } finally {
+      setZipping(false);
+    }
   }
 
   return (
@@ -143,6 +158,9 @@ export function ExportPanel({
 
         <Segmented
           aria-label="Export mode"
+          // Points at the hint, so a screen reader hears why the disabled
+          // segment is disabled instead of just "Snippet, radio, dimmed".
+          aria-describedby={snippetAvailable ? undefined : hintId}
           options={[
             MODE_OPTIONS[0],
             { ...MODE_OPTIONS[1], disabled: !snippetAvailable },
@@ -151,7 +169,11 @@ export function ExportPanel({
           onValueChange={(next) => onModeChange(next as ExportMode)}
         />
 
-        {snippetAvailable ? null : <p className="text-xs text-vm-ink-3">{SNIPPET_HINT}</p>}
+        {snippetAvailable ? null : (
+          <p id={hintId} className="text-xs text-vm-ink-3">
+            {SNIPPET_HINT}
+          </p>
+        )}
         <p className="text-xs leading-body text-vm-ink-3">{CAPTION}</p>
       </PanelSection>
 
@@ -201,8 +223,14 @@ export function ExportPanel({
         <Button variant="secondary" className="flex-1" disabled={!ready} onClick={() => void copyAll()}>
           Copy all
         </Button>
-        <Button variant="ink" className="flex-[1.3]" disabled={!ready} onClick={download}>
-          Download .zip
+        <Button
+          variant="ink"
+          className="flex-[1.3]"
+          disabled={!ready || zipping}
+          aria-busy={zipping}
+          onClick={() => void download()}
+        >
+          {zipping ? "Zipping…" : "Download .zip"}
         </Button>
       </PanelSection>
     </PanelCard>

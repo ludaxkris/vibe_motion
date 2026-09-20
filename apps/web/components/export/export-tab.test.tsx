@@ -125,7 +125,11 @@ describe("ExportTab", () => {
 
     renderTab();
 
-    expect(screen.getByRole("status", { name: "Preparing the export" })).toBeInTheDocument();
+    // The refetch reaches React a microtask later, so this is awaited; the
+    // handler holds the response for 50ms, which is the window being pinned.
+    expect(
+      await screen.findByRole("status", { name: "Preparing the export" }),
+    ).toBeInTheDocument();
     await screen.findByRole("tab", { name: "vibe-motion.css" });
   });
 
@@ -241,6 +245,35 @@ describe("ExportTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(await screen.findByRole("tab", { name: "vibe-motion.css" })).toBeInTheDocument();
+  });
+
+  it("shows the retry happening, and takes Retry away while it does", async () => {
+    let attempts = 0;
+    mockExport(async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return HttpResponse.json({ code: "not_found", message: "gone" }, { status: 404 });
+      }
+      await delay(50);
+      return HttpResponse.json(bundle());
+    });
+
+    renderTab();
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+
+    // TanStack keeps `status: "error"` through a refetch, so without folding
+    // `isFetching` in, the same red message and a live Retry would stay put
+    // and the reader would queue the work again.
+    // The refetch reaches React a microtask later, so this is awaited; the
+    // handler holds the response for 50ms, which is the window being pinned.
+    expect(
+      await screen.findByRole("status", { name: "Preparing the export" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    expect(screen.queryByText("gone")).not.toBeInTheDocument();
+
+    await screen.findByRole("tab", { name: "vibe-motion.css" });
+    expect(attempts).toBe(2);
   });
 
   it("does not retry a failed export by itself", async () => {

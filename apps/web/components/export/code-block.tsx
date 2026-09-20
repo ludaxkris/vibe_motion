@@ -3,6 +3,22 @@
 import { cn } from "cn";
 
 /**
+ * How much of a file the preview shows.
+ *
+ * Counted in characters: the exported HTML, CSS and JavaScript are effectively
+ * ASCII, so one character is one byte to within a rounding error, and counting
+ * real UTF-8 bytes would mean encoding the whole file on every render — the
+ * cost this cap exists to avoid.
+ */
+export const CODE_PREVIEW_LIMIT = 200 * 1024;
+
+/** "200 KB", "1.4 MB" — the size as the note says it. */
+export function formatCodeSize(characters: number): string {
+  const kb = characters / 1024;
+  return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${Math.round(kb)} KB`;
+}
+
+/**
  * The Export tab's ink code block (`docs/design/README.md`, "Export tab":
  * `#1d1d1f` on `#d4d4d8` text, 10.5px/1.6 mono, radii `0 8px 8px 8px`, a
  * "Copy" pill top-right in white 10%).
@@ -11,6 +27,11 @@ import { cn } from "cn";
  * from a page this app cloned, so `dangerouslySetInnerHTML` here would run a
  * cloned page's script on the editor's own origin (plan §1.7). The same reason
  * the tab never builds a `text/html` blob URL.
+ *
+ * Only the first `CODE_PREVIEW_LIMIT` characters are put in the DOM: a
+ * multi-megabyte page in one non-wrapping `white-space: pre` block is a text
+ * node no browser lays out cheaply. Copy and the zip always take the whole
+ * file, and the note says so rather than leaving the reader to wonder.
  *
  * The block is focusable and scrollable, with a name, so a keyboard reader can
  * reach the code at all — a scroll container that cannot be focused is a
@@ -31,13 +52,16 @@ export function CodeBlock({
   copyLabel?: string;
   className?: string;
 }) {
+  const truncated = code.length > CODE_PREVIEW_LIMIT;
+  const shown = truncated ? code.slice(0, CODE_PREVIEW_LIMIT) : code;
+
   return (
     <div
       data-slot="export-code-block"
       className={cn(
         // Square top-left: the block hangs off the active file tab, the same
         // shape as `PanelCard` under the panel's folder tabs.
-        "relative min-h-0 flex-1 overflow-hidden rounded-md rounded-tl-none bg-vm-ink",
+        "relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-md rounded-tl-none bg-vm-ink",
         className,
       )}
     >
@@ -48,14 +72,24 @@ export function CodeBlock({
         aria-label={fileName}
         tabIndex={0}
         className={cn(
-          "size-full overflow-auto px-3 pt-[30px] pb-3",
+          "min-h-0 flex-1 overflow-auto px-3 pt-[30px] pb-3",
           // The handoff's own type for this block; no token is this small.
           "font-mono text-[10.5px] leading-[1.6] whitespace-pre text-[#d4d4d8]",
           "outline-none focus-visible:ring-2 focus-visible:ring-vm-accent focus-visible:ring-inset",
         )}
       >
-        {code}
+        {shown}
       </pre>
+      {truncated ? (
+        <p
+          data-testid="code-block-truncated"
+          className="shrink-0 border-t border-white/10 px-3 py-1.5 text-xs leading-body text-white/60"
+        >
+          {`Showing the first ${formatCodeSize(CODE_PREVIEW_LIMIT)} of ${formatCodeSize(
+            code.length,
+          )}. Copy and Download include the whole file.`}
+        </p>
+      ) : null}
       {onCopy ? (
         <button
           type="button"

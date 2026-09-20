@@ -50,7 +50,9 @@ export function Segmented({
       }}
       disabled={disabled}
       className={cn(
-        "flex rounded-md bg-vm-surface-muted p-0.5 data-disabled:pointer-events-none data-disabled:opacity-40",
+        "group/segmented flex rounded-md bg-vm-surface-muted p-0.5",
+        // The whole control dims as one — the handoff's "Disabled = 40%".
+        "data-disabled:pointer-events-none data-disabled:opacity-40",
         className
       )}
       {...props}
@@ -68,7 +70,12 @@ export function Segmented({
             "flex-1 rounded-sm text-center text-sm font-normal text-vm-ink-2 select-none",
             "transition-colors duration-(--dur-fast) ease-standard",
             "hover:text-vm-ink",
+            // One segment out of action while the rest stay live. When it is
+            // the *group* that is disabled, Base UI marks every segment
+            // disabled too, and 0.4 inside 0.4 is 0.16 — so the group's own
+            // rule wins there and the segments stay at full opacity within it.
             "data-disabled:pointer-events-none data-disabled:opacity-40",
+            "group-data-disabled/segmented:data-disabled:opacity-100",
             "data-checked:bg-vm-surface data-checked:font-medium data-checked:text-vm-accent-strong data-checked:shadow-raised",
             dense ? "py-1" : "py-1.5"
           )}

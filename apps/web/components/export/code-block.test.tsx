@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { CodeBlock } from "./code-block";
+import { CODE_PREVIEW_LIMIT, CodeBlock, formatCodeSize } from "./code-block";
 
 describe("CodeBlock", () => {
   it("renders the bundle's text as text, never as markup", () => {
@@ -48,6 +48,41 @@ describe("CodeBlock", () => {
 
     rerender(<CodeBlock code=".vm-a1 {}" fileName="vibe-motion.css" />);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  describe("a file too big to put in the DOM", () => {
+    // Lengths are compared as numbers throughout: a failed assertion on a
+    // 1.4 MB string is a 1.4 MB character-by-character diff, which takes the
+    // whole worker out with it.
+    it("shows the first 200 KB and says so", () => {
+      const code = "a".repeat(CODE_PREVIEW_LIMIT * 7);
+
+      render(<CodeBlock code={code} fileName="index.html" />);
+
+      const region = screen.getByRole("region", { name: "index.html" });
+      expect(region.textContent?.length).toBe(CODE_PREVIEW_LIMIT);
+      expect(screen.getByTestId("code-block-truncated").textContent).toBe(
+        "Showing the first 200 KB of 1.4 MB. Copy and Download include the whole file.",
+      );
+    });
+
+    it("says nothing at all about a file that fits", () => {
+      render(<CodeBlock code={"a".repeat(CODE_PREVIEW_LIMIT)} fileName="index.html" />);
+
+      expect(screen.queryByTestId("code-block-truncated")).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("region", { name: "index.html" }).textContent?.length,
+      ).toBe(CODE_PREVIEW_LIMIT);
+    });
+  });
+
+  describe("formatCodeSize", () => {
+    it("reads as a size a person would say", () => {
+      expect(formatCodeSize(200 * 1024)).toBe("200 KB");
+      expect(formatCodeSize(1536)).toBe("2 KB");
+      expect(formatCodeSize(1024 * 1024)).toBe("1.0 MB");
+      expect(formatCodeSize(10 * 1024 * 1024)).toBe("10.0 MB");
+    });
   });
 
   it("wears the handoff's ink block", () => {

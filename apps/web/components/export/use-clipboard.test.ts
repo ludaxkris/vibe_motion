@@ -96,6 +96,15 @@ describe("copyText", () => {
     await expect(copyText("x")).resolves.toBe(false);
   });
 
+  it("is false, not a throw, when the document itself misbehaves", async () => {
+    stubExecCommand(true);
+    vi.spyOn(document, "createElement").mockImplementation(() => {
+      throw new Error("no elements for you");
+    });
+
+    await expect(copyText("x")).resolves.toBe(false);
+  });
+
   it("puts focus back where it was", async () => {
     const input = document.createElement("input");
     document.body.append(input);
