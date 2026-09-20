@@ -208,9 +208,21 @@ content except under an integration point (`foreignObject`, `desc`, `title`, `mt
 `mn`, `ms`), where ordinary HTML rules resume and the form is disarmed like any other.
 `annotation-xml` is deliberately **not** treated as an integration point: it is one only for
 certain `encoding` values. Nested forms are unwrapped, which is what a browser does with the inner
-start tag. The cost is real and accepted: an inline `<svg><style>` loses its own CSS. External
-stylesheets are inlined into HTML `<style>` blocks at clone time, so a page's real styling is
-unaffected; an icon that styles itself from inside its own `<svg>` renders unstyled.
+start tag.
+
+**One narrow exception, because real pages style their inline icons from inside the `<svg>`.** A
+`<style>` directly in SVG — not under an integration point, not under `math` — is kept when all
+three of these hold: it has no element children, it has no CDATA child, and its *serialised* bytes
+contain no `<`. Together those make it impossible for any parser to read the block as markup: `<`
+is the only character that can begin a start tag; a source `&lt;` is decoded to text while parsing
+and written back as `&lt;`, so it never becomes one; a literal `<` never reaches the check at all,
+because jsoup builds an element out of it and the first condition has already refused; and a CDATA
+section is a second syntax whose own delimiters carry `<`. A kept block is still swept like any
+other — dangerous `url()` defused, and on the clone path its URLs absolutised. Everything else in
+foreign content still goes. Dropping the lot was the first rule here and it was too wide: it kept
+the corpus inert and quietly unstyled every inline icon, a fidelity cost far broader than the
+threat. Both halves are proved in Chromium over the corpus — the hostile documents stay inert, and
+a benign icon's computed `fill` and `stroke` still come from its own block.
 
 ## 4. Preview bridge (iframe ⇄ shell)
 

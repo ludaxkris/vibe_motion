@@ -171,21 +171,88 @@ class HtmlSanitiserTest :
             document.selectFirst("style").shouldNotBeNull().data() shouldContain """url("#")"""
         }
 
-        test("a style block inside svg is removed outright, not defused") {
-            // Whether a `<style>` in foreign content holds text or markup depends on the exact
-            // insertion mode, and a browser and jsoup can disagree. Removing it is the only answer
-            // that does not require re-implementing a parser. The cost — an inline icon's own CSS
-            // — is accepted and recorded in docs/architecture.md.
+        test("an inert style block inside svg is kept, and its dangerous url() is still defused") {
+            // Real pages style their inline icons from inside the `<svg>`. The block is plain text
+            // with no `<` in it, so no parse can read it as markup — but its CSS is still swept.
             val document =
                 sanitised(
                     """<html><body><svg><style>a{background:url(javascript:alert(1))} circle{fill:red}</style><circle/></svg></body></html>""",
                 )
+            val css = document.selectFirst("svg style").shouldNotBeNull().wholeText()
+
+            css shouldContain """url("#")"""
+            css shouldContain "circle{fill:red}"
+            document.outerHtml() shouldNotContain "javascript:"
+            document.selectFirst("circle").shouldNotBeNull()
+        }
+
+        test("an svg style of ordinary CSS is kept untouched, child combinators and all") {
+            val document =
+                sanitised("""<html><body><svg><style>.icon > circle { fill: green }</style><circle class="icon"/></svg></body></html>""")
+
+            document.selectFirst("svg style").shouldNotBeNull().wholeText() shouldBe ".icon > circle { fill: green }"
+        }
+
+        test("an svg style whose CSS is split by a stripped comment is kept and rewritten whole") {
+            val document =
+                sanitised(
+                    """<html><body><svg><style>a{background:url(jav<!--x-->ascript:alert(1))} b{fill:red}</style></svg></body></html>""",
+                )
+            val css = document.selectFirst("svg style").shouldNotBeNull().wholeText()
+
+            // The comment is gone, the two halves are one string again, and the `url(` that was
+            // split across the seam is defused because it was only visible once they were joined.
+            css shouldContain """url("#")"""
+            css shouldContain "b{fill:red}"
+            document.outerHtml() shouldNotContain "javascript:"
+        }
+
+        test("an svg style containing an escaped less-than is kept: an entity is text, not markup") {
+            // `&lt;` decodes to the character `<` as *text* and jsoup re-escapes it on the way out,
+            // so what a browser re-reads is `&lt;` again. It can never begin a start tag.
+            val source = """<html><body><svg><style>@media (width &lt; 600px) { circle { fill: red } }</style></svg></body></html>"""
+            val document = sanitised(source)
+            val style = document.selectFirst("svg style").shouldNotBeNull()
+
+            style.wholeText() shouldContain "width < 600px"
+            document.outerHtml() shouldContain "&lt;"
+            document.outerHtml() shouldNotContain "<style>@media (width <"
+        }
+
+        test("an svg style whose source really contains a less-than is removed") {
+            // In foreign content a `<style>` is not a raw-text element, and jsoup proves it: it
+            // builds an element out of `<x` rather than keeping it as text. That is the differential
+            // itself, so the block goes.
+            val document = sanitised("<html><body><p id=\"after\">x</p><svg><style>a{} <x</style><circle/></svg></body></html>")
 
             document.select("svg style").size shouldBe 0
-            document.outerHtml() shouldNotContain "javascript:"
-            // Only the `<style>` goes; the drawing survives.
+            // The `<circle>` goes with it: jsoup nested it inside the bogus element it built out
+            // of `<x`, which is the same tree confusion the removal exists for. The rest of the
+            // page is untouched.
+            document.selectFirst("#after").shouldNotBeNull().text() shouldBe "x"
             document.selectFirst("svg").shouldNotBeNull()
-            document.selectFirst("circle").shouldNotBeNull()
+        }
+
+        test("an svg style with an element child is removed, whatever the text says") {
+            val document = sanitised("<html><body><svg><style><b>a{fill:red}</b></style><circle/></svg></body></html>")
+
+            document.select("svg style").size shouldBe 0
+        }
+
+        test("a style under math is removed even when it is inert, because nothing needs one there") {
+            val document = sanitised("<html><body><math><mrow><style>a{color:red}</style></mrow></math></body></html>")
+
+            document.select("math style").size shouldBe 0
+        }
+
+        test("a style inside an svg HTML integration point is still removed") {
+            // Inside `foreignObject` the insertion mode is exactly the thing this class declines to
+            // re-implement, so the narrow keep does not reach there.
+            val document =
+                sanitised("<html><body><svg><foreignObject><style>a{color:red}</style></foreignObject><circle/></svg></body></html>")
+
+            document.select("svg style").size shouldBe 0
+            document.selectFirst("foreignObject").shouldNotBeNull()
         }
 
         test("a style block with nothing to defuse is not rewritten at all") {
@@ -218,7 +285,7 @@ class HtmlSanitiserTest :
                 sanitised(
                     """
                     <html><body>
-                      <svg><style>a{fill:red}</style><desc><style>b{fill:red}</style></desc>
+                      <svg><desc><style>b{fill:red}</style></desc>
                         <foreignObject><style>c{fill:red}</style><noembed>x</noembed></foreignObject></svg>
                       <math><mtext><mglyph><style>d{color:red}</style></mglyph><xmp>y</xmp></mtext></math>
                       <style>e{color:red}</style>
@@ -226,6 +293,8 @@ class HtmlSanitiserTest :
                     """.trimIndent(),
                 )
 
+            // The only svg `<style>` that survives is the narrow inert one, and there is none here:
+            // every block in this document sits under an integration point or under `math`.
             document.select("svg style, math style, svg noembed, math xmp").size shouldBe 0
             // An ordinary HTML `<style>` outside foreign content is untouched.
             document.selectFirst("body > style").shouldNotBeNull().data() shouldBe "e{color:red}"

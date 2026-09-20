@@ -178,18 +178,28 @@ class HtmlRoundTripTest :
             emitter.emit(pre, emptyMap(), needsScript = false) shouldContain "<pre>keep me</pre>"
         }
 
-        test("a style block inside svg does not reach the export at all") {
-            // A `<style>` in foreign content is the shape jsoup and a browser can read
-            // differently, so it is removed rather than cleaned. The drawing survives.
+        test("an inert style block inside svg reaches the export, defused") {
+            // Real pages style their inline icons this way. The block is a leaf of text with no
+            // `<` in its bytes, so no parse can read it as markup, and its CSS is still swept.
             val svg =
                 """<html><body><svg><style>a{background:url(javascript:alert(1))} circle{fill:red}</style><circle/></svg></body></html>"""
 
             val exported = emitter.emit(svg, emptyMap(), needsScript = false)
 
             exported shouldNotContain "javascript:"
-            exported shouldNotContain "circle{fill:red}"
+            exported shouldContain """url("#")"""
+            exported shouldContain "circle{fill:red}"
+        }
+
+        test("a style block inside svg that jsoup read as markup does not reach the export") {
+            // `<x` makes jsoup build an element inside the block, which is the tree confusion the
+            // removal exists for.
+            val svg = """<html><body><p id="after">keep</p><svg><style>a{} <x</style></svg></body></html>"""
+
+            val exported = emitter.emit(svg, emptyMap(), needsScript = false)
+
             exported shouldNotContain "<style"
-            exported shouldContain "<svg>"
+            exported shouldContain """id="after""""
         }
 
         test("the document keeps its doctype, language and charset") {

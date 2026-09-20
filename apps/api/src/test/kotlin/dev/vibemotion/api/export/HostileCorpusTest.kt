@@ -5,12 +5,18 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import org.jsoup.Jsoup
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.name
 
 private val CORPUS_DIR = Path.of("src/test/resources/export/hostile")
+
+private const val RAW_TEXT_IN_FOREIGN = "style, xmp, noembed, noframes, plaintext, noscript, iframe, script"
+
+private val INTEGRATION_POINTS = setOf("foreignobject", "desc", "title", "mtext", "mi", "mo", "mn", "ms")
 
 private val EVENT_HANDLER_NAME = Regex("""on[a-z]+""")
 
@@ -91,18 +97,39 @@ class HostileCorpusTest :
             }
         }
 
-        test("no exported document keeps a raw-text element inside foreign content") {
+        test("the only raw-text element kept inside foreign content is an inert svg style") {
             corpus.forEach { source ->
                 val exported = emitter.emit(Files.readString(source), emptyMap(), needsScript = false)
                 val document = Jsoup.parse(exported)
 
-                withClue(source.name) {
-                    document
-                        .select("svg, math")
-                        .flatMap { it.select("style, xmp, noembed, noframes, plaintext, noscript, iframe, script") }
-                        .map { it.normalName() } shouldContainExactly emptyList()
+                withClue("${source.name}: $exported") {
+                    // Nothing at all under `math`.
+                    document.select("math").flatMap { it.select(RAW_TEXT_IN_FOREIGN) }.map { it.normalName() } shouldContainExactly
+                        emptyList()
+
+                    document.select("svg").flatMap { it.select(RAW_TEXT_IN_FOREIGN) }.forEach { kept ->
+                        // A `<style>`, a leaf, and nothing in its bytes that could open a tag.
+                        kept.normalName() shouldBe "style"
+                        kept.children().size shouldBe 0
+                        kept.html() shouldNotContain "<"
+                        // Not under an integration point: the narrow keep does not reach there.
+                        kept.parents().map { it.normalName() }.none { it in INTEGRATION_POINTS } shouldBe true
+                    }
                 }
             }
+        }
+
+        test("a benign inline icon keeps its own stylesheet, defused but intact") {
+            val exported = emitter.emit(Files.readString(CORPUS_DIR.resolve("icon-style.html")), emptyMap(), needsScript = false)
+            val css =
+                Jsoup
+                    .parse(exported)
+                    .selectFirst("svg style")
+                    ?.wholeText()
+                    .orEmpty()
+
+            css shouldContain ".icon-dot { fill: rgb(0, 128, 0); }"
+            css shouldContain "svg > circle"
         }
 
         test("exporting an export is a fixed point for every document but the one known characterisation") {

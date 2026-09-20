@@ -75,6 +75,23 @@ test.describe("exported hostile documents are inert in a real browser", () => {
   test("the corpus is present and covers the parser-differential document", () => {
     expect(goldens.length).toBeGreaterThan(10);
     expect(goldens).toContain("nested-form-mathml-style.html");
+    expect(goldens).toContain("icon-style.html");
+  });
+
+  test("a benign inline icon's own stylesheet still applies", async ({ page }) => {
+    // The other half of the claim. Dropping every `<svg><style>` would keep the corpus inert and
+    // quietly unstyle real pages, so the narrow keep is proved the same way the removals are: in
+    // a browser. This also settles the escaping question — jsoup writes `svg &gt; circle`, and
+    // only a real parse says whether the selector still matches.
+    await openExported(page, "icon-style.html");
+
+    const style = await page.locator("#dot").evaluate((element) => {
+      const computed = getComputedStyle(element);
+      return { fill: computed.fill, stroke: computed.stroke };
+    });
+
+    expect(style.fill).toBe("rgb(0, 128, 0)");
+    expect(style.stroke).toBe("rgb(0, 0, 255)");
   });
 
   for (const name of goldens) {

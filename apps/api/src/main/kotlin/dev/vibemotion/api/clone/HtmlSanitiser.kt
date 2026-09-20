@@ -1,6 +1,7 @@
 package dev.vibemotion.api.clone
 
 import org.jsoup.Jsoup
+import org.jsoup.nodes.CDataNode
 import org.jsoup.nodes.Comment
 import org.jsoup.nodes.DataNode
 import org.jsoup.nodes.Document
@@ -151,19 +152,17 @@ class HtmlSanitiser {
      * - **Nested forms are unwrapped**, which is what a browser does with the start tag, so the two
      *   parsers agree from here on.
      * - **Foreign content is reduced to a safe subset.** A raw-text HTML element inside an `svg` or
-     *   `math` subtree is removed outright, integration points included: whether its contents are
-     *   text or markup depends on the exact insertion mode, and that is not a thing to re-implement.
+     *   `math` subtree is removed, integration points included: whether its contents are text or
+     *   markup depends on the exact insertion mode, and that is not a thing to re-implement.
      *   `<form>` is removed from foreign content too, except under an HTML integration point
      *   ([HTML_INTEGRATION_POINTS]) where ordinary HTML rules resume and [normaliseForms] disarms
-     *   it like any other.
+     *   it like any other. The **one** exception is an inert `<style>` directly in SVG — see
+     *   [isInertSvgStyle] — because real pages style their inline icons that way and losing every
+     *   one of them is a fidelity cost far wider than the threat.
      *
      * `annotation-xml` is deliberately **not** treated as an integration point: whether it is one
      * depends on its `encoding` attribute, and a sanitiser that replicates that conditional is a
      * sanitiser with a parser in it.
-     *
-     * The cost is real and accepted: an inline `<svg><style>` loses its own CSS. Nothing the clone
-     * needs depends on it — external stylesheets are inlined into HTML `<style>` blocks — and the
-     * alternative is keeping a shape whose meaning differs between two parsers.
      *
      * `packages/bridge/e2e/export-hostile.spec.ts` is what proves this works, in Chromium, over
      * every document in `apps/api/src/test/resources/export/hostile/`.
@@ -171,6 +170,7 @@ class HtmlSanitiser {
     private fun reduceParserDifferentials(document: Document) {
         document.select(FOREIGN_FORBIDDEN.joinToString(",")).forEach { element ->
             val context = element.foreignContext() ?: return@forEach
+            if (element.isInertSvgStyle(context)) return@forEach
             val isRawText = element.normalName() in FOREIGN_FORBIDDEN_RAW_TEXT
             if (isRawText || !context.throughIntegrationPoint) element.remove()
         }
@@ -330,12 +330,58 @@ class HtmlSanitiser {
             var throughIntegrationPoint = false
             while (ancestor != null) {
                 val name = ancestor.normalName()
-                if (name in FOREIGN_ROOTS) return ForeignContext(throughIntegrationPoint)
+                if (name in FOREIGN_ROOTS) return ForeignContext(name, throughIntegrationPoint)
                 if (name in HTML_INTEGRATION_POINTS) throughIntegrationPoint = true
                 ancestor = ancestor.parent()
             }
             return null
         }
+
+        /**
+         * The one shape of `<style>` inside foreign content that is kept: a leaf of plain text,
+         * directly in SVG, with no `<` anywhere in it.
+         *
+         * Real pages style their inline icons from inside the `<svg>`, and dropping every such
+         * block is a visible fidelity loss on the clone for a rule far broader than the threat.
+         * The threat is precisely that a `<style>` in foreign content is **not** a raw-text
+         * element, so text jsoup keeps as text can be read by a browser as markup. Three
+         * conditions together make that impossible:
+         *
+         * - **No element children.** If the parser already built elements in there, the two
+         *   parsers are reading the block differently and it is not ours to reconcile.
+         * - **No CDATA child.** A CDATA section is a second syntax whose own delimiters carry `<`,
+         *   handled differently by the HTML and XML parsers. Excluding it keeps the kept shape to
+         *   exactly "plain text".
+         * - **No `<` in the serialised block.** `<` is the only character that can begin a start
+         *   tag, so bytes without one cannot become markup on any parse. Serialised, not decoded,
+         *   is the point: jsoup escapes a text node on the way out, so a source `&lt;` — which it
+         *   decodes to the character `<` while parsing — is written back as `&lt;` and a browser
+         *   re-reads it as text. A literal `<` in the source does not reach this check at all,
+         *   because jsoup builds an element out of it and the rule above has already refused.
+         *
+         * `math` is not included, and neither is an HTML integration point: `<math><style>` has no
+         * legitimate use, and inside `foreignObject` and friends the insertion mode is exactly the
+         * thing this class declines to re-implement. Anything but this shape is still removed.
+         *
+         * A kept block still goes through [rewriteStyleText] like any other, so its dangerous
+         * `url()`s are defused and, on the clone path, its URLs are absolutised.
+         */
+        private fun Element.isInertSvgStyle(context: ForeignContext): Boolean {
+            if (normalName() != "style") return false
+            if (context.root != "svg" || context.throughIntegrationPoint) return false
+            if (childNodes().any { it is CDataNode || (it !is TextNode && it !is DataNode) }) return false
+            return !html().contains('<')
+        }
+
+        /** A `<style>`'s CSS, from whichever kind of node the parser put it in. */
+        internal fun Element.styleText(): String =
+            childNodes().joinToString("") { node ->
+                when (node) {
+                    is DataNode -> node.wholeData
+                    is TextNode -> node.wholeText
+                    else -> ""
+                }
+            }
 
         internal fun Element.relTokens(): Set<String> {
             val tokens = attr("rel").lowercase(Locale.ROOT).split(WHITESPACE)
@@ -364,10 +410,7 @@ class HtmlSanitiser {
             val parts = childNodes().filter { it is DataNode || it is TextNode }
             if (parts.isEmpty()) return
 
-            val css =
-                parts.joinToString("") { node ->
-                    if (node is DataNode) node.wholeData else (node as TextNode).wholeText
-                }
+            val css = styleText()
             if (css.isEmpty()) return
 
             val rewritten = transform(css)
@@ -389,5 +432,7 @@ class HtmlSanitiser {
  * (`foreignObject`, `mtext`, …) sits between it and the nearest `svg`/`math` ancestor.
  */
 private data class ForeignContext(
+    /** `svg` or `math`: the nearest foreign ancestor. */
+    val root: String,
     val throughIntegrationPoint: Boolean,
 )
