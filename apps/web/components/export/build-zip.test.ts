@@ -6,7 +6,9 @@ import type { ExportBundle } from "@/lib/api-client";
 import {
   README_FILE_NAME,
   buildZip,
+  bundleEntries,
   bundleFileText,
+  safeZipEntryName,
   slugifyProjectName,
   zipEntries,
   zipFileName,
@@ -88,6 +90,36 @@ describe("zipEntries", () => {
     ]);
   });
 
+  it("keeps text the API carried but forgot to list, under the plan's own name", () => {
+    // Contract-impossible if the exporter is right; losing it would leave the
+    // CSS holding every in-view element paused with nothing to release it.
+    const bundle = fullBundle({
+      js: "(function(){})();",
+      files: [
+        { name: "index.html", contentType: "text/html" },
+        { name: "vibe-motion.css", contentType: "text/css" },
+      ],
+    });
+
+    expect(zipEntries(bundle, "r").map(([name]) => name)).toEqual([
+      "index.html",
+      "vibe-motion.css",
+      "vibe-motion.js",
+      README_FILE_NAME,
+    ]);
+    expect(zipEntries(bundle, "r")[2][1]).toBe(bundle.js);
+  });
+
+  it("keeps an unlisted stylesheet and page too", () => {
+    const bundle = fullBundle({ files: [] });
+
+    expect(zipEntries(bundle, "r").map(([name]) => name)).toEqual([
+      "index.html",
+      "vibe-motion.css",
+      README_FILE_NAME,
+    ]);
+  });
+
   it("leaves out a listed file the bundle has no text for", () => {
     const bundle = fullBundle({
       files: [
@@ -101,6 +133,52 @@ describe("zipEntries", () => {
       "index.html",
       "vibe-motion.css",
       README_FILE_NAME,
+    ]);
+  });
+});
+
+describe("safeZipEntryName", () => {
+  it("is a file in the archive, never a path", () => {
+    expect(safeZipEntryName("../../etc/passwd")).toBe("passwd");
+    expect(safeZipEntryName("a/b/c.css")).toBe("c.css");
+    expect(safeZipEntryName("..\\..\\windows\\system32")).toBe("system32");
+    expect(safeZipEntryName("..")).toBe("file");
+    expect(safeZipEntryName("/")).toBe("file");
+  });
+
+  it("never starts on a dot, and carries no control characters", () => {
+    expect(safeZipEntryName(".hidden.css")).toBe("hidden.css");
+    expect(safeZipEntryName("in\u0000dex.html")).toBe("index.html");
+  });
+
+  it("does not let a name run away with the archive", () => {
+    expect(safeZipEntryName(`${"a".repeat(300)}.css`).length).toBe(100);
+  });
+});
+
+describe("bundleEntries", () => {
+  it("gives every entry a distinct name", () => {
+    const bundle = fullBundleWithJs();
+    bundle.files = [
+      { name: "vibe-motion.css", contentType: "text/html" },
+      { name: "vibe-motion.css", contentType: "text/css" },
+      { name: "../vibe-motion.css", contentType: "text/javascript" },
+    ];
+
+    expect(bundleEntries(bundle).map((entry) => entry.name)).toEqual([
+      "vibe-motion.css",
+      "vibe-motion-2.css",
+      "vibe-motion-3.css",
+    ]);
+  });
+
+  it("keeps the kind and the text of each entry", () => {
+    const bundle = fullBundleWithJs();
+
+    expect(bundleEntries(bundle)).toEqual([
+      { name: "index.html", kind: "html", text: bundle.html },
+      { name: "vibe-motion.css", kind: "css", text: bundle.css },
+      { name: "vibe-motion.js", kind: "js", text: bundle.js },
     ]);
   });
 });
@@ -132,6 +210,27 @@ describe("buildZip", () => {
     expect(strFromU8(unzipped["vibe-motion.css"])).toBe(bundle.css);
   });
 
+  it("never puts a path, or two files under one name, into the archive", () => {
+    const bundle = fullBundleWithJs();
+    bundle.files = [
+      { name: "../../etc/index.html", contentType: "text/html" },
+      { name: "styles.css", contentType: "text/css" },
+      { name: "styles.css", contentType: "text/javascript" },
+    ];
+
+    const unzipped = unzipSync(buildZip(bundle, "r"));
+
+    expect(Object.keys(unzipped)).toEqual([
+      "index.html",
+      "styles.css",
+      "styles-2.css",
+      README_FILE_NAME,
+    ]);
+    // Nothing was collapsed: the js is still there, under its own name, and
+    // the suffix lands before the extension so the file still opens.
+    expect(strFromU8(unzipped["styles-2.css"])).toBe(bundle.js);
+  });
+
   it("survives text outside the Latin-1 range", () => {
     const bundle = fullBundle({ css: "/* Vibe Motion · v5 · caté */" });
 
@@ -144,8 +243,14 @@ describe("buildZip", () => {
 describe("slugifyProjectName", () => {
   it("keeps only [a-z0-9-]", () => {
     expect(slugifyProjectName("Nimbus App — Pricing!")).toBe("nimbus-app-pricing");
-    expect(slugifyProjectName("https://nimbus.app/pricing")).toBe("https-nimbus-app-pricing");
     expect(slugifyProjectName("MiXeD  CaSe")).toBe("mixed-case");
+  });
+
+  it("drops a URL scheme rather than spelling it out in the download name", () => {
+    expect(slugifyProjectName("https://nimbus.app/pricing")).toBe("nimbus-app-pricing");
+    expect(slugifyProjectName("HTTP://Nimbus.app")).toBe("nimbus-app");
+    // Only a real scheme, and only at the front.
+    expect(slugifyProjectName("see https://nimbus.app")).toBe("see-https-nimbus-app");
   });
 
   it("falls back to `project` when nothing usable is left", () => {

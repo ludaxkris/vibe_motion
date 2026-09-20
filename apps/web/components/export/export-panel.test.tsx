@@ -35,7 +35,7 @@ function renderPanel(overrides: Partial<ExportPanelProps> = {}) {
     mode: "full",
     onModeChange: vi.fn(),
     snippetAvailable: true,
-    stats: { animations: 2, elements: 4, needsJs: false },
+    counts: { animations: 2, elements: 4 },
     projectSlug: "Nimbus App",
     ...overrides,
   };
@@ -129,6 +129,33 @@ describe("ExportPanel", () => {
     expect(screen.getByTestId("export-stats")).toHaveTextContent(
       "2 animations · 4 elements · js not needed (no in-view triggers)",
     );
+  });
+
+  it("takes `js not needed` off the bundle, never off the caller", () => {
+    // The footer and the zip must not be able to disagree about whether the
+    // script is in the download.
+    renderPanel({
+      bundle: fullBundle({
+        js: JS,
+        files: [
+          { name: "index.html", contentType: "text/html" },
+          { name: "vibe-motion.css", contentType: "text/css" },
+          { name: "vibe-motion.js", contentType: "text/javascript" },
+        ],
+      }),
+    });
+
+    expect(screen.getByTestId("export-stats")).toHaveTextContent(
+      "2 animations · 4 elements · includes vibe-motion.js (in-view triggers)",
+    );
+  });
+
+  it("prints no counts rather than zeroes when the caller has none", () => {
+    renderPanel({ counts: undefined });
+
+    const footer = screen.getByTestId("export-stats");
+    expect(footer).toHaveTextContent("js not needed (no in-view triggers)");
+    expect(footer.textContent).not.toMatch(/\d+ (animation|element)/);
   });
 
   it("copies one file and says which", async () => {
@@ -237,7 +264,7 @@ describe("ExportPanel", () => {
   });
 
   it("shows a spinner and no controls while the export is being built", () => {
-    renderPanel({ status: "pending", bundle: undefined, stats: undefined });
+    renderPanel({ status: "pending", bundle: undefined, counts: undefined });
 
     expect(screen.getByRole("status", { name: "Preparing the export" })).toBeInTheDocument();
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
@@ -250,7 +277,7 @@ describe("ExportPanel", () => {
     renderPanel({
       status: "error",
       bundle: undefined,
-      stats: undefined,
+      counts: undefined,
       errorMessage: "No version 9 in this project",
       onRetry,
     });
@@ -259,6 +286,21 @@ describe("ExportPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: "Download .zip" })).toBeDisabled();
+  });
+
+  it("never shows an empty red line where an error should be", () => {
+    // A proxy's `text/html` 502 leaves the API message an empty string.
+    for (const errorMessage of [undefined, "", "   "]) {
+      const { unmount } = renderPanel({
+        status: "error",
+        bundle: undefined,
+        counts: undefined,
+        errorMessage,
+        onRetry: vi.fn(),
+      });
+      expect(screen.getByText("Could not build this export.")).toBeInTheDocument();
+      unmount();
+    }
   });
 
   it("shows a snippet's one file", () => {
@@ -272,7 +314,7 @@ describe("ExportPanel", () => {
         js: null,
         files: [{ name: "vibe-motion.css", contentType: "text/css" }],
       },
-      stats: { animations: 1, elements: 1, needsJs: false },
+      counts: { animations: 1, elements: 1 },
     });
 
     expect(screen.getAllByRole("tab")).toHaveLength(1);

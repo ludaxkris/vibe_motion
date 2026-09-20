@@ -5,11 +5,11 @@ import { cn } from "cn";
 
 import type { ExportBundle } from "@/lib/api-client";
 
-import { type ExportFileKind, bundleFileKind, bundleFileText } from "./build-zip";
+import { CANONICAL_FILE_NAME, type ExportFileKind, bundleEntries } from "./build-zip";
 import { CodeBlock } from "./code-block";
 
 /** The name the exporter gives the in-view script (plan §1.1). */
-export const IN_VIEW_SCRIPT_FILE_NAME = "vibe-motion.js";
+export const IN_VIEW_SCRIPT_FILE_NAME = CANONICAL_FILE_NAME.js;
 
 export type ExportFileView = {
   name: string;
@@ -19,19 +19,23 @@ export type ExportFileView = {
 };
 
 /**
- * One tab per file, in the order the API listed them.
+ * One tab per file the zip will hold, under the same names — both come from
+ * `bundleEntries`, so a tab can never name something the download does not
+ * contain.
  *
- * A full-page export with no `in-view` trigger carries no script and so does
- * not list one — but the handoff still shows `vibe-motion.js`, faint, to say
- * that it exists and is not needed here. A snippet shows only what it has.
+ * A full-page export with no `in-view` trigger carries no script; the handoff
+ * still shows `vibe-motion.js`, faint, to say that it exists and is not needed
+ * here. That placeholder keys on `bundle.js === null`, not on what `files`
+ * happens to list, so a script the API forgot to list is shown rather than
+ * replaced by an empty tab. A snippet shows only what it has.
  */
 export function bundleFileViews(bundle: ExportBundle): ExportFileView[] {
-  const views: ExportFileView[] = bundle.files.map((file) => ({
-    name: file.name,
-    kind: bundleFileKind(file),
-    code: bundleFileText(bundle, file),
+  const views: ExportFileView[] = bundleEntries(bundle).map((entry) => ({
+    name: entry.name,
+    kind: entry.kind,
+    code: entry.text,
   }));
-  if (bundle.mode === "full" && !views.some((view) => view.kind === "js")) {
+  if (bundle.mode === "full" && bundle.js === null) {
     views.push({ name: IN_VIEW_SCRIPT_FILE_NAME, kind: "js", code: null });
   }
   return views;

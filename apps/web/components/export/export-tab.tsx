@@ -6,7 +6,7 @@ import { useState } from "react";
 import { apiClient, type EditorStateMap, type ExportBundle } from "@/lib/api-client";
 
 import { type ExportMode, ExportPanel } from "./export-panel";
-import { exportStats } from "./export-stats";
+import { exportCounts } from "./export-stats";
 
 /** Thrown by `fetchExport` so the tab can show what the API actually said. */
 export class ExportFetchError extends Error {
@@ -19,6 +19,20 @@ export class ExportFetchError extends Error {
   }
 }
 
+/**
+ * `openapi-fetch` parses the error body as JSON and, when that fails, hands
+ * back the raw text instead — a proxy's `text/html` 502 page, say. Taking
+ * `.message` off that gives `undefined`, and an `Error` with an empty message
+ * renders as an empty red line above a bare Retry. Fall back to the status.
+ */
+export function exportErrorMessage(body: unknown, status: number): string {
+  if (typeof body === "object" && body !== null && "message" in body) {
+    const message = (body as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim() !== "") return message;
+  }
+  return `Could not build this export (HTTP ${status}).`;
+}
+
 async function fetchExport(
   projectId: string,
   query: { versionId: string; mode: ExportMode; vmId?: string },
@@ -26,7 +40,7 @@ async function fetchExport(
   const { data, error, response } = await apiClient.GET("/projects/{projectId}/export", {
     params: { path: { projectId }, query },
   });
-  if (error) throw new ExportFetchError(response.status, error.message);
+  if (error) throw new ExportFetchError(response.status, exportErrorMessage(error, response.status));
   return data;
 }
 
@@ -81,7 +95,9 @@ export function ExportTab({
     retry: false,
   });
 
-  const statsState: EditorStateMap | undefined =
+  // The state the export actually covers. `undefined` when the caller gave
+  // none: the footer then prints no counts rather than zeroes.
+  const countedState: EditorStateMap | undefined =
     effectiveMode === "snippet" && vmId && snippetAssignment
       ? { [vmId]: snippetAssignment }
       : state;
@@ -97,7 +113,7 @@ export function ExportTab({
       mode={effectiveMode}
       onModeChange={setMode}
       snippetAvailable={snippetAvailable}
-      stats={query.data ? exportStats(statsState) : undefined}
+      counts={exportCounts(countedState)}
       onRetry={() => void query.refetch()}
       projectSlug={projectSlug}
     />

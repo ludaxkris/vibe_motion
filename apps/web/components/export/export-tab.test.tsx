@@ -2,13 +2,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { HttpResponse, delay, http } from "msw";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Assignment, EditorStateMap, ExportBundle } from "@/lib/api-client";
 import { env } from "@/lib/env";
 import { server } from "@/mocks/server";
 
-import { ExportTab, type ExportTabProps } from "./export-tab";
+import { ExportTab, type ExportTabProps, exportErrorMessage } from "./export-tab";
 
 const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
 const VERSION_ID = "11111111-1111-4111-8111-111111111111";
@@ -73,6 +73,38 @@ function renderTab(overrides: Partial<ExportTabProps> = {}) {
   return { ...render(<ExportTab {...props} />, { wrapper: Wrapper }), queryClient };
 }
 
+afterEach(() => {
+  // In an `afterEach`, not at the end of a test body: a failure part-way
+  // through would otherwise leak the stub into the rest of the file.
+  if ("clipboard" in navigator) {
+    delete (navigator as unknown as Record<string, unknown>).clipboard;
+  }
+});
+
+describe("exportErrorMessage", () => {
+  it("uses the contract's message when the body is the contract's error", () => {
+    expect(exportErrorMessage({ code: "not_found", message: "No version" }, 404)).toBe(
+      "No version",
+    );
+  });
+
+  it("falls back to the status for a body that is not the contract's error", () => {
+    // openapi-fetch hands back the raw text when the body is not JSON.
+    for (const body of ["<html><body>502 Bad Gateway</body></html>", null, undefined, 7, {}]) {
+      expect(exportErrorMessage(body, 502)).toBe("Could not build this export (HTTP 502).");
+    }
+  });
+
+  it("does not accept an empty or blank message", () => {
+    expect(exportErrorMessage({ message: "" }, 500)).toBe(
+      "Could not build this export (HTTP 500).",
+    );
+    expect(exportErrorMessage({ message: "  " }, 500)).toBe(
+      "Could not build this export (HTTP 500).",
+    );
+  });
+});
+
 describe("ExportTab", () => {
   it("asks for the full page of the version it was given", async () => {
     const { calls } = mockExport(() => HttpResponse.json(bundle()));
@@ -95,6 +127,54 @@ describe("ExportTab", () => {
 
     expect(screen.getByRole("status", { name: "Preparing the export" })).toBeInTheDocument();
     await screen.findByRole("tab", { name: "vibe-motion.css" });
+  });
+
+  it("says something readable when a proxy answers with HTML", async () => {
+    mockExport(
+      () =>
+        new HttpResponse("<html><body><h1>502 Bad Gateway</h1></body></html>", {
+          status: 502,
+          headers: { "content-type": "text/html" },
+        }),
+    );
+
+    renderTab();
+
+    expect(await screen.findByText("Could not build this export (HTTP 502).")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("prints no counts when the caller gave no state", async () => {
+    mockExport(() => HttpResponse.json(bundle()));
+
+    renderTab({ state: undefined });
+
+    const footer = await screen.findByTestId("export-stats");
+    expect(footer).toHaveTextContent("js not needed (no in-view triggers)");
+    expect(footer.textContent).not.toMatch(/\d+ (animation|element)/);
+  });
+
+  it("takes the footer's script clause off the bundle, not off the state", async () => {
+    // Nothing in this state uses in-view, but the saved export carries a
+    // script: the zip is the truth.
+    mockExport(() =>
+      HttpResponse.json(
+        bundle({
+          js: "(function(){})();",
+          files: [
+            { name: "index.html", contentType: "text/html" },
+            { name: "vibe-motion.css", contentType: "text/css" },
+            { name: "vibe-motion.js", contentType: "text/javascript" },
+          ],
+        }),
+      ),
+    );
+
+    renderTab();
+
+    expect(await screen.findByTestId("export-stats")).toHaveTextContent(
+      "2 animations · 2 elements · includes vibe-motion.js (in-view triggers)",
+    );
   });
 
   it("counts the version's own state in the footer", async () => {
@@ -218,6 +298,5 @@ describe("ExportTab", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Copy vibe-motion.css" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(".vm-a3 { animation: none; }"));
-    delete (navigator as unknown as Record<string, unknown>).clipboard;
   });
 });

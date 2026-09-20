@@ -75,6 +75,49 @@ describe("buildReadme", () => {
     expect(readme).toContain("vm-");
   });
 
+  it("never prints `undefined` for a file the bundle did not list", () => {
+    // Contract-impossible, and the one shape that used to produce
+    // "Serve undefined in place of your current page".
+    const readme = buildReadme(
+      bundle({ html: null, files: [{ name: "vibe-motion.css", contentType: "text/css" }] }),
+      { versionLabel: "v5" },
+    );
+
+    expect(readme).not.toContain("undefined");
+    expect(readme).not.toContain("index.html");
+    expect(readme).toContain("vibe-motion.css");
+  });
+
+  it("names a file the API carried but forgot to list, under the plan's name", () => {
+    const readme = buildReadme(
+      bundle({ js: "(function(){})();" }),
+      { versionLabel: "v5" },
+    );
+
+    expect(readme).toContain("vibe-motion.js");
+    expect(readme).not.toContain("undefined");
+  });
+
+  it("numbers its steps from one with no gaps, whatever is missing", () => {
+    for (const each of [
+      bundle(),
+      bundle({ html: null, files: [{ name: "vibe-motion.css", contentType: "text/css" }] }),
+      bundle({
+        mode: "snippet",
+        html: null,
+        css: '/* add class="vm-a17" to the element */',
+        files: [{ name: "vibe-motion.css", contentType: "text/css" }],
+      }),
+    ]) {
+      const steps = buildReadme(each, { versionLabel: "v5" })
+        .split("\n")
+        .filter((line) => /^\d+\. /.test(line))
+        .map((line) => Number.parseInt(line, 10));
+      expect(steps.length).toBeGreaterThan(0);
+      expect(steps).toEqual(steps.map((_, index) => index + 1));
+    }
+  });
+
   it("is deterministic and ends in exactly one newline", () => {
     const first = buildReadme(bundle(), { versionLabel: "v5" });
     const second = buildReadme(bundle(), { versionLabel: "v5" });

@@ -1,20 +1,21 @@
 import type { ExportBundle } from "@/lib/api-client";
 
-import { README_FILE_NAME, bundleFileText } from "./build-zip";
+import { README_FILE_NAME, type ExportFileKind, bundleEntries } from "./build-zip";
 
-type ExportFile = ExportBundle["files"][number];
-
-/**
- * What each file in the zip is for, in one line. Keyed on what the bundle
- * carries rather than on the name, for the reason `bundleFileText` gives.
- */
-function fileNote(bundle: ExportBundle, file: ExportFile): string {
-  const text = bundleFileText(bundle, file);
-  if (text === bundle.html) return "your page, with a vm-a… class on every animated element";
-  if (text === bundle.js) return "the in-view trigger; link it from <head>, not deferred";
-  return bundle.mode === "snippet"
-    ? "the keyframes and rules for the selected element"
-    : "the animations";
+/** What each file in the zip is for, in one line. */
+function fileNote(kind: ExportFileKind | null, mode: ExportBundle["mode"]): string {
+  switch (kind) {
+    case "html":
+      return "your page, with a vm-a… class on every animated element";
+    case "js":
+      return "the in-view trigger; link it from <head>, not deferred";
+    case "css":
+      return mode === "snippet"
+        ? "the keyframes and rules for the selected element"
+        : "the animations";
+    default:
+      return "part of this export";
+  }
 }
 
 /** A two-column list whose descriptions line up however long the names are. */
@@ -24,52 +25,88 @@ function fileList(rows: ReadonlyArray<readonly [string, string]>): string {
 }
 
 /**
+ * Numbers a list of steps, each of which is already broken into lines, so a
+ * step that does not apply can be left out without leaving a gap in the count.
+ */
+function numbered(steps: ReadonlyArray<readonly string[]>): string[] {
+  return steps.flatMap((lines, index) =>
+    lines.map((line, position) => (position === 0 ? `${index + 1}. ${line}` : `   ${line}`)),
+  );
+}
+
+/**
  * `README.txt`, the one file the client adds to the zip.
  *
- * Written from the bundle, so a file name the API changes flows through here
- * instead of going stale. It names no project and no URL: like the CSS header
- * (plan §1.4), nothing identifying reaches an export.
+ * Written from `bundleEntries`, so it names exactly the files the zip holds,
+ * under exactly those names. Every step is conditional on the file it talks
+ * about actually being there: a bundle missing a part must produce a shorter
+ * README, never one that says "Serve undefined in place of your current page".
+ *
+ * It names no project and no URL: like the CSS header (plan §1.4), nothing
+ * identifying reaches an export.
  */
 export function buildReadme(
   bundle: ExportBundle,
   { versionLabel }: { versionLabel: string },
 ): string {
   const snippet = bundle.mode === "snippet";
-  const rows: Array<readonly [string, string]> = bundle.files
-    .filter((file) => bundleFileText(bundle, file) !== null)
-    .map((file) => [file.name, fileNote(bundle, file)] as const);
+  const entries = bundleEntries(bundle);
+
+  const rows: Array<readonly [string, string]> = entries.map(
+    (entry) => [entry.name, fileNote(entry.kind, bundle.mode)] as const,
+  );
   rows.push([README_FILE_NAME, "this file"] as const);
 
-  const cssName = bundle.files.find((file) => bundleFileText(bundle, file) === bundle.css)?.name;
-  const htmlName = bundle.files.find((file) => bundleFileText(bundle, file) === bundle.html)?.name;
-  const jsName =
-    bundle.js === null
-      ? undefined
-      : bundle.files.find((file) => bundleFileText(bundle, file) === bundle.js)?.name;
+  const nameOf = (kind: ExportFileKind) => entries.find((entry) => entry.kind === kind)?.name;
+  const htmlName = nameOf("html");
+  const cssName = nameOf("css");
+  const jsName = nameOf("js");
 
-  const steps = snippet
-    ? [
-        `1. Add ${cssName} to your site, or paste its contents into a stylesheet`,
-        "   you already load.",
-        "2. Add the vm-a… class named in the comment at the top of that file",
-        "   to the element you want to animate.",
-        ...(jsName
-          ? [
-              `3. Add <script src="${jsName}"></script> to <head>, and the class`,
-              "   vm-in-view to the same element. The animation is held on its",
-              "   first frame until the element scrolls into view.",
-            ]
-          : []),
-      ]
-    : [
-        `1. Put ${[htmlName, cssName, jsName].filter(Boolean).join(", ")} in the same`,
-        "   folder on your site, next to each other.",
-        `2. Serve ${htmlName} in place of your current page. It already links`,
-        `   ${[cssName, jsName].filter(Boolean).join(" and ")} from <head>.`,
-        "3. Prefer to keep your own markup? Copy the <link> (and <script>) tags",
-        `   from the <head> of ${htmlName}, and the vm-a… classes from its`,
-        "   animated elements, onto your page instead.",
-      ];
+  const steps: string[][] = [];
+  if (snippet) {
+    if (cssName) {
+      steps.push([
+        `Add ${cssName} to your site, or paste its contents into a stylesheet`,
+        "you already load.",
+      ]);
+      steps.push([
+        "Add the vm-a… class named in the comment at the top of that file",
+        "to the element you want to animate.",
+      ]);
+    }
+    if (jsName) {
+      steps.push([
+        `Add <script src="${jsName}"></script> to <head>, and the class`,
+        "vm-in-view to the same element. The animation is held on its",
+        "first frame until the element scrolls into view.",
+      ]);
+    }
+  } else {
+    const together = [htmlName, cssName, jsName].filter((name) => name !== undefined);
+    if (together.length > 1) {
+      steps.push([
+        `Put ${together.join(", ")} in the same`,
+        "folder on your site, next to each other.",
+      ]);
+    }
+    if (htmlName) {
+      const linked = [cssName, jsName].filter((name) => name !== undefined);
+      steps.push([
+        `Serve ${htmlName} in place of your current page.`,
+        ...(linked.length > 0 ? [`It already links ${linked.join(" and ")} from <head>.`] : []),
+      ]);
+      steps.push([
+        "Prefer to keep your own markup? Copy the <link> (and <script>) tags",
+        `from the <head> of ${htmlName}, and the vm-a… classes from its`,
+        "animated elements, onto your page instead.",
+      ]);
+    } else if (cssName) {
+      steps.push([
+        `Link ${cssName} from your page's <head>, and add the vm-a… classes`,
+        "it names to the matching elements.",
+      ]);
+    }
+  }
 
   return [
     "Vibe Motion export",
@@ -84,7 +121,7 @@ export function buildReadme(
     "",
     "How to use",
     "----------",
-    ...steps,
+    ...numbered(steps),
     "",
     "Notes",
     "-----",

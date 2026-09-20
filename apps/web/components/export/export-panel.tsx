@@ -11,7 +11,7 @@ import type { ExportBundle } from "@/lib/api-client";
 
 import { buildZip, zipFileName } from "./build-zip";
 import { type ExportFileView, FileTabs, bundleFileViews } from "./file-tabs";
-import { type ExportStats, formatExportStats } from "./export-stats";
+import { type ExportCounts, formatExportStats } from "./export-stats";
 import { buildReadme } from "./readme";
 import { downloadZip } from "./download";
 import { useClipboard } from "./use-clipboard";
@@ -53,7 +53,13 @@ export type ExportPanelProps = {
   onModeChange: (mode: ExportMode) => void;
   /** False when no element is selected, or the selected one has no animation. */
   snippetAvailable: boolean;
-  stats?: ExportStats;
+  /**
+   * The version's counts, when the caller has the state to count. Left out,
+   * the footer says only whether the script is in the zip — a wrong number is
+   * worse than a missing one. Whether the script is needed is never a prop:
+   * it is read off the bundle, so the footer cannot contradict the download.
+   */
+  counts?: ExportCounts;
   onRetry?: () => void;
   /** The project's name; only the download file name ever sees it. */
   projectSlug?: string;
@@ -77,7 +83,7 @@ export function ExportPanel({
   mode,
   onModeChange,
   snippetAvailable,
-  stats,
+  counts,
   onRetry,
   projectSlug,
 }: ExportPanelProps) {
@@ -92,9 +98,10 @@ export function ExportPanel({
     files.find((file) => file.kind === "css" && file.code !== null)?.name ??
     files.find((file) => file.code !== null)?.name ??
     "";
-  const activeFile = files.some((file) => file.name === openFile && file.code !== null)
-    ? (openFile ?? fallbackFile)
-    : fallbackFile;
+  const activeFile =
+    openFile !== null && files.some((file) => file.name === openFile && file.code !== null)
+      ? openFile
+      : fallbackFile;
 
   const label = versionLabel ?? `v${versionSeq}`;
   const ready = status === "ready" && bundle !== undefined;
@@ -161,8 +168,11 @@ export function ExportPanel({
 
         {status === "error" ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+            {/* `||`, not `??`: a non-JSON error body (a proxy's 502 page)
+                leaves the message an empty string, and an empty red line
+                above a bare Retry says nothing at all. */}
             <p className="text-md text-vm-danger">
-              {errorMessage ?? "Could not build this export."}
+              {errorMessage?.trim() || "Could not build this export."}
             </p>
             {onRetry ? (
               <Button variant="secondary" size="sm" onClick={onRetry}>
@@ -180,11 +190,9 @@ export function ExportPanel({
               onValueChange={setOpenFile}
               onCopy={(file) => void copyOne(file)}
             />
-            {stats ? (
-              <p data-testid="export-stats" className="text-xs text-vm-ink-2">
-                {formatExportStats(stats)}
-              </p>
-            ) : null}
+            <p data-testid="export-stats" className="text-xs text-vm-ink-2">
+              {formatExportStats(counts, bundle.js !== null)}
+            </p>
           </>
         ) : null}
       </div>

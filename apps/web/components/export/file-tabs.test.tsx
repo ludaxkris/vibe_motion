@@ -50,6 +50,33 @@ describe("bundleFileViews", () => {
     });
   });
 
+  it("shows a script the API carried but forgot to list", () => {
+    const views = bundleFileViews(fullBundle({ js: "(function(){})();" }));
+
+    expect(views).toHaveLength(3);
+    expect(views[2]).toEqual({
+      name: "vibe-motion.js",
+      kind: "js",
+      code: "(function(){})();",
+    });
+  });
+
+  it("shows the faint placeholder once, even when files lists an empty script", () => {
+    const views = bundleFileViews(
+      fullBundle({
+        files: [
+          { name: "index.html", contentType: "text/html" },
+          { name: "vibe-motion.css", contentType: "text/css" },
+          { name: "vibe-motion.js", contentType: "text/javascript" },
+        ],
+      }),
+    );
+
+    expect(views.filter((view) => view.kind === "js")).toEqual([
+      { name: "vibe-motion.js", kind: "js", code: null },
+    ]);
+  });
+
   it("gives a snippet only the files it has", () => {
     const views = bundleFileViews({
       versionId: "11111111-1111-4111-8111-111111111111",

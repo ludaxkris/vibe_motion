@@ -165,27 +165,27 @@ function Frame({
 function PanelFrame({
   bundle,
   snippetAvailable,
-  ...rest
+  versionSeq = 5,
+  isCurrent = true,
 }: {
   bundle: ExportBundle;
   snippetAvailable: boolean;
-  isCurrent?: boolean;
   versionSeq?: number;
+  isCurrent?: boolean;
 }) {
   const [mode, setMode] = useState<ExportMode>(bundle.mode);
   return (
     <ExportPanel
       bundle={bundle}
       status="ready"
-      versionSeq={rest.versionSeq ?? 5}
-      isCurrent={rest.isCurrent ?? true}
+      versionSeq={versionSeq}
+      isCurrent={isCurrent}
       mode={snippetAvailable ? mode : "full"}
       onModeChange={setMode}
       snippetAvailable={snippetAvailable}
-      stats={{
+      counts={{
         animations: bundle.mode === "snippet" ? 1 : 2,
         elements: bundle.mode === "snippet" ? 1 : bundle.js ? 3 : 2,
-        needsJs: bundle.js !== null,
       }}
       projectSlug="Nimbus App"
     />
