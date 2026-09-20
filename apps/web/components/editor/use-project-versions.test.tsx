@@ -131,7 +131,7 @@ describe("useProjectVersions", () => {
     expect(useEditorStore.getState().draftState["vm-9"]).toEqual(mine);
   });
 
-  it("never loads over unsaved work, even when the edit lands mid-fetch", async () => {
+  it("rebases the answer onto an edit that landed mid-fetch, rather than dead-ending", async () => {
     const { project, v1, saved } = projectWithOneSave();
     const { client, Wrapper } = harness();
     let release = () => {};
@@ -157,8 +157,9 @@ describe("useProjectVersions", () => {
       await inFlight;
     });
 
-    // The draft is dirty by the time `stateAt()` answers. Loading now would
-    // replace `draftState` wholesale and take the edit with it.
+    // The draft is dirty by the time `stateAt()` answers. `loadVersion` would
+    // replace `draftState` wholesale and take the edit with it — and bailing
+    // left a draft with no version to fork from, which Save refuses for ever.
     const mine = assignment("pulse");
     act(() => {
       useEditorStore.getState().setDraftAssignment("vm-9", mine);
@@ -168,14 +169,56 @@ describe("useProjectVersions", () => {
       await gate;
     });
 
-    // The fetch did land — the cache proves it — and the store was left alone.
-    await waitFor(() =>
-      expect(client.getQueryData(versionStateKey(project.id, v1.id))).toEqual({
-        "vm-1": saved,
-      }),
+    // Lossless both ways: the draft was built on an empty base, so replaying
+    // its diff onto the server's state keeps the edit and adds nothing.
+    await waitFor(() => expect(useEditorStore.getState().currentVersionId).toBe(v1.id));
+    const state = useEditorStore.getState();
+    expect(state.draftState).toEqual({ "vm-1": saved, "vm-9": mine });
+    expect(state.currentVersionState).toEqual({ "vm-1": saved });
+    // …and the edit is still unsaved work, which is the whole point: Save now
+    // has a parent version to fork from.
+    expect(selectUnsaved(state)).toBe(true);
+    // The fetch did land — the cache proves it.
+    expect(client.getQueryData(versionStateKey(project.id, v1.id))).toEqual({ "vm-1": saved });
+  });
+
+  it("loads again on a return visit, whatever the last visit to that project left behind", async () => {
+    // A → B → A without a remount: the shell `reset()`s on a project change,
+    // so what says "already loaded" has to be the store rather than a token
+    // that still remembers A's first visit.
+    const a = projectWithOneSave("fade-in");
+    const b = projectWithOneSave("pulse");
+    const { Wrapper } = harness();
+
+    const { rerender } = renderHook(
+      ({ projectId, project }: { projectId: string; project: Project | undefined }) =>
+        useProjectVersions(projectId, project),
+      {
+        wrapper: Wrapper,
+        initialProps: {
+          projectId: a.project.id,
+          project: a.project as Project | undefined,
+        },
+      },
     );
-    expect(useEditorStore.getState().draftState).toEqual({ "vm-9": mine });
+    await waitFor(() => expect(useEditorStore.getState().currentVersionId).toBe(a.v1.id));
+
+    // Over to B, whose own project query has not answered yet — which is when
+    // the shell passes `undefined` and nothing is asked for at all.
+    act(() => {
+      useEditorStore.getState().reset();
+    });
+    rerender({ projectId: b.project.id, project: undefined });
     expect(useEditorStore.getState().currentVersionId).toBeNull();
+
+    // …and back to A, which has to fork the draft from its version again.
+    act(() => {
+      useEditorStore.getState().reset();
+    });
+    rerender({ projectId: a.project.id, project: a.project });
+
+    await waitFor(() => expect(useEditorStore.getState().currentVersionId).toBe(a.v1.id));
+    expect(useEditorStore.getState().draftState).toEqual({ "vm-1": a.saved });
   });
 
   it("follows the store's current version, which moves on save before any refetch lands", async () => {
@@ -303,6 +346,42 @@ describe("useProjectVersions · a load that fails", () => {
 
     await waitFor(() => expect(useEditorStore.getState().currentVersionId).toBe(v1.id));
     expect(useEditorStore.getState().draftState).toEqual({ "vm-1": saved });
+    expect(result.current.loadError).toBeNull();
+  });
+
+  it("rebases the retry onto work the user did while the load was broken", async () => {
+    const { project, v1, saved } = projectWithOneSave();
+    const { Wrapper } = harness();
+    server.use(
+      http.get(
+        api("/projects/:projectId/versions/:versionId/state"),
+        () => HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 }),
+        { once: true },
+      ),
+    );
+
+    const { result } = renderHook(() => useProjectVersions(project.id, project), {
+      wrapper: Wrapper,
+    });
+    await waitFor(() => expect(result.current.loadError).toBe(VERSION_LOAD_FAILED));
+
+    // The editor could only offer an empty draft, and the user carried on
+    // working in it. Retry must not refuse *because* of that work — refusing
+    // is what left the draft with no version to fork from and Save inert.
+    const mine = assignment("pulse");
+    act(() => {
+      useEditorStore.getState().setDraftAssignment("vm-9", mine);
+    });
+
+    act(() => {
+      result.current.retryLoad();
+    });
+
+    await waitFor(() => expect(useEditorStore.getState().currentVersionId).toBe(v1.id));
+    const state = useEditorStore.getState();
+    expect(state.draftState).toEqual({ "vm-1": saved, "vm-9": mine });
+    expect(state.currentVersionState).toEqual({ "vm-1": saved });
+    expect(selectUnsaved(state)).toBe(true);
     expect(result.current.loadError).toBeNull();
   });
 

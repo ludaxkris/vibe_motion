@@ -11,6 +11,11 @@
  * per project open — the store's `currentVersionId` (null after the shell's
  * `reset()`) is the flag, so a remount cannot repeat it.
  *
+ * A draft edited before that fetch lands is *rebased* onto it rather than
+ * overwritten or abandoned: the edit was made over an empty base, so the
+ * server's state with the edit replayed on top loses nothing — and the draft
+ * comes out of it with the parent version Save needs.
+ *
  * When it fails, the editor is left showing an empty draft over a project that
  * has animations, and `useSaveFlow` has no parent version to fork from. That
  * has to be said out loud rather than left as an inert Save button, so the
@@ -57,11 +62,14 @@ function label(seq: number): string {
 }
 
 /**
- * Whether the open load may still write into this store: it has no version of
- * its own yet, and no work in it that the load would take with it.
+ * Whether the open load still has anything to do here. A store that already
+ * knows its current version has been loaded — by the open load, a save, or a
+ * restore — and must never be loaded over. That one fact is also what makes
+ * the load idempotent, which is why the in-flight token below does not have to
+ * be: a remount, a second list answer or a retry all find the version and stop.
  */
-function untouched(state: EditorState): boolean {
-  return state.currentVersionId === null && !selectUnsaved(state);
+function needsCurrentVersion(state: EditorState): boolean {
+  return state.currentVersionId === null;
 }
 
 export function useProjectVersions(
@@ -72,6 +80,9 @@ export function useProjectVersions(
   const queryClient = useQueryClient();
   const { data, refetch } = useVersions(projectId, project !== undefined);
   const loadVersion = useEditorStore((state) => state.loadVersion);
+  // For the one case `loadVersion` cannot serve: a draft that was edited
+  // before this load could give it a base (see `load` below).
+  const rebaseDraft = useEditorStore((state) => state.rebaseDraft);
   // Subscribed, so the chip follows a save without waiting for the list to
   // refetch. The open load's effect deliberately does *not* depend on this:
   // it reads the store imperatively, so moving on from a save cannot re-run it.
@@ -86,7 +97,14 @@ export function useProjectVersions(
   const [failure, setFailure] = useState<{ projectId: string; message: string } | null>(null);
   const loadError = failure?.projectId === projectId ? failure.message : null;
 
-  /** The `<projectId>:<versionId>` a load is in flight or done for. */
+  /**
+   * The `<projectId>:<versionId>` a load is *in flight* for, and nothing more:
+   * cleared in a `finally`, so no exit can leave it standing. It used to also
+   * mean "done", which made every no-op exit permanent — a dirty draft or a
+   * second visit to the same project could never load again, and the Retry
+   * that was supposed to unstick the screen returned here.
+   * Idempotence is the store's `currentVersionId` (see `needsCurrentVersion`).
+   */
   const loading = useRef<string | null>(null);
   /**
    * The project the screen is on *now*. The shell `reset()`s on a project
@@ -102,13 +120,10 @@ export function useProjectVersions(
   const load = useCallback(
     async (versionId: string) => {
       const token = `${projectId}:${versionId}`;
+      // Single flight: a second caller for the same version joins the first
+      // rather than starting its own.
       if (loading.current === token) return;
-      // A store that already knows its current version has been loaded — by
-      // the open load, a save, or a restore — and must not be loaded over. Nor
-      // may a draft that already has unsaved work in it: `loadVersion`
-      // replaces `draftState` wholesale, so this is the only thing standing
-      // between a slow `stateAt()` and an edit the user has already made.
-      if (!untouched(useEditorStore.getState())) return;
+      if (!needsCurrentVersion(useEditorStore.getState())) return;
       loading.current = token;
 
       try {
@@ -119,22 +134,41 @@ export function useProjectVersions(
           // its parent and none of them is ever rewritten (CLAUDE.md rule 9).
           staleTime: Infinity,
         });
-        // Both re-checked, because the answer arrived over the network: the
-        // user owned the draft the whole time it was in flight, and may have
-        // navigated to another project altogether.
+        // Re-checked, because the answer arrived over the network: the user may
+        // have navigated to another project altogether, and this state must
+        // never land in the editor of a project it does not belong to.
         if (active.current !== projectId) return;
-        if (!untouched(useEditorStore.getState())) return;
+        // …and they owned the draft the whole time it was in flight, so it may
+        // have gained a version of its own (a save, a restore, another load).
+        const now = useEditorStore.getState();
+        if (!needsCurrentVersion(now)) return;
+
+        if (selectUnsaved(now)) {
+          // Edited while this was on its way. `loadVersion` would replace
+          // `draftState` wholesale and take the edit with it — but a rebase
+          // here is lossless: with no current version the draft was built on
+          // an empty base, so `computeDiff({}, draft)` removes nothing and the
+          // result is the server's state with the user's edits on top. Bailing
+          // instead is what used to leave the draft with no parent version,
+          // which Save refuses (`CANNOT_SAVE_YET`) — a dead end only a reload
+          // got out of, at the cost of the work.
+          rebaseDraft(versionId, state);
+          return;
+        }
         loadVersion(versionId, state);
       } catch {
         // The banner, the toast and `useSaveFlow`'s refusal are the three
         // things that keep this from being a silent empty draft.
-        loading.current = null;
         if (active.current !== projectId) return;
         setFailure({ projectId, message: VERSION_LOAD_FAILED });
         toast(VERSION_LOAD_FAILED);
+      } finally {
+        // Only our own flight: a later `load` for another version of this
+        // project owns the slot by now, and is still in the air.
+        if (loading.current === token) loading.current = null;
       }
     },
-    [projectId, queryClient, loadVersion, toast],
+    [projectId, queryClient, loadVersion, rebaseDraft, toast],
   );
 
   const listVersionId = data?.currentVersionId;
@@ -158,6 +192,9 @@ export function useProjectVersions(
   const versions = data?.versions ?? NO_VERSIONS;
   // The store's id, not the list's: `markSaved` moves it the instant the 201
   // lands, while the list is merely invalidated and refetches a beat later.
+  // (The write puts what it created into that list itself — see
+  // `useRefreshOn` in `lib/versions/queries.ts` — so this resolves straight
+  // away rather than naming the version before it.)
   const currentVersion =
     versions.find((version) => version.id === storeVersionId) ??
     versions.find((version) => version.id === listVersionId);
@@ -166,7 +203,12 @@ export function useProjectVersions(
     versions,
     currentVersion,
     currentVersionLabel: currentVersion ? label(currentVersion.seq) : undefined,
-    nextVersionLabel: label(versions.reduce((max, v) => Math.max(max, v.seq), 0) + 1),
+    // The high-water mark of both, never the list alone: the version the draft
+    // was forked from is the one the next save's parent will be, and "Save as
+    // v1" while v2 is being created is a lie about what the button does.
+    nextVersionLabel: label(
+      versions.reduce((max, v) => Math.max(max, v.seq), currentVersion?.seq ?? 0) + 1,
+    ),
     loadError,
     retryLoad,
   };
