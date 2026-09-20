@@ -4,7 +4,7 @@ import io.kotest.matchers.shouldBe
 import java.nio.file.Files
 import java.nio.file.Path
 
-private val GOLDEN_DIR = Path.of("src/test/resources/golden/export")
+internal val GOLDEN_DIR: Path = Path.of("src/test/resources/golden/export")
 
 /**
  * Golden comparison for the exporter's output.

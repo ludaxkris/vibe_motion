@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<title>svg-foreignobject-nested-svg</title>
+</head>
+<body>
+<p>An integration point with plain foreign content inside it again: the nearest svg ancestor of the
+style is the inner one, so the keep rule applies to it.</p>
+<svg><foreignObject><div><svg id="inner"><style>.nested-dot { fill: rgb(0, 128, 128); }</style><circle id="dot" class="nested-dot" cx="5" cy="5" r="4"></circle></svg></div></foreignObject></svg>
+</body>
+</html>

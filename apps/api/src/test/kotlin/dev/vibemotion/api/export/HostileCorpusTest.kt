@@ -56,11 +56,19 @@ class HostileCorpusTest :
         val emitter = HtmlEmitter()
         val corpus = Files.list(CORPUS_DIR).use { paths -> paths.sorted().toList() }
 
-        test("the corpus is on disk and is not empty") {
+        test("every input has a golden and every golden has an input") {
+            // Not a sorted list against itself: an input with no golden fails loudly on the next
+            // test, but an orphan golden would be served to the browser gate for ever with no
+            // source to regenerate it from.
+            val goldens =
+                Files.list(GOLDEN_DIR.resolve("hostile")).use { paths ->
+                    paths.map { it.name }.sorted().toList()
+                }
+
+            goldens shouldContainExactly corpus.map { it.name }
             corpus.size shouldBeGreaterThan 10
             // The document that proved jsoup is not an oracle. If it ever leaves the corpus, that
             // has to be a deliberate decision, not an accident.
-            corpus.map { it.name } shouldContainExactly corpus.map { it.name }.sorted()
             corpus.any { it.name == "nested-form-mathml-style.html" } shouldBe true
         }
 
@@ -112,8 +120,15 @@ class HostileCorpusTest :
                         kept.normalName() shouldBe "style"
                         kept.children().size shouldBe 0
                         kept.html() shouldNotContain "<"
-                        // Not under an integration point: the narrow keep does not reach there.
-                        kept.parents().map { it.normalName() }.none { it in INTEGRATION_POINTS } shouldBe true
+                        // No integration point between it and its NEAREST svg ancestor, which is
+                        // what `foreignContext()` walks to. `svg > foreignObject > svg > style` is
+                        // therefore kept: the inner `<svg>` puts the block back in plain foreign
+                        // content.
+                        kept
+                            .parents()
+                            .takeWhile { it.normalName() != "svg" }
+                            .map { it.normalName() }
+                            .none { it in INTEGRATION_POINTS } shouldBe true
                     }
                 }
             }

@@ -219,6 +219,51 @@ class HtmlSanitiserTest :
             document.outerHtml() shouldNotContain "<style>@media (width <"
         }
 
+        test("a CDATA-wrapped icon stylesheet is normalised to text and kept") {
+            // What Illustrator, Inkscape and Sketch export. The section's delimiters carry `<`, so
+            // it cannot be kept as it stands, but its text is ordinary CSS: rewriting it as a text
+            // node makes it serialise escaped and face the same rule as any other block.
+            val document =
+                sanitised(
+                    """<html><body><svg><style><![CDATA[ .dot { fill: red } ]]></style><circle class="dot"/></svg></body></html>""",
+                )
+            val style = document.selectFirst("svg style").shouldNotBeNull()
+
+            style.wholeText().trim() shouldBe ".dot { fill: red }"
+            document.outerHtml() shouldNotContain "CDATA"
+            document.selectFirst("circle").shouldNotBeNull()
+        }
+
+        test("a CDATA-wrapped stylesheet is still swept for dangerous urls") {
+            val document =
+                sanitised("""<html><body><svg><style><![CDATA[ a{background:url(javascript:alert(1))} ]]></style></svg></body></html>""")
+
+            document.selectFirst("svg style").shouldNotBeNull().wholeText() shouldContain """url("#")"""
+            document.outerHtml() shouldNotContain "javascript:"
+        }
+
+        test("markup inside a CDATA section survives as escaped text, not as elements") {
+            // Kept, because escaped text can never become markup — the same promise the rule makes
+            // for every other block. `packages/bridge/e2e/export-hostile.spec.ts` proves it in a
+            // browser.
+            val document = sanitised("""<html><body><svg><style><![CDATA[ <img src=x onerror="x()"> ]]></style></svg></body></html>""")
+
+            document.select("svg img").size shouldBe 0
+            document.outerHtml() shouldContain "&lt;img"
+            document.outerHtml() shouldNotContain "<img"
+        }
+
+        test("a style is kept when its nearest svg ancestor has no integration point in between") {
+            // `foreignContext()` walks to the NEAREST foreign root, so the inner `<svg>` puts this
+            // block back in plain foreign content and the rule applies to it unchanged.
+            val document =
+                sanitised(
+                    """<html><body><svg><foreignObject><div><svg><style>.d{fill:red}</style></svg></div></foreignObject></svg></body></html>""",
+                )
+
+            document.selectFirst("svg style").shouldNotBeNull().wholeText() shouldBe ".d{fill:red}"
+        }
+
         test("an svg style whose source really contains a less-than is removed") {
             // In foreign content a `<style>` is not a raw-text element, and jsoup proves it: it
             // builds an element out of `<x` rather than keeping it as text. That is the differential

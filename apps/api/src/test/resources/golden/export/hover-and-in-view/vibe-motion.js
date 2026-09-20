@@ -87,7 +87,9 @@
     var rootWidth = rootBounds ? rootBounds.width : window.innerWidth;
     var rootHeight = rootBounds ? rootBounds.height : window.innerHeight;
     var reachable = reachableFraction(box.width, rootWidth) * reachableFraction(box.height, rootHeight);
-    return reachable < IN_VIEW_THRESHOLD;
+    // `<=`, not `<`: an element whose best possible ratio is exactly the threshold can only reach
+    // it perfectly aligned, which is a question of float rounding rather than of being on screen.
+    return reachable <= IN_VIEW_THRESHOLD;
   }
 
   function start() {

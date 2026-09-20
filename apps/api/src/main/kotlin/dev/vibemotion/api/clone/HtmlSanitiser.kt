@@ -168,6 +168,17 @@ class HtmlSanitiser {
      * every document in `apps/api/src/test/resources/export/hostile/`.
      */
     private fun reduceParserDifferentials(document: Document) {
+        // Before anything is judged: Illustrator, Inkscape and Sketch all wrap an inline icon's
+        // CSS in a CDATA section, and the section is a second syntax whose own delimiters carry
+        // `<`, so the keep rule below refuses it and the icon loses its fills. Its *text*, though,
+        // is ordinary CSS. Rewriting the section as a plain text node makes it serialise escaped
+        // and puts it in front of exactly the same rule as any other block — no new parser
+        // knowledge, and nothing is kept that the rule would not have kept anyway.
+        document.select("style").forEach { style ->
+            val context = style.foreignContext() ?: return@forEach
+            if (context.root == "svg" && !context.throughIntegrationPoint) style.normaliseCdata()
+        }
+
         document.select(FOREIGN_FORBIDDEN.joinToString(",")).forEach { element ->
             val context = element.foreignContext() ?: return@forEach
             if (element.isInertSvgStyle(context)) return@forEach
@@ -359,9 +370,13 @@ class HtmlSanitiser {
          *   re-reads it as text. A literal `<` in the source does not reach this check at all,
          *   because jsoup builds an element out of it and the rule above has already refused.
          *
-         * `math` is not included, and neither is an HTML integration point: `<math><style>` has no
-         * legitimate use, and inside `foreignObject` and friends the insertion mode is exactly the
-         * thing this class declines to re-implement. Anything but this shape is still removed.
+         * `math` is not included, and neither is a block with an HTML integration point between it
+         * and its **nearest** `svg` ancestor: `<math><style>` has no legitimate use, and directly
+         * inside `foreignObject` and friends the insertion mode is exactly the thing this class
+         * declines to re-implement. Nearest, not outermost, is what [foreignContext] walks to, so
+         * `svg > foreignObject > svg > style` *is* kept — that inner `<svg>` puts the block back in
+         * plain foreign content, where the rule's own reasoning applies unchanged. Anything but
+         * this shape is still removed.
          *
          * A kept block still goes through [rewriteStyleText] like any other, so its dangerous
          * `url()`s are defused and, on the clone path, its URLs are absolutised.
@@ -371,6 +386,20 @@ class HtmlSanitiser {
             if (context.root != "svg" || context.throughIntegrationPoint) return false
             if (childNodes().any { it is CDataNode || (it !is TextNode && it !is DataNode) }) return false
             return !html().contains('<')
+        }
+
+        /**
+         * Replaces every CDATA child with a plain text node of the same characters.
+         *
+         * Serialised, that text is escaped, so what a browser re-reads is inert either way: as
+         * foreign content it decodes back to the same characters as text, and in any other reading
+         * it is garbage CSS. A section whose content was markup therefore survives as *text* rather
+         * than being dropped — which is all the keep rule ever promised.
+         */
+        private fun Element.normaliseCdata() {
+            childNodes().filterIsInstance<CDataNode>().forEach { section ->
+                section.replaceWith(TextNode(section.wholeText))
+            }
         }
 
         /** A `<style>`'s CSS, from whichever kind of node the parser put it in. */

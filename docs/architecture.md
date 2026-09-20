@@ -211,18 +211,38 @@ certain `encoding` values. Nested forms are unwrapped, which is what a browser d
 start tag.
 
 **One narrow exception, because real pages style their inline icons from inside the `<svg>`.** A
-`<style>` directly in SVG — not under an integration point, not under `math` — is kept when all
-three of these hold: it has no element children, it has no CDATA child, and its *serialised* bytes
-contain no `<`. Together those make it impossible for any parser to read the block as markup: `<`
-is the only character that can begin a start tag; a source `&lt;` is decoded to text while parsing
-and written back as `&lt;`, so it never becomes one; a literal `<` never reaches the check at all,
-because jsoup builds an element out of it and the first condition has already refused; and a CDATA
-section is a second syntax whose own delimiters carry `<`. A kept block is still swept like any
-other — dangerous `url()` defused, and on the clone path its URLs absolutised. Everything else in
-foreign content still goes. Dropping the lot was the first rule here and it was too wide: it kept
-the corpus inert and quietly unstyled every inline icon, a fidelity cost far broader than the
-threat. Both halves are proved in Chromium over the corpus — the hostile documents stay inert, and
-a benign icon's computed `fill` and `stroke` still come from its own block.
+`<style>` in SVG — with no HTML integration point between it and its **nearest** `svg` ancestor,
+and not under `math` — is kept when both of these hold: it has no element children, and its
+*serialised* bytes contain no `<`. Together those make it impossible for any parser to read the
+block as markup: `<` is the only character that can begin a start tag; a source `&lt;` is decoded
+to text while parsing and written back as `&lt;`, so it never becomes one; and a literal `<` never
+reaches the second check at all, because jsoup builds an element out of it and the first has
+already refused. Nearest, not outermost, is what the code walks to, so
+`svg > foreignObject > svg > style` *is* kept — that inner `<svg>` puts the block back in plain
+foreign content, where the reasoning applies unchanged. A **CDATA section is normalised first**: it
+is rewritten as a plain text node of the same characters, which then serialises escaped and faces
+the same rule as any other block. That shape is what Illustrator, Inkscape and Sketch export, and
+dropping it cost those icons their fills for no safety gained — escaped text cannot become markup
+whatever it says. A kept block is still swept like any other: dangerous `url()` defused, and on the
+clone path its URLs absolutised. Everything else in foreign content still goes. Dropping the lot
+was the first rule here and it was too wide: it kept the corpus inert and quietly unstyled every
+inline icon, a fidelity cost far broader than the threat.
+
+**The gate is a regression set, not the proof.** `packages/bridge/e2e/export-hostile.spec.ts` runs
+in **Chromium only**, and the corpus is a list of shapes that have gone wrong once. What the
+general claim rests on is the structural rule above — no raw-text element under a foreign root, no
+raw `<` in a kept block — which is why the rule had to be structural rather than a list of
+patterns. The gate carries a **positive control**, a document that has *not* been sanitised and
+must trip every check, so a spec that served the wrong body cannot report everything as inert.
+
+**Preview serves the stored bytes; export re-sanitises them.** `base_html` is immutable, so a
+project cloned by an older sanitiser keeps its original bytes in the preview — behind our CSP and
+the iframe sandbox — while its export is re-sanitised with today's rules. The two can therefore
+differ, and when they do, **safety takes the export's side**. Fidelity differences are accepted and
+fixed forward in the sanitiser; `base_html` is never rewritten. Today the visible case is a
+`<style>` in foreign content that the current rule declines to keep: styled in the preview,
+unstyled in the export. This will recur with every sanitiser change, which is why it is a decision
+rather than a bug.
 
 ## 4. Preview bridge (iframe ⇄ shell)
 
