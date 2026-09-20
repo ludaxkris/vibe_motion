@@ -292,8 +292,16 @@ export function ControlPanel({
   // parks the requested tab here and `onValueChange` is simply not honoured
   // until the user says what to do with the draft (docs/user_flow.md §1,
   // "unsaved → History/Export → guard").
-  const [tab, setTab] = useState<string>(TABS[0].value);
+  const [committedTab, setCommittedTab] = useState<string>(TABS[0].value);
   const [pendingTab, setPendingTab] = useState<string | null>(null);
+  // A guard with nothing left to lose is no longer a question. The draft can
+  // go clean without this component's promise resolving — the 409's "Discard
+  // my changes" loads their version, so `requestSave()` rightly rejects — and
+  // the guard used to stay open over a clean draft, claiming unsaved changes,
+  // with a Save that could do nothing at all. Derived rather than reconciled
+  // in an effect, so there is no render in which that is true.
+  const guardHeld = unsaved && pendingTab !== null;
+  const tab = guardHeld ? committedTab : (pendingTab ?? committedTab);
 
   // Guard-on-element-click and guard-on-Export/Restore are later phases; this
   // is the tab switch only.
@@ -316,7 +324,7 @@ export function ControlPanel({
     ? () =>
         onSave().then(
           () => {
-            if (pendingTab !== null) setTab(pendingTab);
+            if (pendingTab !== null) setCommittedTab(pendingTab);
             setPendingTab(null);
           },
           // Cancelled or failed: the guard stays open with its question intact.
@@ -341,7 +349,11 @@ export function ControlPanel({
           // (docs/user_flow.md §4). Called even when nothing is on screen
           // yet: `back()` is also what cancels a version still loading.
           if (tab === "history") history?.back();
-          setTab(value);
+          // Any tab the user picks with a clean draft is the whole answer:
+          // a `pendingTab` left over from a guard that went away with the
+          // unsaved work has nothing left to say.
+          setPendingTab(null);
+          setCommittedTab(value);
         }}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
@@ -447,14 +459,14 @@ export function ControlPanel({
       </p>
 
       <UnsavedGuardDialog
-        open={pendingTab !== null}
+        open={guardHeld}
         elementLabel={guardedVmId ?? undefined}
         animationName={guardedAnimationName}
         unsavedElementCount={unsavedElementCount}
         currentVersionLabel={currentVersionLabel}
         onDiscard={() => {
           revertDraft();
-          if (pendingTab !== null) setTab(pendingTab);
+          if (pendingTab !== null) setCommittedTab(pendingTab);
           setPendingTab(null);
         }}
         onKeepEditing={() => setPendingTab(null)}
