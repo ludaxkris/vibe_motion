@@ -86,3 +86,17 @@ internal fun ApplicationCall.uuidParameter(name: String): UUID {
         throw BadRequestException("$name must be a uuid, got '$raw'")
     }
 }
+
+/**
+ * An optional uuid from the **query string**.
+ *
+ * Read through `request.queryParameters` rather than `parameters`, which merges path and query: a
+ * helper that looked in both would answer a missing optional parameter with a path value of the
+ * same name, and there is no sensible 400 for "absent" when absent is legal.
+ */
+internal fun ApplicationCall.optionalUuidQuery(name: String): UUID? {
+    val raw = request.queryParameters[name] ?: return null
+    return runCatching { UUID.fromString(raw) }.getOrElse {
+        throw BadRequestException("$name must be a uuid, got '$raw'")
+    }
+}

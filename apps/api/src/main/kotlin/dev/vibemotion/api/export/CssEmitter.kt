@@ -167,7 +167,7 @@ class CssEmitter(
         vmId: String,
         assignment: Assignment,
     ): ResolvedAssignment {
-        val className = elementClass(vmId)
+        val className = storedElementClass(vmId)
         val entries =
             catalog.catalog(assignment.catalogVersion)?.entries
                 ?: throw ExportIntegrityException(
@@ -265,14 +265,3 @@ private data class ResolvedAssignment(
             )
     }
 }
-
-/**
- * 500: an assignment cannot be rendered.
- *
- * Save-time validation plus the immutable catalog make this unreachable. Silently skipping the
- * assignment would export a page that differs from the preview, which is worse than failing.
- * The message names the element and the param key and never the value.
- */
-class ExportIntegrityException(
-    message: String,
-) : RuntimeException(message)

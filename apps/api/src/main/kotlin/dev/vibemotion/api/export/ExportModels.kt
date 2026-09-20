@@ -137,6 +137,27 @@ fun elementClass(vmId: String): String {
     return "vm-a${vmId.removePrefix("vm-")}"
 }
 
+/**
+ * [elementClass] for a key that came out of a stored diff rather than off the query string.
+ *
+ * `DiffValidator` has already enforced the shape, so a failure here is a data-integrity problem
+ * and deserves a 500, not the 400 a malformed request gets.
+ */
+internal fun storedElementClass(vmId: String): String =
+    runCatching { elementClass(vmId) }
+        .getOrElse { throw ExportIntegrityException("A stored assignment key is not a clone element id") }
+
+/**
+ * 500: an assignment cannot be rendered.
+ *
+ * Save-time validation plus the immutable catalog make this unreachable. Silently skipping the
+ * assignment would export a page that differs from the preview, which is worse than failing.
+ * The message names the element and the param key and never the value.
+ */
+class ExportIntegrityException(
+    message: String,
+) : RuntimeException(message)
+
 /** The value is attacker-influenced, so the message describes the shape and never echoes it. */
 private fun requireVmId(vmId: String) {
     require(VM_ID_RE.matches(vmId)) { "vmId must be a clone element id of the form vm-<number>" }

@@ -6,6 +6,7 @@ import dev.vibemotion.api.clone.HttpPageCloner
 import dev.vibemotion.api.clone.PageCloner
 import dev.vibemotion.api.clone.PageRenderer
 import dev.vibemotion.api.config.AppConfig
+import dev.vibemotion.api.export.ExportService
 import dev.vibemotion.api.persistence.ExposedTransactionRunner
 import dev.vibemotion.api.persistence.TransactionRunner
 import dev.vibemotion.api.projects.ExposedProjectRepository
@@ -18,6 +19,7 @@ import dev.vibemotion.api.versions.VersionService
 data class AppServices(
     val projects: ProjectService,
     val versions: VersionService,
+    val exports: ExportService,
 )
 
 /**
@@ -34,6 +36,7 @@ fun appServices(
     return AppServices(
         projects = ProjectService(projectRepository, versionRepository, cloner, renderer, catalog, transactions),
         versions = VersionService(projectRepository, versionRepository, DiffValidator(catalog), catalog, transactions),
+        exports = ExportService(projectRepository, versionRepository, catalog, transactions),
     )
 }
 
