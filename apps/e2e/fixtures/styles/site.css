@@ -1,6 +1,14 @@
 /* Linked, not inline: the cloner has to fetch and inline this through the SSRF guard. */
 body { font-family: system-ui, sans-serif; margin: 0; color: #14213d; }
 .hero { padding: 64px 24px; background: #fca311; }
-.cta { display: inline-block; padding: 12px 20px; background: #14213d; color: #fff; border-radius: 8px; }
+.cta { display: inline-block; padding: 16px 24px; background: #14213d; color: #fff; border-radius: 8px; }
 .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 24px; }
 .card { border: 1px solid #e5e5e5; border-radius: 12px; padding: 16px; }
+/* Sized like a real marketing page, with numeric line boxes so no font difference between hosts
+   can push a heading under the agent's 40 px target floor (Phase 5 plan D6). */
+h1 { margin: 0 0 16px; font-size: 48px; line-height: 56px; }
+h2 { margin: 0 0 8px; font-size: 28px; line-height: 44px; }
+.lede { margin: 0 0 24px; font-size: 20px; line-height: 44px; }
+/* Pushes what follows far below the preview iframe's fold (~600 px), where the agent picks `in-view`. */
+.spacer { min-height: 1600px; }
+.more { padding: 24px; }
