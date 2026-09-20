@@ -9,8 +9,9 @@ import { HistoryShowcase } from "./history-showcase";
  * for reading against the Claude Design mocks without driving the editor
  * there. 404s in production like the rest of `/dev` (`app/dev/panel/page.tsx`).
  *
- * Not linked from `dev-gallery.tsx` yet: Track B wires the real History tab
- * into the editor and adds the link once it exists.
+ * Its own page rather than a frame in `/dev`: a version list, a dimmed
+ * preview and the conflict dialog need more width than the gallery's columns.
+ * `/dev` links here.
  */
 export default function DevHistoryPage() {
   if (env.isProduction) notFound();

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, type ReactNode } from "react";
 
 import { ControlPanel } from "@/components/control-panel";
+import { useVersionHistory } from "@/components/history/use-version-history";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { apiClient, type Assignment, type Project } from "@/lib/api-client";
@@ -21,6 +22,7 @@ import { SplitPane } from "./split-pane";
 import { useProjectVersions } from "./use-project-versions";
 import { useSaveFlow } from "./use-save-flow";
 import { VersionLoadErrorBanner } from "./version-load-error-banner";
+import { ViewingOverlay } from "./viewing-overlay";
 
 /** Thrown by `fetchProject` so the shell can tell a 404 apart from any other failure. */
 class ProjectFetchError extends Error {
@@ -226,6 +228,15 @@ export function EditorShell({ projectId }: { projectId: string }) {
     nextVersionLabel,
     retryLoad,
   });
+  // Mounted here, not in the History tab: the tab's rows and the preview's
+  // banner offer the same Restore, so they have to share one hook — and one
+  // `restoring` flag (`components/history/use-version-history.ts`).
+  const history = useVersionHistory(projectId, {
+    currentVersionLabel,
+    nextVersionLabel,
+    enabled: project !== undefined,
+  });
+  const { viewing, back } = history;
 
   // Opening a project is what makes it recent, so the Entry screen's column
   // also lists projects reached by link or by Back (`lib/recent-projects.ts`).
@@ -253,11 +264,19 @@ export function EditorShell({ projectId }: { projectId: string }) {
       if (event.key !== "Escape") return;
       if (event.defaultPrevented) return;
       if (isTextEntry(event.target)) return;
+      // Viewing is read-only, so there is no selection to drop: Esc is the
+      // way back to the current version (docs/user_flow.md §4).
+      if (viewing) {
+        back();
+        return;
+      }
       dispatchPanel({ type: "DESELECT" });
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [unsaved, dispatchPanel]);
+    // `back` is stable; `history` itself is a fresh object every render and
+    // would re-bind this listener on each one.
+  }, [unsaved, dispatchPanel, viewing, back]);
 
   // The draft lives in this tab and nowhere else until Save writes a version
   // (CLAUDE.md rule 9), so a reload or a closed tab is the one way to lose it
@@ -331,18 +350,26 @@ export function EditorShell({ projectId }: { projectId: string }) {
       actions={
         <>
           <HelpLink />
-          <Button variant="bar-outline" disabled={!unsaved} onClick={revertDraft}>
-            Cancel
-          </Button>
-          {/* The rejection is the user cancelling the dialog, and is nobody's
-              news: `requestSave` reports it that way to the guards. */}
-          <Button
-            variant="bar-primary"
-            disabled={!unsaved}
-            onClick={() => void requestSave().catch(() => {})}
-          >
-            Save
-          </Button>
+          {/* docs/user_flow.md §6, "viewing vN": controls disabled, Save
+              hidden. A read-only screen has no draft to cancel and nothing of
+              its own to save, so neither control is rendered at all — the
+              banner over the preview carries Restore and Back instead. */}
+          {viewing ? null : (
+            <>
+              <Button variant="bar-outline" disabled={!unsaved} onClick={revertDraft}>
+                Cancel
+              </Button>
+              {/* The rejection is the user cancelling the dialog, and is nobody's
+                  news: `requestSave` reports it that way to the guards. */}
+              <Button
+                variant="bar-primary"
+                disabled={!unsaved}
+                onClick={() => void requestSave().catch(() => {})}
+              >
+                Save
+              </Button>
+            </>
+          )}
         </>
       }
     >
@@ -357,7 +384,8 @@ export function EditorShell({ projectId }: { projectId: string }) {
             // bottom — the sheet runs off the bottom of the window.
             className="flex min-w-0 flex-1 flex-col overflow-hidden p-4 pb-0"
           >
-            <div className="min-h-0 flex-1 overflow-hidden rounded-t-lg bg-vm-surface shadow-sheet">
+            {/* `relative`: the viewing overlay covers this sheet and nothing else. */}
+            <div className="relative min-h-0 flex-1 overflow-hidden rounded-t-lg bg-vm-surface shadow-sheet">
               {refusesToFrame ? (
                 <div
                   role="alert"
@@ -399,9 +427,15 @@ export function EditorShell({ projectId }: { projectId: string }) {
                 // (`lib/preview-url.ts`, spec §2).
                 sandbox="allow-scripts allow-same-origin"
                 className="size-full border-0 bg-vm-surface"
-                style={isDragging ? { pointerEvents: "none" } : undefined}
+                // While viewing, the frame shows `stateAt(vN)` and there is
+                // nothing on it to select: the overlay covers it, and this
+                // makes sure nothing reaches it even if that layer moves.
+                style={isDragging || viewing ? { pointerEvents: "none" } : undefined}
               />
               )}
+              {/* The white 45% layer and the "Viewing v3 · read-only" pill,
+                  over the preview only (`docs/design/README.md`). */}
+              <ViewingOverlay history={history} />
             </div>
           </section>
         )}
@@ -411,6 +445,7 @@ export function EditorShell({ projectId }: { projectId: string }) {
                 the draft forked from, which only the versions list knows. */}
             <ControlPanel
               currentVersionLabel={currentVersionLabel}
+              history={history}
               onSave={requestSave}
               // Gated on the handshake, not merely on the client existing:
               // while `connecting` or `version-mismatch` the client refuses

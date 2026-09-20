@@ -3,6 +3,9 @@
 import { useCallback, useMemo, useState } from "react";
 
 import { UnsavedGuardDialog } from "@/components/dialogs/unsaved-guard-dialog";
+import { HistoryTab } from "@/components/history/history-tab";
+import { ReadOnlyNote } from "@/components/history/read-only-note";
+import type { VersionHistory } from "@/components/history/use-version-history";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Assignment, Trigger } from "@/lib/api-client";
 import {
@@ -244,12 +247,20 @@ const NO_ROWS: never[] = [];
  */
 export function ControlPanel({
   currentVersionLabel,
+  history,
   onPreview,
   onClearPreview,
   onReplay,
   onSave,
 }: {
   currentVersionLabel?: string;
+  /**
+   * The shell's `useVersionHistory` — the History tab's list, and the view /
+   * back / restore it offers. Mounted there rather than here so the tab's
+   * rows and the preview's banner share one `restoring` flag. Absent (no
+   * project behind the panel) leaves the tab on its placeholder.
+   */
+  history?: VersionHistory;
   /** Show an animation transiently on the page (spec D4). Absent until the bridge is mounted. */
   onPreview?: (vmId: string, assignment: Assignment) => void;
   onClearPreview?: () => void;
@@ -266,6 +277,9 @@ export function ControlPanel({
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
   const revertDraft = useEditorStore((state) => state.revertDraft);
   const unsaved = useUnsaved();
+  // The store is what makes viewing read-only (every draft writer returns
+  // early); this is the same fact where the reader can see it.
+  const viewing = useEditorStore((state) => state.mode === "viewing");
 
   // "‹" on selected/tuning exists only for an element opened from the result
   // list; everywhere else there is no level above to go back up to.
@@ -321,6 +335,10 @@ export function ControlPanel({
             setPendingTab(value);
             return;
           }
+          // Viewing is a read-only detour that belongs to the History tab, so
+          // leaving it returns to the current version first — the editor is
+          // never in viewing mode with History closed (docs/user_flow.md §4).
+          if (viewing && tab === "history") history?.back();
           setTab(value);
         }}
         className="flex min-h-0 flex-1 flex-col gap-0"
@@ -342,7 +360,16 @@ export function ControlPanel({
         </TabsList>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3">
-          <TabsContent value="animate">
+          {/* Above the inert content below, so it stays readable. */}
+          {tab === "animate" ? <ReadOnlyNote history={history} /> : null}
+          <TabsContent
+            value="animate"
+            // A past version on screen is read-only: the store refuses every
+            // draft write, and `inert` keeps these controls from taking a
+            // click or the keyboard at all (docs/user_flow.md §6).
+            inert={viewing}
+            className={viewing ? "opacity-40" : undefined}
+          >
             {panel.status === "idle" && <IdleSection />}
             {/* Unreachable in the app until Phase 5 Track B (Tasks 4-5): nothing
                 dispatches AUTO_DONE yet, and the rows, prompt, Regenerate,
@@ -393,9 +420,13 @@ export function ControlPanel({
           </TabsContent>
 
           <TabsContent value="history">
-            <PlaceholderTab>
-              Saved versions appear here. A version is only created when you click Save.
-            </PlaceholderTab>
+            {history ? (
+              <HistoryTab history={history} />
+            ) : (
+              <PlaceholderTab>
+                Saved versions appear here. A version is only created when you click Save.
+              </PlaceholderTab>
+            )}
           </TabsContent>
 
           <TabsContent value="export">

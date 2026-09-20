@@ -5,12 +5,14 @@ import { HttpResponse, delay, http } from "msw";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { apiClient, type Assignment, type Project } from "@/lib/api-client";
+import { apiClient, type Assignment, type Project, type Version } from "@/lib/api-client";
 import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
 import { env } from "@/lib/env";
 import { previewOrigin } from "@/lib/preview-url";
 import { readRecentProjects, rememberRecentProject } from "@/lib/recent-projects";
 import { initialEditorState, selectSelectedVmId, useEditorStore } from "@/lib/store";
+import { saveVersion } from "@/lib/versions/api";
+import { listVersions } from "@/mocks/db";
 import { server } from "@/mocks/server";
 
 import { EditorShell } from "./editor-shell";
@@ -678,5 +680,104 @@ describe("EditorShell sandbox invariant", () => {
     // page unsandbox itself, so there is no iframe to have the attributes on.
     expect(screen.getByTestId("preview-origin-refused")).toBeInTheDocument();
     expect(screen.queryByTitle("Cloned page preview")).not.toBeInTheDocument();
+  });
+});
+
+describe("EditorShell · viewing a past version", () => {
+  /** A project saved once: v0 "Initial clone", and v1 as the current version. */
+  async function projectWithASave(): Promise<{ project: Project; v0: Version; v1: Version }> {
+    const project = await createProject();
+    const applied = assignmentFor("fade-in");
+    const outcome = await saveVersion(project.id, {
+      parentVersionId: project.currentVersionId,
+      catalogVersion: applied.catalogVersion,
+      label: "Fade In on vm-1",
+      diff: { set: { "vm-1": applied }, remove: [] },
+    });
+    if (outcome.kind !== "saved") throw new Error(`setup: the save was ${outcome.kind}`);
+    const listed = listVersions(project.id);
+    const v0 = listed?.versions.find((version) => version.seq === 0);
+    if (!v0) throw new Error("setup: the project has no v0");
+    return { project, v0, v1: outcome.version };
+  }
+
+  /** What clicking v0's row in the History tab does, via the store the tab drives. */
+  function view(versionId: string) {
+    act(() => {
+      useEditorStore.getState().enterViewing(versionId, {});
+    });
+  }
+
+  it("hides Save, Cancel and the unsaved dot, and keeps the chip on the current version", async () => {
+    const { project, v0 } = await projectWithASave();
+    renderShell(project.id);
+    await openLoaded();
+
+    view(v0.id);
+
+    expect(await screen.findByText("Viewing v0 · read-only")).toBeInTheDocument();
+    // docs/user_flow.md §6: "viewing vN · controls disabled · Save hidden".
+    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Unsaved")).not.toBeInTheDocument();
+    // Help is the one action that still makes sense on a read-only screen.
+    expect(screen.getByRole("link", { name: "Help" })).toBeInTheDocument();
+    // The chip names what the editor would go back to, not what it is showing;
+    // the banner names the version on screen.
+    const context = screen.getByRole("banner").querySelector("[data-slot='top-bar-context']");
+    expect(context).toHaveTextContent("v1");
+  });
+
+  it("dims the preview sheet only, and takes the clone out of the pointer's reach", async () => {
+    const { project, v0 } = await projectWithASave();
+    renderShell(project.id);
+    await openLoaded();
+
+    view(v0.id);
+
+    const preview = screen.getByRole("region", { name: "Preview" });
+    expect(await within(preview).findByTestId("viewing-overlay")).toBeInTheDocument();
+    // Never over the Control Panel: the History tab is how another version is
+    // picked and how the reader gets back.
+    expect(
+      within(screen.getByRole("complementary", { name: "Control Panel" })).queryByTestId(
+        "viewing-overlay",
+      ),
+    ).not.toBeInTheDocument();
+    expect(within(preview).getByTitle("Cloned page preview")).toHaveStyle({
+      pointerEvents: "none",
+    });
+  });
+
+  it("comes back to the current version on Escape", async () => {
+    const { project, v0 } = await projectWithASave();
+    renderShell(project.id);
+    await openLoaded();
+    view(v0.id);
+    await screen.findByText("Viewing v0 · read-only");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => expect(useEditorStore.getState().mode).toBe("editing"));
+    expect(screen.queryByTestId("viewing-overlay")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+  });
+
+  it("opens a version from the History tab, and Back to v1 closes it again", async () => {
+    const { project } = await projectWithASave();
+    renderShell(project.id);
+    await openLoaded();
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Initial clone/ }));
+
+    expect(await screen.findByText("Viewing v0 · read-only")).toBeInTheDocument();
+    expect(useEditorStore.getState().viewingVersionId).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to v1" }));
+
+    await waitFor(() => expect(useEditorStore.getState().mode).toBe("editing"));
+    // Still on History: Back is about the preview, not about the tab.
+    expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("data-active");
   });
 });

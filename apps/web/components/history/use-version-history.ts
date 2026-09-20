@@ -19,7 +19,7 @@
  * (CLAUDE.md rule 9), and only ever on a click: nothing here writes on its own.
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { BUSY_MESSAGE, MAX_RETRY_SECONDS } from "@/components/editor/use-save-flow";
 import { useToast } from "@/components/ui/toast";
@@ -114,6 +114,13 @@ export function useVersionHistory(
 
   const [error, setError] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
+  /**
+   * The in-flight guard, as a ref rather than `restoring`: the row's Restore
+   * and the banner's are only disabled on the *next* render, so two clicks in
+   * one tick would both read `restoring === false` — and write two versions
+   * (CLAUDE.md rule 9). Same shape as the Save flow's `running`.
+   */
+  const running = useRef(false);
 
   const versions = data?.versions ?? NO_VERSIONS;
   const listVersionId = data?.currentVersionId ?? null;
@@ -149,8 +156,14 @@ export function useVersionHistory(
         // Re-read: the answer came over the network, and the draft was the
         // user's the whole time it was in flight.
         const now = useEditorStore.getState();
-        if (now.mode === "viewing") exitViewing();
-        else if (selectUnsaved(now)) return;
+        if (now.mode === "viewing") {
+          // Another version is on screen; leaving first keeps `enterViewing`
+          // reading from the real current version rather than from a viewer buffer.
+          exitViewing();
+        } else if (selectUnsaved(now)) {
+          // Edited mid-flight: `enterViewing` would throw, and the edit wins.
+          return;
+        }
         enterViewing(versionId, state);
       } catch {
         setError(VIEW_FAILED);
@@ -182,8 +195,9 @@ export function useVersionHistory(
 
   const restore = useCallback(
     async (versionId: string): Promise<void> => {
-      if (restoring) return;
+      if (running.current) return;
       const target = versions.find((version) => version.id === versionId);
+      running.current = true;
       setError(null);
       setRestoring(true);
       try {
@@ -213,9 +227,10 @@ export function useVersionHistory(
             setError(BUSY_MESSAGE);
             return;
           case "stale":
-            // Restore takes no parent version, so the service has nothing to
-            // find stale; kept explicit so a new outcome cannot fall through.
-            setError(HISTORY_LOAD_FAILED);
+            // Unreachable: restore sends no parent version, so there is
+            // nothing for the service to find stale. Named so a future
+            // outcome cannot fall through the `default` in silence.
+            setError(RESTORE_FAILED);
             return;
           default:
             setError(outcome.message);
@@ -224,10 +239,11 @@ export function useVersionHistory(
       } catch (cause) {
         setError(messageOf(cause, RESTORE_FAILED));
       } finally {
+        running.current = false;
         setRestoring(false);
       }
     },
-    [projectId, versions, post, loadVersion, toast, restoring],
+    [projectId, versions, post, loadVersion, toast],
   );
 
   const retry = useCallback(() => {

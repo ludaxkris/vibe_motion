@@ -40,7 +40,7 @@ export function HistoryTab({ history }: { history: VersionHistory }) {
 
   if (history.pending) {
     return (
-      <PanelCard>
+      <PanelCard data-testid="panel-history">
         <PanelSection>
           <div role="status" aria-label="Loading history" className="flex justify-center py-2">
             <div className="size-5 animate-spin rounded-full border-2 border-vm-border border-t-vm-accent" />
@@ -52,7 +52,7 @@ export function HistoryTab({ history }: { history: VersionHistory }) {
 
   if (history.listError) {
     return (
-      <PanelCard>
+      <PanelCard data-testid="panel-history">
         <PanelSection>
           <p className="text-sm leading-body text-vm-danger">{HISTORY_LOAD_FAILED}</p>
           <Button variant="secondary" size="sm" className="self-start" onClick={history.retry}>
@@ -64,7 +64,7 @@ export function HistoryTab({ history }: { history: VersionHistory }) {
   }
 
   return (
-    <PanelCard>
+    <PanelCard data-testid="panel-history">
       {history.error ? (
         <PanelSection>
           <p role="alert" className="text-sm leading-body text-vm-danger">
@@ -81,8 +81,10 @@ export function HistoryTab({ history }: { history: VersionHistory }) {
         currentVersionId={history.currentVersionId ?? ""}
         viewingVersionId={history.viewingVersionId}
         now={now}
-        // No `elementCount`: nothing keeps the bridge's `ready.elementCount`
-        // (DT to file), and v0's row reads fine without it.
+        // No `elementCount`: nothing in the editor keeps the bridge's
+        // `ready.elementCount` (the store's `elements` fills in per click, so
+        // it is not the clone's count), and v0's row reads fine without it —
+        // bridge plumbing for one caption is not worth its weight here.
         onView={history.view}
         onRestore={history.restore}
         // `onExport` stays absent, which is what disables Export: Phase 7.

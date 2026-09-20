@@ -283,6 +283,23 @@ describe("useVersionHistory · restore", () => {
     expect(listVersions(project.id)?.versions).toHaveLength(5);
   });
 
+  it("writes one version however fast Restore is clicked twice", async () => {
+    const { project, versions } = await projectWithHistory();
+    const result = renderHistory(project.id);
+    await waitFor(() => expect(result.current.versions).toHaveLength(4));
+
+    // Both clicks land before React has re-rendered the disabled button, so
+    // the in-flight guard cannot be a piece of state either of them reads.
+    await act(async () => {
+      await Promise.all([
+        result.current.restore(versions[1].id),
+        result.current.restore(versions[1].id),
+      ]);
+    });
+
+    expect(listVersions(project.id)?.versions).toHaveLength(5);
+  });
+
   it("stops after that one retry rather than hammering a busy project", async () => {
     const { project, versions } = await projectWithHistory();
     const result = renderHistory(project.id);

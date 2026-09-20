@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { VersionHistory } from "@/components/history/use-version-history";
 import { CURRENT_CATALOG_VERSION, defaultAssignmentFor, getCatalogEntry } from "@/lib/catalog";
 import { initialEditorState, useEditorStore } from "@/lib/store";
 
@@ -550,5 +551,90 @@ describe("ControlPanel bridge seams", () => {
     render(<ControlPanel />);
 
     expect(screen.getByRole("button", { name: "Replay" })).toBeDisabled();
+  });
+});
+
+describe("ControlPanel · History and viewing", () => {
+  /** What the shell's `useVersionHistory` hands down, in the state a test needs. */
+  function historyStub(overrides: Partial<VersionHistory> = {}): VersionHistory {
+    return {
+      versions: [],
+      pending: false,
+      listError: false,
+      retry: () => undefined,
+      currentVersionId: "current-id",
+      viewingVersionId: null,
+      viewing: false,
+      viewingLabel: undefined,
+      currentLabel: "v5",
+      nextLabel: "v6",
+      error: null,
+      restoring: false,
+      view: async () => undefined,
+      back: () => undefined,
+      restore: async () => undefined,
+      ...overrides,
+    };
+  }
+
+  it("mounts the History tab once the shell hands it a project's history", () => {
+    render(<ControlPanel history={historyStub()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    expect(screen.getByTestId("panel-history")).toBeInTheDocument();
+    expect(screen.queryByText(/only created when you click Save/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the placeholder when there is no project behind the panel", () => {
+    render(<ControlPanel />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    expect(screen.queryByTestId("panel-history")).not.toBeInTheDocument();
+    expect(screen.getByText(/only created when you click Save/i)).toBeInTheDocument();
+  });
+
+  it("makes Animate read-only while a past version is on screen, and says why", () => {
+    useEditorStore.setState({ mode: "viewing", viewingVersionId: "viewed-id" });
+    render(
+      <ControlPanel
+        history={historyStub({ viewing: true, viewingVersionId: "viewed-id", viewingLabel: "v3" })}
+      />,
+    );
+
+    expect(screen.getByText("Viewing v3 — read-only. Go back to v5 to edit.")).toBeInTheDocument();
+    // The store already refuses every draft write while viewing; this is the
+    // half the reader can see — no control that looks live and does nothing.
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("inert");
+  });
+
+  it("leaves Animate alone while editing", () => {
+    render(<ControlPanel history={historyStub()} />);
+
+    expect(screen.getByRole("tabpanel")).not.toHaveAttribute("inert");
+    expect(screen.queryByText(/read-only/)).not.toBeInTheDocument();
+  });
+
+  it("comes back to the current version when the reader leaves the History tab", () => {
+    const back = vi.fn();
+    useEditorStore.setState({ mode: "viewing", viewingVersionId: "viewed-id" });
+    render(
+      <ControlPanel
+        history={historyStub({
+          viewing: true,
+          viewingVersionId: "viewed-id",
+          viewingLabel: "v3",
+          back,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Animate" }));
+
+    // The editor must never sit in viewing mode with the History tab closed.
+    expect(back).toHaveBeenCalledOnce();
+    expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
   });
 });
