@@ -228,6 +228,115 @@ describe("selectTargets: a container block animates as one unit", () => {
   });
 });
 
+describe("selectTargets: blocks the agent may not assign still nest their children", () => {
+  it("a block-only article nests its h2 and p, and appears in neither list", () => {
+    const article = el({ tag: "article", order: 1, ...box(0, 100, 300, 200) });
+    const h2 = el({ tag: "h2", order: 2, ...box(16, 116, 268, 28) });
+    const p = el({ tag: "p", order: 3, ...box(16, 160, 268, 24) });
+    const link = el({ tag: "a", order: 4, ...box(16, 200, 120, 40) });
+    const { targets, skipped } = selectTargets([h2, p, link], { blocks: [article] });
+    expect(targets).toEqual([link]);
+    expect(skipped).toEqual([
+      { vmId: h2.vmId, reason: "nested" },
+      { vmId: p.vmId, reason: "nested" },
+    ]);
+  });
+
+  it("a block never appears in targets or skipped, whatever is wrong with it", () => {
+    const fine = el({ tag: "article", order: 1, ...box(0, 0, 300, 200) });
+    const hidden = el({ tag: "figure", order: 2, visible: false, ...box(0, 300, 300, 200) });
+    const tiny = el({ tag: "li", order: 3, ...box(0, 600, 10, 10) });
+    const div = el({ tag: "div", order: 4, ...box(0, 700, 300, 200) });
+    const h1 = el({ tag: "h1", order: 5, ...box(0, 1000, 300, 37) });
+    const { targets, skipped } = selectTargets([h1], { blocks: [fine, hidden, tiny, div] });
+    expect(targets).toEqual([h1]);
+    expect(skipped).toEqual([]);
+  });
+
+  it("a block that is not a container tag, is hidden, or is a hover target nests nothing", () => {
+    const heading = el({ tag: "h1", order: 1, ...box(0, 0, 600, 400) });
+    const hidden = el({ tag: "article", order: 2, visible: false, ...box(0, 0, 600, 400) });
+    const button = el({ tag: "li", role: "button", order: 3, ...box(0, 0, 600, 400) });
+    const p = el({ tag: "p", order: 4, ...box(10, 10, 200, 24) });
+    expect(selectTargets([p], { blocks: [heading, hidden, button] }).targets).toEqual([p]);
+  });
+
+  it("a candidate container inside a block is nested too", () => {
+    const article = el({ tag: "article", order: 1, ...box(0, 0, 600, 400) });
+    const figure = el({ tag: "figure", order: 2, ...box(20, 20, 300, 200) });
+    const img = el({ tag: "img", order: 3, ...box(20, 20, 300, 160) });
+    const { targets, skipped } = selectTargets([figure, img], { blocks: [article] });
+    expect(targets).toEqual([]);
+    expect(skipped.map((s) => s.reason)).toEqual(["nested", "nested"]);
+  });
+
+  it("an element listed both ways is judged as an element", () => {
+    const article = el({ tag: "article", order: 1, ...box(0, 0, 600, 400) });
+    expect(selectTargets([article], { blocks: [article] }).targets).toEqual([article]);
+  });
+});
+
+describe("selectTargets: an entrance element taller than the viewport is too-large", () => {
+  const viewport = { width: 1280, height: 600 };
+
+  function post(top: number) {
+    const article = el({ tag: "article", order: 0, ...box(40, top, 1200, 5000) });
+    const paragraphs = Array.from({ length: 20 }, (_, i) =>
+      el({ tag: "p", order: i + 1, ...box(60, top + 20 + i * 240, 1160, 200) }),
+    );
+    return { article, paragraphs };
+  }
+
+  it.each([
+    ["at load position", 0],
+    ["below the fold", 900],
+  ])("a 1200x5000 article wrapping 20 paragraphs, %s: the paragraphs are the targets", (_name, top) => {
+    const { article, paragraphs } = post(top);
+    const { targets, skipped } = selectTargets([article, ...paragraphs], { viewport });
+    expect(targets).toEqual(paragraphs);
+    expect(skipped).toEqual([{ vmId: article.vmId, reason: "too-large" }]);
+  });
+
+  it("a too-large block nests nothing either", () => {
+    const { article, paragraphs } = post(0);
+    expect(selectTargets(paragraphs, { blocks: [article], viewport }).targets).toEqual(paragraphs);
+  });
+
+  it("a 1200x500 card still nests its children", () => {
+    const card = el({ tag: "article", order: 0, ...box(40, 0, 1200, 500) });
+    const h2 = el({ tag: "h2", order: 1, ...box(60, 20, 600, 28) });
+    const p = el({ tag: "p", order: 2, ...box(60, 60, 1160, 200) });
+    const { targets, skipped } = selectTargets([card, h2, p], { viewport });
+    expect(targets).toEqual([card]);
+    expect(skipped.map((s) => s.reason)).toEqual(["nested", "nested"]);
+  });
+
+  it("exactly the viewport's height is not too large", () => {
+    const card = el({ tag: "article", order: 0, ...box(0, 0, 1200, 600) });
+    expect(selectTargets([card], { viewport }).targets).toEqual([card]);
+  });
+
+  it("never applies to a hover target", () => {
+    const link = el({ tag: "a", order: 0, ...box(0, 0, 1200, 5000) });
+    expect(selectTargets([link], { viewport }).targets).toEqual([link]);
+  });
+
+  it("is off without a viewport", () => {
+    const { article, paragraphs } = post(0);
+    const { targets } = selectTargets([article, ...paragraphs]);
+    expect(targets).toEqual([article]);
+  });
+
+  it("too-small, hidden and not-semantic are reported first", () => {
+    const hidden = el({ tag: "article", order: 0, visible: false, ...box(0, 0, 1200, 5000) });
+    const narrow = el({ tag: "article", order: 1, ...box(0, 0, 10, 5000) });
+    expect(selectTargets([hidden, narrow], { viewport }).skipped.map((s) => s.reason)).toEqual([
+      "hidden",
+      "too-small",
+    ]);
+  });
+});
+
 describe("TARGET_TAGS", () => {
   it("is lower-case, as the bridge filter expects", () => {
     for (const tag of TARGET_TAGS) expect(tag).toBe(tag.toLowerCase());

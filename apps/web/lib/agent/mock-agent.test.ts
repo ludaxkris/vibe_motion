@@ -187,6 +187,46 @@ describe("MockAnimationAgent stagger", () => {
   });
 });
 
+describe("MockAnimationAgent.suggestForPage context blocks and viewport", () => {
+  const box = (x: number, y: number, width: number, height: number) => {
+    const rect = { x, y, width, height };
+    return { rect, pageRect: rect };
+  };
+
+  it("leaves the children of a context block alone and never assigns the block", async () => {
+    const card = el("card", "article", 0, 0, box(0, 100, 300, 200));
+    const h2 = el("h2", "h2", 0, 1, box(16, 116, 268, 28));
+    const p = el("p", "p", 0, 2, box(16, 160, 268, 24));
+    const h1 = el("h1", "h1", 0, 3, box(0, 400, 600, 37));
+    const s = await new MockAnimationAgent(3).suggestForPage(pageCtx([h2, p, h1], { context: [card] }));
+    expect(Object.keys(s.assignments)).toEqual(["h1"]);
+    expect(s.skipped).toEqual([
+      { vmId: "h2", reason: "nested" },
+      { vmId: "p", reason: "nested" },
+    ]);
+  });
+
+  it("skips an entrance element taller than the viewport and animates what is inside it", async () => {
+    const wrap = el("wrap", "article", 0, 0, box(0, 0, 1200, 5000));
+    const p = el("p", "p", 0, 1, box(20, 20, 1100, 200));
+    const s = await new MockAnimationAgent(3).suggestForPage(pageCtx([wrap, p]));
+    expect(Object.keys(s.assignments)).toEqual(["p"]);
+    expect(s.skipped).toEqual([{ vmId: "wrap", reason: "too-large" }]);
+  });
+
+  it("suggestForElement still animates a too-large element: the user asked for it", async () => {
+    const wrap = el("wrap", "article", 0, 0, box(0, 0, 1200, 5000));
+    const a = await new MockAnimationAgent(3).suggestForElement({
+      element: wrap,
+      existing: {},
+      prompt: "",
+      viewport,
+      catalogVersion: CURRENT_VERSION,
+    });
+    expect(a.trigger).toBe("load");
+  });
+});
+
 describe("MockAnimationAgent.suggestForElement", () => {
   const shared = { existing: {}, prompt: "", viewport, catalogVersion: CURRENT_VERSION };
 

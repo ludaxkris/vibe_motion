@@ -18,9 +18,19 @@ type Shared = {
 };
 
 export type ElementContext = Shared & { element: ElementInfo };
-export type PageContext = Shared & { elements: ElementInfo[] };
+export type PageContext = Shared & {
+  /** The elements the agent may assign. */
+  elements: ElementInfo[];
+  /**
+   * Listed elements the agent may NOT assign but that already animate as a
+   * block (an entrance the designer owns). Nesting is decided against these
+   * too: what sits inside one is left alone. Optional, so an older caller
+   * stays valid.
+   */
+  context?: ElementInfo[];
+};
 
-export type SkipReason = "not-semantic" | "too-small" | "hidden" | "nested";
+export type SkipReason = "not-semantic" | "too-small" | "hidden" | "nested" | "too-large";
 
 export type PageSuggestion = {
   /** Keyed by vmId. */

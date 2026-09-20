@@ -1,6 +1,6 @@
 import type { ElementInfo } from "bridge";
 
-import type { SkipReason } from "./types";
+import type { SkipReason, Viewport } from "./types";
 
 /**
  * The border box an element needs to be worth animating, in px. The floor is
@@ -72,51 +72,85 @@ function contains(outer: Rect, inner: Rect): boolean {
   );
 }
 
+/** An entrance element taller than one screen cannot animate as one unit. */
+function tooLarge(el: ElementInfo, viewport: Viewport | undefined): boolean {
+  return !isHoverTarget(el) && viewport !== undefined && el.pageRect.height > viewport.height;
+}
+
+type Entry = {
+  el: ElementInfo;
+  /** Position in the combined document order; breaks the tie between identical boxes. */
+  index: number;
+  reason: SkipReason | null;
+  /** False for a block: it shapes the nesting and is never reported. */
+  assignable: boolean;
+};
+
 /**
  * The agent-side re-check of the bridge filter. Targets come back in document
  * order whatever the input order (elements the bridge could not place, `order`
  * below 0, go last).
  *
  * A block animates as one unit: an entrance target whose `pageRect` lies fully
- * inside a container target's (`CONTAINER_TAGS`) is skipped as `"nested"`.
+ * inside a container's (`CONTAINER_TAGS`) is skipped as `"nested"`.
  * `ElementInfo` has no parent pointer, so this is geometry: all four edges
  * within the container's (0.5 px tolerance), and the container strictly
  * larger, or the same size and earlier in document order, so two identical
  * boxes never eliminate each other. A container inside a container is nested
  * too, which leaves the outermost. Hover targets are never nested: a link
  * inside an animated card keeps its hover. O(targets × containers).
+ *
+ * `opts.blocks` are elements the agent may NOT assign but that already animate
+ * as a block (a card the designer animated by hand): they count as containers
+ * on the same terms as a target would, and never appear in `targets` or
+ * `skipped`. Nesting is decided against everything listed, not only against
+ * what is up for assignment.
+ *
+ * With `opts.viewport`, an entrance element taller than the viewport is
+ * `"too-large"`: it is neither a target nor a container, so what is inside it
+ * is judged on its own. An `in-view` entrance on something several screens
+ * tall may never reach the bridge's visibility threshold, and its held first
+ * keyframe would hide the page. Without a viewport the rule is off.
  */
-export function selectTargets(elements: readonly ElementInfo[]): {
+export function selectTargets(
+  elements: readonly ElementInfo[],
+  opts: { blocks?: readonly ElementInfo[]; viewport?: Viewport } = {},
+): {
   targets: ElementInfo[];
   skipped: { vmId: string; reason: SkipReason }[];
 } {
-  const sorted = [...elements].sort(byDocumentOrder);
-  const reasons: (SkipReason | null)[] = sorted.map(skipReason);
+  const assignable = new Set(elements.map((el) => el.vmId));
+  // An element listed both ways is judged as an element.
+  const blocks = (opts.blocks ?? []).filter((el) => !assignable.has(el.vmId));
+  const entries: Entry[] = [...elements, ...blocks].sort(byDocumentOrder).map((el, index) => ({
+    el,
+    index,
+    reason: skipReason(el) ?? (tooLarge(el, opts.viewport) ? "too-large" : null),
+    assignable: assignable.has(el.vmId),
+  }));
 
-  const containers: number[] = [];
-  sorted.forEach((el, index) => {
-    if (reasons[index] === null && CONTAINER_TAGS.includes(el.tag) && !isHoverTarget(el)) {
-      containers.push(index);
-    }
-  });
+  const containers = entries.filter(
+    ({ el, reason }) => reason === null && CONTAINER_TAGS.includes(el.tag) && !isHoverTarget(el),
+  );
 
   const targets: ElementInfo[] = [];
   const skipped: { vmId: string; reason: SkipReason }[] = [];
-  sorted.forEach((el, index) => {
-    let reason = reasons[index] ?? null;
+  for (const entry of entries) {
+    if (!entry.assignable) continue;
+    const { el } = entry;
+    let { reason } = entry;
     if (reason === null && !isHoverTarget(el)) {
       const size = area(el.pageRect);
-      const nested = containers.some((at) => {
-        const container = sorted[at];
-        if (at === index || !container || container.vmId === el.vmId) return false;
-        const containerSize = area(container.pageRect);
-        if (containerSize < size || (containerSize === size && at > index)) return false;
-        return contains(container.pageRect, el.pageRect);
+      const nested = containers.some((container) => {
+        if (container === entry) return false;
+        const containerSize = area(container.el.pageRect);
+        if (containerSize < size || (containerSize === size && container.index > entry.index)) return false;
+        return contains(container.el.pageRect, el.pageRect);
       });
       if (nested) reason = "nested";
     }
     if (reason) skipped.push({ vmId: el.vmId, reason });
     else targets.push(el);
-  });
+  }
   return { targets, skipped };
 }
