@@ -10,7 +10,7 @@
  * against that pinned version"). Call sites pass `getEntry` from the
  * `animation-catalog` package.
  *
- * Nothing here calls the API; Phase 6 turns these rows into a `Diff` body.
+ * Nothing here calls the API; `useSaveFlow` turns these rows into a `Diff` body.
  */
 import type { Assignment, EditorStateMap } from "@/lib/api-client";
 import { assignmentsEqual } from "@/lib/assignment";

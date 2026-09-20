@@ -369,7 +369,7 @@ describe("ControlPanel · unsaved guard", () => {
     fireEvent.click(screen.getByRole("tab", { name: "History" }));
 
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(screen.getByText("Saving arrives with version history.")).toBeInTheDocument();
+    expect(screen.getByText("Saving isn’t available here.")).toBeInTheDocument();
   });
 
   it("makes the switch once the save flow says a version was written", async () => {
@@ -380,7 +380,7 @@ describe("ControlPanel · unsaved guard", () => {
 
     const save = within(screen.getByRole("dialog")).getByRole("button", { name: "Save" });
     expect(save).toBeEnabled();
-    expect(screen.queryByText("Saving arrives with version history.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Saving isn’t available here.")).not.toBeInTheDocument();
 
     fireEvent.click(save);
 
@@ -408,6 +408,26 @@ describe("ControlPanel · unsaved guard", () => {
     // modal. (By role the tabs are unreachable — the open dialog inerts the
     // page — so this asks the DOM rather than the accessibility tree.)
     expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
+  });
+
+  it("lets the pending tab through when the draft goes clean without a version of its own", async () => {
+    makeDirty();
+    // What the 409's "Discard my changes" leaves behind: their version is
+    // loaded, so the draft is clean — and the promise still rejects, because
+    // nothing of *mine* was written. The guard would otherwise stay open
+    // claiming unsaved changes, with a Save that could do nothing at all.
+    const onSave = vi.fn().mockRejectedValue(new Error("save cancelled"));
+    render(<ControlPanel onSave={onSave} />);
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+
+    act(() => {
+      useEditorStore.getState().loadVersion("their-version", {});
+    });
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("data-active");
   });
 
   it("switches straight away once the draft is clean again", () => {

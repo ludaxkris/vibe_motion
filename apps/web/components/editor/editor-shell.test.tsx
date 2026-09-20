@@ -596,6 +596,40 @@ describe("EditorShell save flow", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
+  it("names the next version correctly on a second save, before the list refetches", async () => {
+    const project = await createProject();
+    let answered = 0;
+    server.use(
+      http.get(api("/projects/:projectId/versions"), ({ params }) => {
+        answered += 1;
+        // The refetch after the first save never usefully answers, which is
+        // the window "Save as v1" used to be shown in while v2 was being
+        // created. (Hanging it instead would hang the save itself.)
+        if (answered > 1) {
+          return HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 });
+        }
+        return HttpResponse.json(listVersions(String(params.projectId)));
+      }),
+    );
+    await opened(project.id);
+
+    act(() => {
+      selectAndAnimate("vm-1");
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await screen.findByRole("dialog", { name: "Save as v1" });
+    fireEvent.click(screen.getByRole("button", { name: "Save version" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    act(() => {
+      selectAndAnimate("vm-2", "pulse");
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("dialog", { name: "Save as v2" })).toBeInTheDocument();
+    expect(within(screen.getByTestId("save-dialog")).getByText("from v1")).toBeInTheDocument();
+  });
+
   it("says so and offers a Retry when the project's saved animations will not load", async () => {
     const project = await createProject();
     server.use(
@@ -616,6 +650,124 @@ describe("EditorShell save flow", () => {
 
     await openLoaded();
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  it("can still save an element animated while the project's state was in flight", async () => {
+    const project = await createProject();
+    let release = () => {};
+    let asked = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inFlight = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), async ({ params }) => {
+        asked();
+        await gate;
+        return HttpResponse.json({ versionId: String(params.versionId), state: {} });
+      }),
+    );
+
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+    await act(async () => {
+      await inFlight;
+    });
+    // The click lands while `stateAt()` is still on its way: the draft is
+    // dirty before it has a version to fork from.
+    act(() => {
+      selectAndAnimate("vm-1");
+    });
+    await act(async () => {
+      release();
+      await gate;
+    });
+
+    // The answer rebases the draft rather than dropping it, so Save works —
+    // it used to refuse for ever, and only a reload (losing the work) got out.
+    await openLoaded();
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Save as v1" });
+    expect(within(dialog).getByText("vm-1")).toBeInTheDocument();
+  });
+
+  it("moves the selection the element-switch guard was holding across a 409 rebase", async () => {
+    const project = await createProject();
+    await opened(project.id);
+    act(() => {
+      selectAndAnimate("vm-1");
+    });
+    await screen.findByText("Unsaved");
+    // Another tab saves on the same parent version, so this save will 409.
+    const theirs = assignmentFor("pulse");
+    const outcome = await saveVersion(project.id, {
+      parentVersionId: project.currentVersionId,
+      catalogVersion: theirs.catalogVersion,
+      label: "Pulse on vm-3",
+      diff: { set: { "vm-3": theirs }, remove: [] },
+    });
+    if (outcome.kind !== "saved") throw new Error(`setup: the other tab's save was ${outcome.kind}`);
+
+    // A click on another element inside the frame, held by the guard.
+    act(() => {
+      useEditorStore.getState().requestSelect("vm-2");
+    });
+    const guard = await screen.findByRole("dialog", { name: /^Save changes/ });
+    fireEvent.click(within(guard).getByRole("button", { name: "Save" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save version" }));
+    await screen.findByRole("dialog", { name: "v1 was saved somewhere else" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply my changes on top" }));
+    const again = await screen.findByTestId("save-dialog");
+    fireEvent.click(within(again).getByRole("button", { name: "Save version" }));
+
+    // The rebase replaced the draft, but it took nothing away — so the
+    // selection the guard was holding still has somewhere to go once the
+    // version exists.
+    await waitFor(() => expect(selectSelectedVmId(useEditorStore.getState())).toBe("vm-2"));
+    expect(useEditorStore.getState().draftState).toEqual({
+      "vm-1": assignmentFor("fade-in"),
+      "vm-3": theirs,
+    });
+  });
+
+  it("lets the tab guard go once a 409 answered with Discard leaves the draft clean", async () => {
+    const project = await createProject();
+    await opened(project.id);
+    act(() => {
+      selectAndAnimate("vm-1");
+    });
+    await screen.findByText("Unsaved");
+
+    // The tab guard, answered with its own Save…
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    const guard = await screen.findByRole("dialog", { name: /^Save changes/ });
+    // …while another tab has saved on the same parent version.
+    const theirs = assignmentFor("pulse");
+    const outcome = await saveVersion(project.id, {
+      parentVersionId: project.currentVersionId,
+      catalogVersion: theirs.catalogVersion,
+      label: "Pulse on vm-2",
+      diff: { set: { "vm-2": theirs }, remove: [] },
+    });
+    if (outcome.kind !== "saved") throw new Error(`setup: the other tab's save was ${outcome.kind}`);
+
+    fireEvent.click(within(guard).getByRole("button", { name: "Save" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save version" }));
+    await screen.findByRole("dialog", { name: "v1 was saved somewhere else" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard my changes" }));
+
+    // Nothing of mine was written, so `requestSave()` rejects — but the draft
+    // is their version now, and a guard still asking about unsaved changes
+    // with an inert Save is a dead end.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("data-active");
+    expect(screen.getByTestId("panel-history")).toBeInTheDocument();
+    expect(useEditorStore.getState().draftState).toEqual({ "vm-2": theirs });
   });
 
   it("offers Save in the element-switch guard, and lets the selection through once it lands", async () => {
@@ -642,7 +794,7 @@ describe("EditorShell save flow", () => {
     const guard = await screen.findByRole("dialog", { name: "Save changes to h1?" });
     const save = within(guard).getByRole("button", { name: "Save" });
     expect(save).toBeEnabled();
-    expect(screen.queryByText("Saving arrives with version history.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Saving isn’t available here.")).not.toBeInTheDocument();
 
     fireEvent.click(save);
     fireEvent.click(await screen.findByRole("button", { name: "Save version" }));

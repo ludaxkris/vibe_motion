@@ -174,7 +174,7 @@ export function SaveDialogContent({
  * (`docs/design/README.md` "3. Dialogs & toast").
  *
  * Presentational and fully controlled: it neither reads the store nor calls the
- * API. `POST /projects/{id}/versions` is Phase 6's; the rows come from
+ * API. `POST /projects/{id}/versions` belongs to `useSaveFlow`; the rows come from
  * `summariseDiff` (`lib/diff-summary.ts`). Dismissing it is Cancel.
  */
 export function SaveDialog({

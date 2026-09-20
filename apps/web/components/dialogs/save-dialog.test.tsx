@@ -26,7 +26,7 @@ function props(overrides: Partial<React.ComponentProps<typeof SaveDialogContent>
     changes: CHANGES,
     onCancel: vi.fn(),
     onSave: vi.fn(),
-    // Phase 6 is what turns Save on; every frame that shows a live-looking
+    // Save is live in the editor; every frame that shows a live-looking
     // primary has to say so.
     saveDisabled: false,
     ...overrides,
