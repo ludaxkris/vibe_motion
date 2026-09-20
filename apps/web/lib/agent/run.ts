@@ -16,7 +16,7 @@ import type { BridgeClient } from "@/lib/bridge";
 import { selectAutoCandidates, type EditorStoreApi } from "@/lib/store";
 
 import { MockAnimationAgent } from "./mock-agent";
-import { MIN_TARGET_SIZE, TARGET_TAGS } from "./targets";
+import { MIN_TARGET_HEIGHT, MIN_TARGET_WIDTH, TARGET_TAGS } from "./targets";
 import type { AnimationAgent, Viewport } from "./types";
 
 export type AgentDeps = {
@@ -94,7 +94,7 @@ export async function autoGeneratePage(
   let listed: Awaited<ReturnType<BridgeClient["queryElements"]>>;
   try {
     listed = await deps.bridge.queryElements({
-      filter: { tags: [...TARGET_TAGS], minWidth: MIN_TARGET_SIZE, minHeight: MIN_TARGET_SIZE },
+      filter: { tags: [...TARGET_TAGS], minWidth: MIN_TARGET_WIDTH, minHeight: MIN_TARGET_HEIGHT },
       limit: ELEMENTS_QUERY_LIMIT,
     });
   } catch {

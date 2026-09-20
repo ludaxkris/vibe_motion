@@ -1,7 +1,14 @@
 import type { ElementInfo } from "bridge";
 import { describe, expect, it } from "vitest";
 
-import { isHoverTarget, MIN_TARGET_SIZE, selectTargets, skipReason, TARGET_TAGS } from "./targets";
+import {
+  isHoverTarget,
+  MIN_TARGET_HEIGHT,
+  MIN_TARGET_WIDTH,
+  selectTargets,
+  skipReason,
+  TARGET_TAGS,
+} from "./targets";
 
 let nextId = 0;
 function el(overrides: Partial<ElementInfo> = {}): ElementInfo {
@@ -38,13 +45,22 @@ describe("skipReason", () => {
     expect(skipReason(el({ tag: "h1", pageRect }))).toBe("too-small");
   });
 
-  it("skips a 200x39 h1 as too-small", () => {
-    const pageRect = { x: 0, y: 0, width: 200, height: 39 };
+  it("skips a 200x15 h1 as too-small", () => {
+    const pageRect = { x: 0, y: 0, width: 200, height: 15 };
     expect(skipReason(el({ tag: "h1", pageRect }))).toBe("too-small");
   });
 
-  it("accepts an element exactly MIN_TARGET_SIZE square", () => {
-    const pageRect = { x: 0, y: 0, width: MIN_TARGET_SIZE, height: MIN_TARGET_SIZE };
+  // Found by the stack e2e: browser-default headings and one-line paragraphs
+  // are under 40 px tall, and they are what Auto-generate exists for.
+  it("accepts a one-line 600x18 p and a 300x28 h2", () => {
+    expect(skipReason(el({ tag: "p", pageRect: { x: 0, y: 0, width: 600, height: 18 } }))).toBeNull();
+    expect(skipReason(el({ tag: "h2", pageRect: { x: 0, y: 0, width: 300, height: 28 } }))).toBeNull();
+  });
+
+  it("accepts an element exactly MIN_TARGET_WIDTH x MIN_TARGET_HEIGHT (40x16)", () => {
+    expect(MIN_TARGET_WIDTH).toBe(40);
+    expect(MIN_TARGET_HEIGHT).toBe(16);
+    const pageRect = { x: 0, y: 0, width: MIN_TARGET_WIDTH, height: MIN_TARGET_HEIGHT };
     expect(skipReason(el({ tag: "h1", pageRect }))).toBeNull();
   });
 

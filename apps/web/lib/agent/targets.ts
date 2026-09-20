@@ -2,8 +2,14 @@ import type { ElementInfo } from "bridge";
 
 import type { SkipReason } from "./types";
 
-/** Border-box width and height an element needs to be worth animating, in px. */
-export const MIN_TARGET_SIZE = 40;
+/**
+ * The border box an element needs to be worth animating, in px. The floor is
+ * not square: one line of text must pass (a browser-default `h1` is ~37 px
+ * tall, an `h2` ~28 px, a one-line `p` ~18 px, and those are what
+ * Auto-generate exists for), while icons, hairlines and 1-px spacers must not.
+ */
+export const MIN_TARGET_WIDTH = 40;
+export const MIN_TARGET_HEIGHT = 16;
 
 /**
  * Lower-case tag names the agent animates. Also the `filter.tags` the shell
@@ -27,7 +33,7 @@ export function isHoverTarget(el: ElementInfo): boolean {
 export function skipReason(el: ElementInfo): SkipReason | null {
   if (!el.visible) return "hidden";
   if (!TARGET_TAGS.includes(el.tag) && el.role !== "button") return "not-semantic";
-  if (el.pageRect.width < MIN_TARGET_SIZE || el.pageRect.height < MIN_TARGET_SIZE) {
+  if (el.pageRect.width < MIN_TARGET_WIDTH || el.pageRect.height < MIN_TARGET_HEIGHT) {
     return "too-small";
   }
   return null;

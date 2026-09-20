@@ -200,6 +200,11 @@ test("auto-generate fills the page by the heuristics and sends it to the frame a
   const belowFoldId = await vmIdOf(page, "#below-fold");
   const headlineId = await vmIdOf(page, "h1");
 
+  // At rest, before anything animates it: a mid-animation box is the transformed one.
+  const headlineHeight = await preview(page)
+    .locator("h1")
+    .evaluate((el) => el.getBoundingClientRect().height);
+
   const { rows, received } = await autoGenerate(page);
 
   await expect(page.getByTestId("auto-result-title")).toHaveText(/Generated \d+ animations/);
@@ -214,6 +219,16 @@ test("auto-generate fills the page by the heuristics and sends it to the frame a
   expect(rows.map((r) => r.vmId)).toEqual(
     expect.arrayContaining([headlineId, ctaId, belowFoldId]),
   );
+
+  // The target floor is 40 px wide × 16 px tall, not 40 × 40: ordinary headings
+  // and one-line text are what Auto-generate exists for. The fixture keeps
+  // browser-default heading sizes so this stays proven; do not "fix" it by
+  // enlarging them.
+  expect(headlineHeight).toBeGreaterThanOrEqual(16);
+  expect(headlineHeight).toBeLessThan(40);
+  expect(rows.some((r) => r.tag === "h2")).toBe(true);
+  expect(rows.some((r) => r.tag === "p")).toBe(true);
+  test.info().annotations.push({ type: "auto-generate rows", description: String(rows.length) });
 
   // Categories and triggers (D6): links and buttons hover, everything else
   // enters; nothing ever exits.

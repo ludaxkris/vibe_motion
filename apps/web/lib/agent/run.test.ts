@@ -6,7 +6,7 @@ import { createEditorStore, selectAgentOwnedVmIds, selectAutoResultVmIds } from 
 
 import { MockAnimationAgent } from "./mock-agent";
 import { autoGeneratePage, generateForElement, type AgentDeps } from "./run";
-import { MIN_TARGET_SIZE, TARGET_TAGS } from "./targets";
+import { MIN_TARGET_HEIGHT, MIN_TARGET_WIDTH, TARGET_TAGS } from "./targets";
 import type { AnimationAgent } from "./types";
 
 const VIEWPORT = { width: 1200, height: 600 };
@@ -63,7 +63,7 @@ describe("autoGeneratePage", () => {
     const outcome = await autoGeneratePage(deps);
 
     expect(queryElements).toHaveBeenCalledExactlyOnceWith({
-      filter: { tags: [...TARGET_TAGS], minWidth: MIN_TARGET_SIZE, minHeight: MIN_TARGET_SIZE },
+      filter: { tags: [...TARGET_TAGS], minWidth: MIN_TARGET_WIDTH, minHeight: MIN_TARGET_HEIGHT },
       limit: ELEMENTS_QUERY_LIMIT,
     });
     expect(outcome).toEqual({ ok: true, count: 4 });

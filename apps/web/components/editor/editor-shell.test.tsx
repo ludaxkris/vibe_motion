@@ -429,7 +429,7 @@ describe("EditorShell bridge", () => {
     const query = posted.mock.calls
       .map(([message]) => message as { type: string; seq: number; payload: unknown })
       .find((message) => message.type === "elements:query");
-    expect(query?.payload).toMatchObject({ filter: { minWidth: 40, minHeight: 40 }, limit: 200 });
+    expect(query?.payload).toMatchObject({ filter: { minWidth: 40, minHeight: 16 }, limit: 200 });
 
     const big = (vmId: string, tag: string, order: number) => ({
       ...info(vmId, tag),
