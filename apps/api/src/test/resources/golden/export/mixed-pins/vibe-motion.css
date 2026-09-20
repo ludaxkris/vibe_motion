@@ -1,0 +1,38 @@
+/* Vibe Motion · format 1 · v1 · saved 2026-09-20 (UTC) · catalog 1.0.0, 1.1.0 */
+
+@keyframes vm-underline-sweep-v1-0-0 { from { background-size: 0% var(--vm-thickness); } to { background-size: 100% var(--vm-thickness); } }
+@keyframes vm-fade-in-up-v1-1-0 { from { opacity: 0; transform: translateY(var(--vm-distance)); } to { opacity: 1; transform: none; } }
+@keyframes vm-hover-grow-v1-0-0 { from { transform: scale(1); } to { transform: scale(var(--vm-scale)); } }
+@keyframes vm-spin-v1-1-0 { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* load */
+  .vm-a9 {
+    background-image: linear-gradient(var(--vm-color), var(--vm-color)); background-repeat: no-repeat; background-position: 0 100%; text-decoration: none;
+    --vm-color: currentColor;
+    --vm-thickness: 2px;
+    animation: vm-underline-sweep-v1-0-0 500ms ease-out 0ms 1 normal none;
+  }
+
+  /* load */
+  .vm-a10 {
+    --vm-distance: 48px;
+    animation: vm-fade-in-up-v1-1-0 600ms ease-out 0ms 1 normal both;
+  }
+
+  /* hover: base styles and custom properties always, the animation only while hovered */
+  .vm-a15 {
+    transform-origin: center;
+    --vm-scale: 1.05;
+  }
+
+  .vm-a15:hover {
+    animation: vm-hover-grow-v1-0-0 200ms ease-out 0ms 1 normal none;
+  }
+
+  /* load */
+  .vm-a24 {
+    transform-origin: center;
+    animation: vm-spin-v1-1-0 2000ms linear 0ms infinite normal none;
+  }
+}
