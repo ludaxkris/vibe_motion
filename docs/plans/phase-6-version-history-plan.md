@@ -10,6 +10,20 @@
 
 **Spec:** `docs/build_plan.md` "Phase 6", `docs/user_flow.md` §3–§4 and the mode table, `docs/design/README.md` "History tab", "Unsaved guard", "Interactions" (409 line). Scope decision from Chris (2026-09-18): **core only** — DT-016 (localStorage draft), DT-062 (restore parent check) and DT-117 (Esc while dirty) stay deferred.
 
+## Status (2026-09-20)
+
+Tracks A and B implemented. Deviations accepted in review:
+
+- `requestSave(): Promise<void>` is the contract both guards depend on; the guard was **not** lifted (DT-099 stays open).
+- The History hook (`useVersionHistory`) is mounted once in the shell so the row and the banner share one `restoring` flag.
+- `elementCount` is omitted from v0's row (DT-159).
+- `inert` sits on the `<iframe>`, not the sheet wrapper (DT-161).
+- `markSaved(version, posted)` promotes the `posted` draft, not whatever the draft has become by the time the 201 lands.
+- An edit made before the project-open load lands is rebased onto it rather than overwritten or abandoned.
+- Esc exits viewing (returns to the current version) instead of deselecting.
+- `setMode` was removed; PR #21 must use `store.setState({ mode: "viewing" })` in its tests.
+- Deferred follow-ups are logged as DT-154..DT-167.
+
 ## Global constraints
 
 - **One branch, one PR:** `feat/6-version-history`, opened as a PR only after `feat/4-bridge-integration` merges (Chris's call). Track A below is committed to the branch early; nothing is pushed for review until Track B is done.
@@ -55,7 +69,7 @@ isEmptyDiff(diff: Diff): boolean
 statesBySeq(versions: readonly Version[]): EditorStateMap[]    // index = position in the ascending list
 ```
 
-- [ ] **Step 1: failing test**
+- [x] **Step 1: failing test**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -114,8 +128,8 @@ describe("statesBySeq", () => {
 });
 ```
 
-- [ ] **Step 2:** `pnpm --filter web test lib/versions/diff` → FAIL (module not found).
-- [ ] **Step 3: implement**
+- [x] **Step 2:** `pnpm --filter web test lib/versions/diff` → FAIL (module not found).
+- [x] **Step 3: implement**
 
 ```ts
 /**
@@ -158,8 +172,8 @@ export function statesBySeq(versions: readonly Version[]): EditorStateMap[] {
 }
 ```
 
-- [ ] **Step 4:** same command → PASS.
-- [ ] **Step 5:** `git add apps/web/lib/versions/diff*.ts && git commit -m "feat(versions): client diff, apply and fold"`
+- [x] **Step 4:** same command → PASS.
+- [x] **Step 5:** `git add apps/web/lib/versions/diff*.ts && git commit -m "feat(versions): client diff, apply and fold"`
 
 ### Task 2: `lib/versions/api.ts` — typed outcomes
 
@@ -180,7 +194,7 @@ fetchVersionState(projectId: string, versionId: string): Promise<EditorStateMap>
 fetchVersions(projectId: string): Promise<{ currentVersionId: string; versions: Version[] }>
 ```
 
-- [ ] **Step 1: failing test**
+- [x] **Step 1: failing test**
 
 ```ts
 import { http, HttpResponse } from "msw";
@@ -247,8 +261,8 @@ describe("restoreVersion", () => {
 
 Before running: open `apps/web/mocks/handlers.ts` and confirm how it builds URLs (`api("/…")`); use the same origin expression in `server.use(...)` if it is not `env.apiOrigin`.
 
-- [ ] **Step 2:** `pnpm --filter web test lib/versions/api` → FAIL.
-- [ ] **Step 3: implement**
+- [x] **Step 2:** `pnpm --filter web test lib/versions/api` → FAIL.
+- [x] **Step 3: implement**
 
 ```ts
 /**
@@ -318,8 +332,8 @@ export async function fetchVersions(projectId: string): Promise<{ currentVersion
 }
 ```
 
-- [ ] **Step 4:** PASS. Also `pnpm --filter web typecheck` (the path literals are checked against `schema.d.ts`).
-- [ ] **Step 5:** commit `feat(versions): typed outcomes for save, restore and state`.
+- [x] **Step 4:** PASS. Also `pnpm --filter web typecheck` (the path literals are checked against `schema.d.ts`).
+- [x] **Step 5:** commit `feat(versions): typed outcomes for save, restore and state`.
 
 ### Task 3: `lib/versions/queries.ts` — hooks
 
@@ -335,7 +349,7 @@ useRestoreVersion(projectId)                         // UseMutationResult<WriteO
 ```
 Both mutations invalidate `versionsKey` and `["project", projectId]` when the outcome is `saved` **or** `stale` (a stale list is exactly what a 409 proves).
 
-- [ ] **Step 1: failing test**
+- [x] **Step 1: failing test**
 
 ```tsx
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -369,7 +383,7 @@ describe("useSaveVersion", () => {
 });
 ```
 
-- [ ] **Step 2:** FAIL. **Step 3: implement**
+- [x] **Step 2:** FAIL. **Step 3: implement**
 
 ```ts
 "use client";
@@ -411,7 +425,7 @@ export function useRestoreVersion(projectId: string) {
 }
 ```
 
-- [ ] **Step 4:** PASS. **Step 5:** commit `feat(versions): query hooks`.
+- [x] **Step 4:** PASS. **Step 5:** commit `feat(versions): query hooks`.
 
 ### Task 4: `lib/versions/transitions.ts` — pure mode transitions
 
@@ -433,7 +447,7 @@ enterViewing(slice, versionId, state): VersionSlice    // throws if the draft is
 rebaseDraft(slice, newCurrentId, newCurrentState): VersionSlice  // 409 Rebase: my diff on top of theirs
 ```
 
-- [ ] **Step 1: failing test**
+- [x] **Step 1: failing test**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -469,7 +483,7 @@ describe("version transitions", () => {
 });
 ```
 
-- [ ] **Step 2:** FAIL. **Step 3: implement**
+- [x] **Step 2:** FAIL. **Step 3: implement**
 
 ```ts
 /**
@@ -524,7 +538,7 @@ export function rebaseDraft(slice: VersionSlice, newCurrentId: string, newCurren
 
 Add one test for `exitViewing` (viewing → `draftState` equals `currentVersionState`, `viewingVersionId` null) alongside the others before implementing.
 
-- [ ] **Step 4:** PASS. **Step 5:** commit `feat(versions): pure save/view/rebase transitions`.
+- [x] **Step 4:** PASS. **Step 5:** commit `feat(versions): pure save/view/rebase transitions`.
 
 ### Task 5: History components + conflict dialog + `/dev/history`
 
@@ -551,20 +565,20 @@ type ConflictDialogProps = { open: boolean; theirs: Version; onRebase(): void; o
 ```
 
 Behaviour to test (RTL, one `it` each):
-- [ ] `relativeTime`: the five buckets above with a fixed `now`.
-- [ ] `VersionRow`: renders `v5`, label, "Current" badge when `isCurrent`; clicking the row calls `onView(version.id)`; when `isViewing` it shows the diff rows ("+", "~", "−" with sr-only Added/Changed/Removed), a **Restore** button that calls `onRestore`, and **Export v5** disabled when `onExport` is absent; the current version's expanded row has no Restore.
-- [ ] `HistoryList`: three versions render newest first; v1 whose diff sets `h1` on an empty parent shows an `added` row; footer caption "Restoring creates a new version — v1 and v2 stay in the list." names the versions after the viewed one (omit the caption when nothing is being viewed).
-- [ ] `ViewingBanner`: text "Viewing v3 · read-only", buttons "Restore as v6" and "Back to v5" fire their callbacks; both disabled while `restoring`.
-- [ ] `ConflictDialog`: title "v6 was saved somewhere else", body names `theirs.label`; actions **Discard my changes** (red text, left) · **Keep editing** (secondary, `onCancel`) · **Apply my changes on top** (primary, `onRebase`). Same 380px layout as the guard dialog (handoff: "409 → reuse the guard dialog layout").
-- [ ] `app/dev/history/page.tsx`: a server page that `notFound()`s in production exactly like `app/dev/panel/page.tsx` does (copy its guard), rendering the list (nothing viewed), the list (v3 viewed), the banner, and the conflict dialog via `app/dev/static-dialog.tsx`. Do **not** add it to `dev-gallery.tsx`; Track B adds the link.
+- [x] `relativeTime`: the five buckets above with a fixed `now`.
+- [x] `VersionRow`: renders `v5`, label, "Current" badge when `isCurrent`; clicking the row calls `onView(version.id)`; when `isViewing` it shows the diff rows ("+", "~", "−" with sr-only Added/Changed/Removed), a **Restore** button that calls `onRestore`, and **Export v5** disabled when `onExport` is absent; the current version's expanded row has no Restore.
+- [x] `HistoryList`: three versions render newest first; v1 whose diff sets `h1` on an empty parent shows an `added` row; footer caption "Restoring creates a new version — v1 and v2 stay in the list." names the versions after the viewed one (omit the caption when nothing is being viewed).
+- [x] `ViewingBanner`: text "Viewing v3 · read-only", buttons "Restore as v6" and "Back to v5" fire their callbacks; both disabled while `restoring`.
+- [x] `ConflictDialog`: title "v6 was saved somewhere else", body names `theirs.label`; actions **Discard my changes** (red text, left) · **Keep editing** (secondary, `onCancel`) · **Apply my changes on top** (primary, `onRebase`). Same 380px layout as the guard dialog (handoff: "409 → reuse the guard dialog layout").
+- [x] `app/dev/history/page.tsx`: a server page that `notFound()`s in production exactly like `app/dev/panel/page.tsx` does (copy its guard), rendering the list (nothing viewed), the list (v3 viewed), the banner, and the conflict dialog via `app/dev/static-dialog.tsx`. Do **not** add it to `dev-gallery.tsx`; Track B adds the link.
 
 Each component: write its test, watch it fail, implement, pass, commit (`feat(history): <component>`). After the last one run `pnpm --filter web lint typecheck test`.
 
 ### Task 6: Track A close-out
 
-- [ ] `git diff --stat main...HEAD` — confirm every path is under `apps/web/lib/versions/`, `apps/web/components/history/`, `apps/web/components/dialogs/conflict-dialog*`, `apps/web/app/dev/history/`, `docs/plans/`, or is `save-dialog.tsx` (the `ChangeRow` export only). Anything else violates the global constraint: move it to Track B.
-- [ ] Run `pnpm gates` in the background; record the result in the worktree (it goes in the PR later).
-- [ ] Update `memory.md` on `main`: Track A done, Track B waiting on Phase 4.
+- [x] `git diff --stat main...HEAD` — confirm every path is under `apps/web/lib/versions/`, `apps/web/components/history/`, `apps/web/components/dialogs/conflict-dialog*`, `apps/web/app/dev/history/`, `docs/plans/`, or is `save-dialog.tsx` (the `ChangeRow` export only). Anything else violates the global constraint: move it to Track B.
+- [x] Run `pnpm gates` in the background; record the result in the worktree (it goes in the PR later).
+- [x] Update `memory.md` on `main`: Track A done, Track B waiting on Phase 4.
 
 ---
 
@@ -574,11 +588,11 @@ Each component: write its test, watch it fail, implement, pass, commit (`feat(hi
 
 Rebase onto `main`. Verify each assumption and fix this plan's text in the same commit where one fails:
 
-- [ ] The store is a factory `createEditorStore()` and still exposes `draftState`, `currentVersionState`, `mode`, `revertDraft`, `reset`, `selectUnsaved`, `selectDirtyVmIds`.
+- [x] The store is a factory `createEditorStore()` and still exposes `draftState`, `currentVersionState`, `mode`, `revertDraft`, `reset`, `selectUnsaved`, `selectDirtyVmIds`.
 - [ ] The guard was lifted (DT-099): find where `UnsavedGuardDialog` is mounted, what opens it (`selectGuardOpen` / `resolveGuard` per the Phase 4 plan), and that `onSave` is an optional prop rendering disabled when absent.
-- [ ] The bridge client exposes a way to push a whole state (`state:load`) and the shell already mirrors `draftState` into the iframe. If the mirror is per-assignment `apply` only, Task 8 adds a `loadState(state)` call on the four transitions that replace the draft wholesale.
-- [ ] Whether Phase 5 Track A has merged (`panel-machine.ts` `auto` state, `CHANGE` event). If it has not, tell that session via memory.md before touching `store/index.ts` or `control-panel/index.tsx`.
-- [ ] `editor-shell.tsx` still has local `fetchVersions` + the `["project", id, "versions"]` query to replace with `useVersions`. **Hard rule:** that local query resolves to `Version[]` while `useVersions` resolves to `{ currentVersionId, versions }` under the *same key*. They share one cache entry, so if both are ever mounted together the editor throws on render (`data.find is not a function`). Delete the local `fetchVersions` + query in the **same commit** that first mounts `useVersions` or `HistoryList`; never land a partial wiring step.
+- [x] The bridge client exposes a way to push a whole state (`state:load`) and the shell already mirrors `draftState` into the iframe. If the mirror is per-assignment `apply` only, Task 8 adds a `loadState(state)` call on the four transitions that replace the draft wholesale.
+- [x] Whether Phase 5 Track A has merged (`panel-machine.ts` `auto` state, `CHANGE` event). If it has not, tell that session via memory.md before touching `store/index.ts` or `control-panel/index.tsx`.
+- [x] `editor-shell.tsx` still has local `fetchVersions` + the `["project", id, "versions"]` query to replace with `useVersions`. **Hard rule:** that local query resolves to `Version[]` while `useVersions` resolves to `{ currentVersionId, versions }` under the *same key*. They share one cache entry, so if both are ever mounted together the editor throws on render (`data.find is not a function`). Delete the local `fetchVersions` + query in the **same commit** that first mounts `useVersions` or `HistoryList`; never land a partial wiring step.
 
 #### Task 7 results (2026-09-19, against `main` dfb8b8b = Phase 4 PR #18 + Phase 5 Track A) — these override the task text below where they differ
 

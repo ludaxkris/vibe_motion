@@ -74,9 +74,10 @@ sequenceDiagram
     E-->>D: toast "Saved v(n+1)" · history list gains an entry
   else another tab saved first
     A-->>E: 409 { currentVersion }
-    E-->>D: "Project changed elsewhere (v(n+1)). Rebase my changes onto it, or discard?"
-    D->>E: Rebase
-    E->>E: reload v(n+1) state, re-apply draft on top, retry Save
+    E-->>D: conflict dialog: "v(n+1) was saved somewhere else" — Apply my changes on top · Discard my changes · Keep editing
+    D->>E: Apply my changes on top
+    E->>E: reload v(n+1) state, replay draft's own diff on top (rebase)
+    E-->>D: Save dialog reopens, forked from v(n+1) · D confirms Save again (never an automatic retry)
   end
 ```
 
@@ -101,6 +102,7 @@ flowchart TD
 
 - Restoring never deletes or rewrites history. v4 and v5 remain and can be viewed or restored later.
 - Any saved version can be exported directly while viewing it, without restoring.
+- Pressing Esc, or switching away from the History tab, returns to the current version the same way "Back to current" does. Save and Cancel are hidden (not merely disabled) for the whole time the editor is viewing — there is no draft of the viewer's own to save or cancel.
 
 ## 5. Publishing (export) to the local machine
 

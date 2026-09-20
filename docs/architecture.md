@@ -142,8 +142,8 @@ sequenceDiagram
   W->>A: GET /projects/{id}/versions/v3/state
   A->>A: stateAt(v3) = fold diffs v0..v3
   A-->>W: full state
-  W->>F: postMessage state:load { state }
-  F->>F: clear all inline vm styles, apply each assignment
+  W->>W: draftState replaced wholesale with v3's state
+  W->>F: bridge client mirrors the diff: apply/clear per changed element,<br/>or one postMessage state:load above the bulk-apply limit
   W->>W: editor mode: viewing v3 (read-only)
   D->>W: click Restore
   W->>A: POST /projects/{id}/versions/v3/restore
@@ -178,7 +178,7 @@ sequenceDiagram
 ```mermaid
 flowchart LR
   subgraph shell["web origin · editor shell"]
-    store["Zustand store<br/>selectedVmId · draftState · currentVersionState · unsaved · mode"]
+    store["Zustand store<br/>selectedVmId · draftState · currentVersionState · unsaved · mode<br/>currentVersionId · viewingVersionId<br/>loadVersion · markSaved · enterViewing · exitViewing · rebaseDraft"]
     panel["Control Panel<br/>idle → selected → choosing → tuning"]
     bridgeClient["bridge client<br/>origin-checked postMessage"]
     store <--> panel
