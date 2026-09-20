@@ -121,7 +121,11 @@ class CssEmitter(
             // styles stay unconditional: they are inert on their own, and the animation reads them.
             Trigger.HOVER -> {
                 group(
-                    "hover: base styles and custom properties always, the animation only while hovered",
+                    if (resting.isEmpty()) {
+                        "hover"
+                    } else {
+                        "hover: base styles and custom properties always, the animation only while hovered"
+                    },
                     listOfNotNull(
                         rule(".$className", resting).takeIf { resting.isNotEmpty() },
                         rule(".$className:hover", listOf(animation)),

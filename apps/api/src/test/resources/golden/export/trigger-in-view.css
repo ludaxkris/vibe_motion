@@ -1,0 +1,26 @@
+/* Vibe Motion · format 1 · v5 · saved 2026-09-20 (UTC) · catalog 1.1.0 */
+
+@keyframes vm-fade-in-up-v1-1-0 { from { opacity: 0; transform: translateY(var(--vm-distance)); } to { opacity: 1; transform: none; } }
+@keyframes vm-flip-in-x-v1-1-0 { from { opacity: 0; transform: perspective(600px) rotateX(var(--vm-angle)); } to { opacity: 1; transform: perspective(600px) rotateX(0); } }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* in-view */
+  :where(.vm-js) .vm-a63 {
+    --vm-distance: 24px;
+    animation: vm-fade-in-up-v1-1-0 600ms ease-out 0ms 1 normal both;
+  }
+
+  /* in-view */
+  :where(.vm-js) .vm-a64 {
+    backface-visibility: hidden;
+    --vm-angle: -90deg;
+    animation: vm-flip-in-x-v1-1-0 700ms ease-out 0ms 1 normal both;
+  }
+
+  /* in-view: held on its first keyframe until the script says it is on screen */
+  :where(.vm-js) .vm-in-view:not(.vm-play) {
+    animation-play-state: paused;
+    animation-delay: 0s;
+    animation-fill-mode: both;
+  }
+}

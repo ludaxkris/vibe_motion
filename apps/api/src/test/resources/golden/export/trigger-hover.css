@@ -1,0 +1,21 @@
+/* Vibe Motion · format 1 · v5 · saved 2026-09-20 (UTC) · catalog 1.1.0 */
+
+@keyframes vm-hover-grow-v1-1-0 { from { transform: scale(1); } to { transform: scale(var(--vm-scale)); } }
+@keyframes vm-fade-out-v1-1-0 { from { opacity: 1; } to { opacity: 0; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* hover: base styles and custom properties always, the animation only while hovered */
+  .vm-a42 {
+    transform-origin: center;
+    --vm-scale: 1.05;
+  }
+
+  .vm-a42:hover {
+    animation: vm-hover-grow-v1-1-0 200ms ease-out 0ms 1 normal forwards;
+  }
+
+  /* hover */
+  .vm-a43:hover {
+    animation: vm-fade-out-v1-1-0 500ms ease-in 0ms 1 normal forwards;
+  }
+}
