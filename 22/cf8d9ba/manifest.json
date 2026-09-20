@@ -1,0 +1,18 @@
+{
+  "branch": "feat/6-version-history",
+  "sha": "cf8d9ba0498cec6350dd6065133a976ec5894709",
+  "viewport": "1440×900",
+  "names": [
+    "dev-history",
+    "editor-loaded",
+    "editor-element-ready",
+    "editor-unsaved",
+    "save-dialog-v1",
+    "after-save-v1",
+    "after-save-v2",
+    "history-tab-list",
+    "history-viewing-past-version",
+    "after-restore"
+  ],
+  "diffs": {}
+}
