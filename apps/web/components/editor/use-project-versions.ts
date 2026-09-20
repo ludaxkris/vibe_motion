@@ -203,12 +203,12 @@ export function useProjectVersions(
     versions,
     currentVersion,
     currentVersionLabel: currentVersion ? label(currentVersion.seq) : undefined,
-    // The high-water mark of both, never the list alone: the version the draft
-    // was forked from is the one the next save's parent will be, and "Save as
-    // v1" while v2 is being created is a lie about what the button does.
-    nextVersionLabel: label(
-      versions.reduce((max, v) => Math.max(max, v.seq), currentVersion?.seq ?? 0) + 1,
-    ),
+    // The list's own high-water mark + 1: a write puts its own 201 straight
+    // into the list cache (`useRefreshOn` in `lib/versions/queries.ts`), so
+    // this is current immediately after a save or a restore, not just after
+    // the next refetch. The one known gap is a 409 whose list refetch also
+    // fails (DT-155).
+    nextVersionLabel: label(versions.reduce((max, v) => Math.max(max, v.seq), 0) + 1),
     loadError,
     retryLoad,
   };
