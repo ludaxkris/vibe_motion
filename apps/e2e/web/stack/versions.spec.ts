@@ -136,20 +136,26 @@ test.describe("version history", () => {
       if (req.method() === "GET") return;
       if (req.url().startsWith(stack.apiOrigin)) writes.push(`${req.method()} ${req.url()}`);
     });
+    // The exact request a Save is allowed to make, and nothing else: scoped to
+    // *this* test's project, so a write against another project would fail the
+    // comparison rather than pass as "one write".
+    const versionsWrite = `POST ${stack.apiOrigin}/projects/${projectId}/versions`;
 
     await applyFadeInUp(page, headline);
     expect(writes, "no write before the first Save").toEqual([]);
     expect((await listVersions(request, projectId)).versions).toHaveLength(1);
 
     await saveVersion(page, 1);
-    expect(writes).toHaveLength(1);
+    expect(writes, "the first Save posts one version").toEqual([versionsWrite]);
 
     const durations = [700, 800, 900, 1000];
     for (const [index, ms] of durations.entries()) {
       await setDuration(page, headline, ms);
       await saveVersion(page, index + 2);
     }
-    expect(writes).toHaveLength(5);
+    // Five saves, five posts to the versions endpoint, nothing else — in
+    // particular no write from the live tuning in between (CLAUDE.md rule 9).
+    expect(writes).toEqual(Array.from({ length: 5 }, () => versionsWrite));
 
     const afterFive = await listVersions(request, projectId);
     expect(afterFive.versions.map((v) => v.seq).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5]);
@@ -157,9 +163,13 @@ test.describe("version history", () => {
     // History tab: the draft is clean (last action was a Save), so no guard.
     await page.getByRole("tab", { name: "History" }).click();
     const historyPanel = page.getByTestId("panel-history");
-    await expect(historyPanel.getByRole("button")).toHaveCount(6);
+    // One per version, counted by the thing only a version row has: its
+    // expand/collapse button (`components/history/version-row.tsx`). Counting
+    // every `button` in the panel would also count an expanded row's Restore
+    // and Export, or any button a future panel header grows.
+    const rows = historyPanel.locator("button[aria-expanded]");
+    await expect(rows).toHaveCount(6);
     // Newest first, v5 marked Current.
-    const rows = historyPanel.getByRole("button");
     await expect(rows.first()).toContainText("v5");
     await expect(rows.first()).toContainText("Current");
 
@@ -173,8 +183,9 @@ test.describe("version history", () => {
     const v2State = await getVersionState(request, projectId, v2.id);
     expect(Object.keys(v2State.state)).toHaveLength(1);
     const [v2VmId, v2Assignment] = Object.entries(v2State.state)[0];
+    // `durations[0]` — "700ms" — is what this save wrote, but the assertion of
+    // record is the api-derived comparison below, not a literal in here.
     const v2Duration = v2Assignment.params.duration;
-    expect(v2Duration).toBe("700ms"); // durations[0], the value saved as v2
 
     await expect(async () => {
       const value = await headline.evaluate((el) => (el as HTMLElement).style.animationDuration);
@@ -190,9 +201,16 @@ test.describe("version history", () => {
     await expect(page.getByText("Viewing v2 · read-only")).toHaveCount(0);
     await expect(versionChip(page).getByText("v6", { exact: true })).toBeVisible();
 
-    await expect(historyPanel.getByRole("button")).toHaveCount(7);
-    await expect(historyPanel.getByRole("button").first()).toContainText("v6");
-    await expect(historyPanel.getByRole("button").first()).toContainText("Current");
+    // A restore is its own endpoint, and it is the only write the whole flow
+    // added on top of the five saves.
+    expect(writes).toEqual([
+      ...Array.from({ length: 5 }, () => versionsWrite),
+      `POST ${stack.apiOrigin}/projects/${projectId}/versions/${v2.id}/restore`,
+    ]);
+
+    await expect(rows).toHaveCount(7);
+    await expect(rows.first()).toContainText("v6");
+    await expect(rows.first()).toContainText("Current");
 
     const afterRestore = await listVersions(request, projectId);
     const v6 = bySeq(afterRestore.versions, 6);
@@ -245,7 +263,27 @@ test.describe("version history", () => {
     await page.getByRole("button", { name: "Apply my changes on top" }).click();
 
     // The dialog reopens, now forked from v2, with only A's own change.
-    await expect(page.getByTestId("save-dialog")).toContainText("Save as v3");
+    const saveDialog = page.getByTestId("save-dialog");
+    await expect(saveDialog).toContainText("Save as v3");
+
+    // …and "Changes in this version" proves the rebase replayed *only* A's
+    // diff: B's `.cta` assignment arrived as the new base
+    // (`applyDiff(theirs, mine)`), so it is not a change in this version, and
+    // A's duration edit is — as a change, not an addition.
+    const headlineVmId = await headline.getAttribute("data-vm-id");
+    const ctaVmId = await cta.getAttribute("data-vm-id");
+    const changeRows = saveDialog
+      .getByRole("list", { name: "Changes in this version" })
+      .getByRole("listitem");
+    await expect(changeRows).toHaveCount(1);
+    const onlyChange = changeRows.first();
+    // The sign column is a colour plus an sr-only word ("Added"/"Changed"/"Removed").
+    await expect(onlyChange).toContainText("Changed");
+    await expect(onlyChange.locator('[data-slot="element-tag"]')).toHaveText(headlineVmId ?? "");
+    await expect(onlyChange).toContainText(/duration \S+ → 750ms/);
+    // Nothing in the dialog mentions the element the other tab animated.
+    await expect(saveDialog.getByText(ctaVmId ?? "", { exact: true })).toHaveCount(0);
+
     await page.getByRole("button", { name: "Save version" }).click();
     await expectToast(page, "Saved v3");
 
