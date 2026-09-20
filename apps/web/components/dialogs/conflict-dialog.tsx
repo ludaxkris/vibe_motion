@@ -22,6 +22,12 @@ export type ConflictDialogContentProps = {
    * than closing over a draft whose fate is undecided.
    */
   error?: string;
+  /**
+   * An answer is being carried out. All three are refused: each one is a
+   * `stateAt(theirs)` fetch, and a second click would either start a second
+   * fetch or be dropped in silence.
+   */
+  busy?: boolean;
   /** Supplied by the modal wrapper so the popup can point `aria-labelledby` here. */
   titleId?: string;
   /** Supplied by the modal wrapper so the popup can point `aria-describedby` here. */
@@ -39,6 +45,7 @@ export function ConflictDialogContent({
   onDiscard,
   onCancel,
   error,
+  busy = false,
   titleId,
   descriptionId,
 }: ConflictDialogContentProps) {
@@ -73,13 +80,15 @@ export function ConflictDialogContent({
 
       <div className="mt-1.5 flex items-center gap-2">
         {/* Destructive actions are red text links, on the left (handoff, "Copy rules"). */}
-        <Button variant="danger-link" onClick={onDiscard}>
+        <Button variant="danger-link" disabled={busy} onClick={onDiscard}>
           Discard my changes
         </Button>
-        <Button variant="secondary" className="ml-auto" onClick={onCancel}>
+        <Button variant="secondary" className="ml-auto" disabled={busy} onClick={onCancel}>
           Keep editing
         </Button>
-        <Button onClick={onRebase}>Apply my changes on top</Button>
+        <Button disabled={busy} onClick={onRebase}>
+          Apply my changes on top
+        </Button>
       </div>
     </div>
   );

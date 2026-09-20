@@ -66,6 +66,17 @@ describe("ConflictDialogContent", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("refuses every answer while one of them is being carried out", () => {
+    render(<ConflictDialogContent theirs={THEIRS} {...callbacks()} busy />);
+
+    // All three need `stateAt(theirs)`; while that is in flight a second click
+    // would start a second fetch, and dropping it silently is worse than
+    // saying so.
+    for (const name of ["Discard my changes", "Keep editing", "Apply my changes on top"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    }
+  });
+
   it("fires each action's own callback", () => {
     const handlers = callbacks();
     render(<ConflictDialogContent theirs={THEIRS} {...handlers} />);

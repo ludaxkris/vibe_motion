@@ -594,6 +594,28 @@ describe("EditorShell save flow", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
+  it("says so and offers a Retry when the project's saved animations will not load", async () => {
+    const project = await createProject();
+    server.use(
+      http.get(
+        api("/projects/:projectId/versions/:versionId/state"),
+        () => HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 }),
+        { once: true },
+      ),
+    );
+
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+
+    const banner = await screen.findByRole("alert");
+    expect(banner).toHaveTextContent(/saved animations/i);
+
+    fireEvent.click(within(banner).getByRole("button", { name: "Retry" }));
+
+    await openLoaded();
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
   it("offers Save in the element-switch guard, and lets the selection through once it lands", async () => {
     const project = await createProject();
     await opened(project.id);

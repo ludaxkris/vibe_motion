@@ -12,7 +12,9 @@ import { versionStateKey } from "@/lib/versions/queries";
 import { createProject, createVersion } from "@/mocks/db";
 import { server } from "@/mocks/server";
 
-import { useProjectVersions } from "./use-project-versions";
+import { useToastStore } from "@/components/ui/toast";
+
+import { useProjectVersions, VERSION_LOAD_FAILED } from "./use-project-versions";
 
 const api = (path: string) => `${env.apiOrigin}${path}`;
 
@@ -32,10 +34,14 @@ function assignment(animationId: string): Assignment {
 }
 
 /** A project whose current version is `v1`, animating `vm-1`. */
-function projectWithOneSave(): { project: Project; v1: Version; saved: Assignment } {
+function projectWithOneSave(animationId = "fade-in"): {
+  project: Project;
+  v1: Version;
+  saved: Assignment;
+} {
   const created = createProject("https://example.com/pricing");
   if (created.status !== 201) throw new Error("setup: could not create the project");
-  const saved = assignment("fade-in");
+  const saved = assignment(animationId);
   const result = createVersion(created.body.id, {
     parentVersionId: created.body.currentVersionId,
     catalogVersion: saved.catalogVersion,
@@ -48,6 +54,7 @@ function projectWithOneSave(): { project: Project; v1: Version; saved: Assignmen
 
 beforeEach(() => {
   useEditorStore.setState({ ...initialEditorState });
+  useToastStore.setState({ current: null });
 });
 
 describe("useProjectVersions", () => {
@@ -214,6 +221,25 @@ describe("useProjectVersions", () => {
     expect(useEditorStore.getState().currentVersionId).toBeNull();
   });
 
+  it("gives the same empty list every render, so a consumer may depend on its identity", async () => {
+    const { project } = projectWithOneSave();
+    const { Wrapper } = harness();
+    server.use(
+      http.get(api("/projects/:projectId/versions"), async () => {
+        await delay("infinite");
+        return HttpResponse.json({});
+      }),
+    );
+
+    const { result, rerender } = renderHook(() => useProjectVersions(project.id, project), {
+      wrapper: Wrapper,
+    });
+    const first = result.current.versions;
+    rerender();
+
+    expect(result.current.versions).toBe(first);
+  });
+
   it("has no label to offer before the list lands, and still names the first save", async () => {
     const { project } = projectWithOneSave();
     const { Wrapper } = harness();
@@ -231,5 +257,144 @@ describe("useProjectVersions", () => {
     expect(result.current.currentVersionLabel).toBeUndefined();
     // v1 is the lowest a save can ever create: v0 is the clone itself.
     expect(result.current.nextVersionLabel).toBe("v1");
+  });
+});
+
+describe("useProjectVersions · a load that fails", () => {
+  it("reports the failure and says so out loud, rather than opening an empty draft in silence", async () => {
+    const { project } = projectWithOneSave();
+    const { Wrapper } = harness();
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), () =>
+        HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 }),
+      ),
+    );
+
+    const { result } = renderHook(() => useProjectVersions(project.id, project), {
+      wrapper: Wrapper,
+    });
+
+    await waitFor(() => expect(result.current.loadError).toBe(VERSION_LOAD_FAILED));
+    expect(useToastStore.getState().current?.message).toBe(VERSION_LOAD_FAILED);
+    // The editor is showing an empty draft over a project that has animations;
+    // the one thing it must not do is pretend that is the saved state.
+    expect(useEditorStore.getState().currentVersionId).toBeNull();
+  });
+
+  it("loads the version and clears the error when the retry gets through", async () => {
+    const { project, v1, saved } = projectWithOneSave();
+    const { Wrapper } = harness();
+    server.use(
+      http.get(
+        api("/projects/:projectId/versions/:versionId/state"),
+        () => HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 }),
+        { once: true },
+      ),
+    );
+
+    const { result } = renderHook(() => useProjectVersions(project.id, project), {
+      wrapper: Wrapper,
+    });
+    await waitFor(() => expect(result.current.loadError).toBe(VERSION_LOAD_FAILED));
+
+    act(() => {
+      result.current.retryLoad();
+    });
+
+    await waitFor(() => expect(useEditorStore.getState().currentVersionId).toBe(v1.id));
+    expect(useEditorStore.getState().draftState).toEqual({ "vm-1": saved });
+    expect(result.current.loadError).toBeNull();
+  });
+
+  it("retries the list itself when that is what never landed", async () => {
+    const { project, v1 } = projectWithOneSave();
+    const { Wrapper } = harness();
+    server.use(
+      http.get(
+        api("/projects/:projectId/versions"),
+        () => HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 }),
+        { once: true },
+      ),
+    );
+
+    const { result } = renderHook(() => useProjectVersions(project.id, project), {
+      wrapper: Wrapper,
+    });
+    await waitFor(() => expect(result.current.versions).toEqual([]));
+
+    act(() => {
+      result.current.retryLoad();
+    });
+
+    await waitFor(() => expect(useEditorStore.getState().currentVersionId).toBe(v1.id));
+  });
+
+  it("never lands one project's state in another project's editor", async () => {
+    // The shell `reset()`s on a project change instead of remounting, so an
+    // answer for the project the user has left finds a store that looks
+    // untouched — and would overwrite the project they are now on.
+    const a = projectWithOneSave("fade-in");
+    const b = projectWithOneSave("pulse");
+    const { Wrapper } = harness();
+
+    /** One gate per version, so each answer can be released on its own. */
+    type Gate = { open: () => void; blocked: Promise<void>; ask: () => void; asked: Promise<void> };
+    const gates = new Map<string, Gate>();
+    for (const id of [a.v1.id, b.v1.id]) {
+      const gate = {} as Gate;
+      gate.blocked = new Promise<void>((resolve) => {
+        gate.open = resolve;
+      });
+      gate.asked = new Promise<void>((resolve) => {
+        gate.ask = resolve;
+      });
+      gates.set(id, gate);
+    }
+    const stateOf: Record<string, Assignment> = {
+      [a.v1.id]: a.saved,
+      [b.v1.id]: b.saved,
+    };
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), async ({ params }) => {
+        const versionId = String(params.versionId);
+        const gate = gates.get(versionId);
+        gate?.ask();
+        await gate?.blocked;
+        return HttpResponse.json({ versionId, state: { "vm-1": stateOf[versionId] } });
+      }),
+    );
+
+    const { rerender } = renderHook(
+      ({ project }: { project: Project }) => useProjectVersions(project.id, project),
+      { wrapper: Wrapper, initialProps: { project: a.project } },
+    );
+    await act(async () => {
+      await gates.get(a.v1.id)?.asked;
+    });
+
+    // What the shell does on a project change.
+    act(() => {
+      useEditorStore.getState().reset();
+    });
+    rerender({ project: b.project });
+    await act(async () => {
+      await gates.get(b.v1.id)?.asked;
+    });
+
+    // A's answer arrives while B's is still in flight, so the store genuinely
+    // is untouched — the only thing that can refuse it is the project it
+    // belongs to.
+    await act(async () => {
+      gates.get(a.v1.id)?.open();
+      await Promise.resolve();
+    });
+    expect(useEditorStore.getState().currentVersionId).toBeNull();
+
+    await act(async () => {
+      gates.get(b.v1.id)?.open();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(useEditorStore.getState().currentVersionId).toBe(b.v1.id));
+    expect(useEditorStore.getState().draftState).toEqual({ "vm-1": b.saved });
   });
 });

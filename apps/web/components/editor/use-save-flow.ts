@@ -43,12 +43,21 @@ const MAX_RETRY_SECONDS = 5;
 /** When the API could not even be asked — `fetchVersionState` throws rather than answering. */
 const LOAD_FAILED = "Could not load this version";
 
+/**
+ * Save with no parent version to fork from: the project's open load never
+ * landed (`useProjectVersions`). Said out loud, because the top bar's Save is
+ * enabled the moment the draft is dirty and refusing in silence made it a
+ * button that did nothing at all.
+ */
+export const CANNOT_SAVE_YET =
+  "Can't save yet — this project's current version didn't load. Retry, or reload the page.";
+
 type Settle = { resolve: () => void; reject: (reason: Error) => void };
 
 type Stage =
   | { kind: "closed" }
   | { kind: "save"; label: string; changes: readonly DiffRow[]; error?: string; saving: boolean }
-  | { kind: "conflict"; theirs: Version; error?: string };
+  | { kind: "conflict"; theirs: Version; error?: string; busy: boolean };
 
 export type SaveFlow = {
   /**
@@ -76,14 +85,22 @@ function summarise(state: EditorState) {
   return summariseDiff(state.currentVersionState, state.draftState, getCatalogEntryAt);
 }
 
+export type SaveFlowOptions = {
+  /** "v5" — the version the draft forked from, shown as "from v5". */
+  currentVersionLabel?: string;
+  /** "v6" — the version this save would create. */
+  nextVersionLabel: string;
+  /**
+   * `useProjectVersions`' retry. Called when a save is asked for and there is
+   * no current version to fork from, so the one action that can unstick the
+   * screen happens on the click that discovered the problem.
+   */
+  retryLoad?: () => void;
+};
+
 export function useSaveFlow(
   projectId: string,
-  labels: {
-    /** "v5" — the version the draft forked from, shown as "from v5". */
-    currentVersionLabel?: string;
-    /** "v6" — the version this save would create. */
-    nextVersionLabel: string;
-  },
+  { currentVersionLabel, nextVersionLabel, retryLoad }: SaveFlowOptions,
 ): SaveFlow {
   const [stage, setStage] = useState<Stage>({ kind: "closed" });
   /** The resolvers of the promise `requestSave` handed out, while one is outstanding. */
@@ -115,10 +132,19 @@ export function useSaveFlow(
     if (pending.current) return pending.current;
 
     const state = useEditorStore.getState();
-    // Nothing to ask about: a clean draft would post an empty diff, viewing is
-    // read-only (`markSaved` throws there), and with no current version there
-    // is nothing to fork from — the project's open load has not landed.
-    if (state.mode === "viewing" || state.currentVersionId === null || !selectUnsaved(state)) {
+    // Nothing to ask about: a clean draft would post an empty diff, and
+    // viewing is read-only (`markSaved` throws there). Neither is worth a
+    // word — the Save button is disabled in both.
+    if (state.mode === "viewing" || !selectUnsaved(state)) {
+      return Promise.reject(new Error(CANCELLED));
+    }
+
+    // Dirty, but with nothing to fork from: the project's open load failed, so
+    // this draft is sitting on top of a state the editor never read. Say so,
+    // and ask for that load again on the way out.
+    if (state.currentVersionId === null) {
+      toast(CANNOT_SAVE_YET);
+      retryLoad?.();
       return Promise.reject(new Error(CANCELLED));
     }
 
@@ -129,7 +155,7 @@ export function useSaveFlow(
     });
     pending.current = promise;
     return promise;
-  }, []);
+  }, [toast, retryLoad]);
 
   /** The POST, with the single `busy` retry. A second `busy` comes back as `busy`. */
   async function post(body: CreateVersionRequest): Promise<WriteOutcome> {
@@ -176,7 +202,7 @@ export function useSaveFlow(
         case "stale":
           // The draft is untouched and the promise still outstanding: the
           // conflict dialog is the rest of this same question.
-          setStage({ kind: "conflict", theirs: outcome.currentVersion });
+          setStage({ kind: "conflict", theirs: outcome.currentVersion, busy: false });
           return;
         case "busy":
           failSave(BUSY_MESSAGE);
@@ -194,10 +220,24 @@ export function useSaveFlow(
     }
   }
 
+  /** The conflict dialog, while one of its three answers is being carried out. */
+  const conflictBusy = (busy: boolean) =>
+    setStage((current) =>
+      current.kind === "conflict" ? { ...current, busy, error: undefined } : current,
+    );
+
+  const failConflict = (cause: unknown) =>
+    setStage((current) =>
+      current.kind === "conflict"
+        ? { ...current, busy: false, error: messageOf(cause, LOAD_FAILED) }
+        : current,
+    );
+
   /** Apply my changes on top: replay my diff onto theirs, then ask again. */
   async function rebase(theirs: Version): Promise<void> {
     if (running.current) return;
     running.current = true;
+    conflictBusy(true);
     try {
       const theirState = await fetchVersionState(projectId, theirs.id);
       rebaseDraft(theirs.id, theirState);
@@ -216,11 +256,7 @@ export function useSaveFlow(
       const { rows, label } = summarise(rebased);
       setStage({ kind: "save", label, changes: rows, saving: false });
     } catch (cause) {
-      setStage((current) =>
-        current.kind === "conflict"
-          ? { ...current, error: messageOf(cause, LOAD_FAILED) }
-          : current,
-      );
+      failConflict(cause);
     } finally {
       running.current = false;
     }
@@ -230,17 +266,14 @@ export function useSaveFlow(
   async function discard(theirs: Version): Promise<void> {
     if (running.current) return;
     running.current = true;
+    conflictBusy(true);
     try {
       const theirState = await fetchVersionState(projectId, theirs.id);
       loadVersion(theirs.id, theirState);
       toast(`Loaded v${theirs.seq}`);
       finish(false);
     } catch (cause) {
-      setStage((current) =>
-        current.kind === "conflict"
-          ? { ...current, error: messageOf(cause, LOAD_FAILED) }
-          : current,
-      );
+      failConflict(cause);
     } finally {
       running.current = false;
     }
@@ -250,8 +283,8 @@ export function useSaveFlow(
     save:
       stage.kind === "save"
         ? {
-            nextVersionLabel: labels.nextVersionLabel,
-            fromVersionLabel: labels.currentVersionLabel,
+            nextVersionLabel,
+            fromVersionLabel: currentVersionLabel,
             label: stage.label,
             onLabelChange: (label) =>
               setStage((current) => (current.kind === "save" ? { ...current, label } : current)),
@@ -271,6 +304,7 @@ export function useSaveFlow(
         ? {
             theirs: stage.theirs,
             error: stage.error,
+            busy: stage.busy,
             onRebase: () => void rebase(stage.theirs),
             onDiscard: () => void discard(stage.theirs),
             onCancel: () => {

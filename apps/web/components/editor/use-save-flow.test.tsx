@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { useEffect, type ReactNode } from "react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Toaster, useToastStore } from "@/components/ui/toast";
 import type { Assignment, Project } from "@/lib/api-client";
@@ -14,7 +14,7 @@ import { createProject, getVersionState, listVersions } from "@/mocks/db";
 import { server } from "@/mocks/server";
 
 import { SaveFlowDialogs } from "./save-flow-dialogs";
-import { useSaveFlow } from "./use-save-flow";
+import { CANNOT_SAVE_YET, useSaveFlow } from "./use-save-flow";
 
 const api = (path: string) => `${env.apiOrigin}${path}`;
 
@@ -25,12 +25,14 @@ function Harness({
   projectId,
   currentVersionLabel = "v0",
   nextVersionLabel = "v1",
+  retryLoad,
 }: {
   projectId: string;
   currentVersionLabel?: string;
   nextVersionLabel?: string;
+  retryLoad?: () => void;
 }) {
-  const flow = useSaveFlow(projectId, { currentVersionLabel, nextVersionLabel });
+  const flow = useSaveFlow(projectId, { currentVersionLabel, nextVersionLabel, retryLoad });
   useEffect(() => {
     requestSave = flow.requestSave;
   }, [flow.requestSave]);
@@ -43,12 +45,12 @@ function Harness({
   );
 }
 
-function renderFlow(projectId: string) {
+function renderFlow(projectId: string, retryLoad?: () => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
-  return render(<Harness projectId={projectId} />, { wrapper: Wrapper });
+  return render(<Harness projectId={projectId} retryLoad={retryLoad} />, { wrapper: Wrapper });
 }
 
 /** What the caller of `requestSave()` learns: it resolves only on a real save. */
@@ -192,6 +194,25 @@ describe("useSaveFlow", () => {
     await waitFor(() => expect(flow.status).toBe("rejected"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(listVersions(project.id)?.versions).toHaveLength(1);
+  });
+
+  it("says why it cannot save yet, and asks for the failed load again", async () => {
+    // The project's open load never landed, so there is no parent version to
+    // fork from. Refusing in silence left an enabled Save button that did
+    // nothing at all.
+    const created = createProject("https://example.com/pricing");
+    if (created.status !== 201) throw new Error("setup: could not create the project");
+    const retryLoad = vi.fn();
+    animate("vm-1");
+    renderFlow(created.body.id, retryLoad);
+
+    const flow = startSave();
+
+    await waitFor(() => expect(flow.status).toBe("rejected"));
+    expect(await screen.findByText(CANNOT_SAVE_YET)).toBeInTheDocument();
+    expect(retryLoad).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(listVersions(created.body.id)?.versions).toHaveLength(1);
   });
 
   it("refuses to save while a past version is being viewed", async () => {
@@ -429,6 +450,48 @@ describe("useSaveFlow · saved somewhere else", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(useEditorStore.getState().draftState).toEqual({ "vm-1": assignment("fade-in") });
     expect(listVersions(project.id)?.versions).toHaveLength(2);
+  });
+
+  it("refuses a second answer while the first is still being carried out", async () => {
+    const project = openProject();
+    animate("vm-1");
+    renderFlow(project.id);
+    const flow = startSave();
+    await screen.findByRole("dialog", { name: "Save as v1" });
+    await otherTabSaves(project, "vm-2", "pulse");
+    fireEvent.click(screen.getByRole("button", { name: "Save version" }));
+    await screen.findByRole("dialog", { name: "v1 was saved somewhere else" });
+
+    let release = () => {};
+    let asked = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inFlight = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), async ({ params }) => {
+        asked();
+        await gate;
+        return HttpResponse.json({ versionId: params.versionId, state: {} });
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply my changes on top" }));
+    await act(async () => {
+      await inFlight;
+    });
+
+    for (const name of ["Discard my changes", "Keep editing", "Apply my changes on top"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    }
+    expect(flow.status).toBe("pending");
+
+    await act(async () => {
+      release();
+      await gate;
+    });
   });
 
   it("keeps the question standing when their version cannot be loaded", async () => {

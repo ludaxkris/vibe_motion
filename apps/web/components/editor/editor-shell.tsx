@@ -20,6 +20,7 @@ import { SaveFlowDialogs } from "./save-flow-dialogs";
 import { SplitPane } from "./split-pane";
 import { useProjectVersions } from "./use-project-versions";
 import { useSaveFlow } from "./use-save-flow";
+import { VersionLoadErrorBanner } from "./version-load-error-banner";
 
 /** Thrown by `fetchProject` so the shell can tell a 404 apart from any other failure. */
 class ProjectFetchError extends Error {
@@ -216,10 +217,14 @@ export function EditorShell({ projectId }: { projectId: string }) {
   // browser saves one. The same hook forks the draft from that version's
   // state when the project opens.
   const project = query.data;
-  const { currentVersionLabel, nextVersionLabel } = useProjectVersions(projectId, project);
+  const { currentVersionLabel, nextVersionLabel, loadError, retryLoad } = useProjectVersions(
+    projectId,
+    project,
+  );
   const { requestSave, dialogs } = useSaveFlow(projectId, {
     currentVersionLabel,
     nextVersionLabel,
+    retryLoad,
   });
 
   // Opening a project is what makes it recent, so the Entry screen's column
@@ -342,6 +347,7 @@ export function EditorShell({ projectId }: { projectId: string }) {
       }
     >
       {status === "version-mismatch" ? <VersionMismatchBanner /> : null}
+      {loadError ? <VersionLoadErrorBanner message={loadError} onRetry={retryLoad} /> : null}
 
       <SplitPane
         left={(isDragging) => (
