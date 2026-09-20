@@ -605,6 +605,8 @@ Rebase onto `main`. Verify each assumption and fix this plan's text in the same 
 
 ### Task 8: Store wiring
 
+- [x] Done — see `## Status (2026-09-20)` above.
+
 **Files:** Modify `apps/web/lib/store/index.ts` (+ test).
 
 Add `currentVersionId` and `viewingVersionId` to `EditorState` (initial `null`) and four actions that delegate to Task 4: `loadVersion(versionId, state)`, `markSaved(version)`, `enterViewing(versionId, state)`, `exitViewing()`, `rebaseDraft(newCurrentId, state)`. Each is `set((s) => ({ ...transitions.fn(s, …), panel: <see below> }))`. `loadVersion`, `enterViewing`, `exitViewing` and `rebaseDraft` also send the panel through `REVERT` exactly as `revertDraft` does today, so a selected element lands on `tuning` or `selected` according to the new `draftState`. Remove `setMode` if nothing else calls it (grep first). **Viewing is never "unsaved":** while viewing, `draftState` holds the *viewed* state, so a raw draft-vs-current comparison is true for the whole viewing session. `selectUnsaved`, `selectDirtyVmIds`, `selectDirtyVmIdCount` and `selectGuardedVmId` must delegate to `isDirty(slice)` from `lib/versions/transitions.ts` (false while `mode === "viewing"`); `revertDraft` is a no-op while viewing; `markSaved` throws while viewing (Track A), so Save can never become a backdoor restore. Every draft writer (`setDraftAssignment`, `updateDraftParam`, `removeDraftAssignment`, `dispatchPanel` `PICK`) returns `state` unchanged while `mode === "viewing"` — the store, not just disabled controls, is what makes viewing read-only.
@@ -612,6 +614,8 @@ Add `currentVersionId` and `viewingVersionId` to `EditorState` (initial `null`) 
 Tests (add to `index.test.ts`): each action's effect on state; `updateDraftParam` is a no-op while viewing; `selectSelectedVmId` survives `enterViewing`; `reset()` clears both new ids.
 
 ### Task 9: Save flow
+
+- [x] Done — see `## Status (2026-09-20)` above.
 
 **Files:** Create `apps/web/components/editor/use-save-flow.ts` (+ test). Modify `editor-shell.tsx`, `top-bar.tsx` (enable Save), the guard mounting (pass `onSave`).
 
@@ -621,6 +625,8 @@ Tests: MSW-backed, one per outcome above; the 409 case uses a second `saveVersio
 
 ### Task 10: History tab, viewing mode, restore
 
+- [x] Done — see `## Status (2026-09-20)` above.
+
 **Files:** Modify `control-panel/index.tsx` (mount `HistoryList` in the existing `TabsContent value="history"`), `editor-shell.tsx` (banner + dim overlay over the preview sheet, `pointer-events: none` on the iframe wrapper while viewing), `app/dev/dev-gallery.tsx` (link to `/dev/history`).
 
 View: guard first if dirty (existing tab guard already covers opening History) → `queryClient.fetchQuery({ queryKey: versionStateKey(...), queryFn, staleTime: Infinity })` (a version's state is immutable) → `enterViewing`. Clicking the current version while viewing, or **Back to v5**, → `exitViewing`. **Restore** (row or banner) → `useRestoreVersion` → on `saved`: `fetchVersionState(new.id)` → `loadVersion`, toast `Restored v3 as v6`, tab stays on History. Top bar while viewing: the unsaved dot, **Save** and **Cancel** are hidden (`docs/user_flow.md` mode table: "Controls disabled · Save hidden"); the Esc-deselect gate reads the same mode-aware selector. The History tab renders an error state with a **Retry** button when `useVersions` fails (`retry: false`, same pattern as the editor's project-load error screen). Animate tab controls read `mode` and render disabled while viewing; `element:select` from the bridge is ignored while viewing. The protocol's reserved `mode` message stays unimplemented; log a DT if the overlay proves leaky in e2e.
@@ -628,6 +634,8 @@ View: guard first if dirty (existing tab guard already covers opening History) �
 Tests: RTL for the tab (view → banner → back; restore → list grows, row v(n+1) current); store no-op test from Task 8 covers the read-only guarantee.
 
 ### Task 11: Stack e2e — the exit criteria
+
+- [x] Done — see `## Status (2026-09-20)` above.
 
 **Files:** Create `apps/e2e/web/stack/versions.spec.ts`. Follow `apps/e2e/web/stack/clone.spec.ts` for project creation and `stack/env.ts` origins; scope every assertion to the project the test created (the DB is never cleaned within a run).
 
