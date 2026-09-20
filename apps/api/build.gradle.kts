@@ -106,12 +106,36 @@ val bridgeResources =
         }
     }
 
+// ---------------------------------------------------------------------------
+// Export runtime: packages/bridge/src/vibe-motion-export.js is the `vibe-motion.js`
+// an export ships when some assignment uses the `in-view` trigger. It lives beside
+// the bridge because it is the same kind of artefact — a plain classic script that
+// runs inside somebody else's page — and it is copied into the jar the same way, so
+// the file the exporter returns and the file packages/bridge's Playwright suite
+// exercises are byte-identical. The exporter interpolates nothing into it.
+// ---------------------------------------------------------------------------
+val exportScriptResources =
+    tasks.register<Sync>("exportScriptResources") {
+        description = "Copies packages/bridge/src/vibe-motion-export.js into the API resources."
+        group = "build"
+        into(layout.buildDirectory.dir("generated/export"))
+        from(bridgeSource.file("src/vibe-motion-export.js"))
+        doLast {
+            check(File(destinationDir, "vibe-motion-export.js").isFile) {
+                "No export script found in $bridgeSource/src"
+            }
+        }
+    }
+
 tasks.processResources {
     from(catalogResources) {
         into("catalog")
     }
     from(bridgeResources) {
         into("bridge")
+    }
+    from(exportScriptResources) {
+        into("export")
     }
 }
 
