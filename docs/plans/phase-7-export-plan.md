@@ -31,7 +31,7 @@ The exporter's inputs are already final: `base_html` (immutable per project), `S
 | `full` | `index.html`, `vibe-motion.css`, then `vibe-motion.js` only if some assignment uses `in-view` | rewritten page | whole stylesheet | script or `null` |
 | `snippet` | `vibe-motion.css`, then `vibe-motion.js` only if that assignment uses `in-view` | `null` | that element's keyframes and rules | script or `null` |
 
-These names are the build plan's and the design handoff's. The MSW mock currently says `styles.css` / `script.js` / `snippet.css`; Track B aligns it. The client-side zip adds a `README.txt` and is named `vibe-motion-<slug>-v<seq>.zip`.
+These names are the build plan's and the design handoff's. The MSW mock currently says `styles.css` / `script.js` / `snippet.css`; Track C aligns it (PR #22 edits that file). The client-side zip adds a `README.txt` and is named `vibe-motion-<slug>-v<seq>.zip`.
 
 ### 1.2 Class allocation
 
