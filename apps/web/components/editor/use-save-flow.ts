@@ -34,11 +34,16 @@ import type { SaveFlowDialogsProps } from "./save-flow-dialogs";
  */
 const CANCELLED = "save cancelled";
 
-/** Two attempts is all a `503` gets; the third answer would be a guess about the fourth. */
-const BUSY_MESSAGE = "The project is busy. Try again in a moment.";
+/**
+ * Two attempts is all a `503` gets; the third answer would be a guess about
+ * the fourth. Exported so Restore — the other write on this screen
+ * (`components/history/use-version-history.ts`) — retries in the same shape
+ * and says the same thing when it gives up.
+ */
+export const BUSY_MESSAGE = "The project is busy. Try again in a moment.";
 
 /** A `Retry-After` the service should never send must not wedge the dialog either. */
-const MAX_RETRY_SECONDS = 5;
+export const MAX_RETRY_SECONDS = 5;
 
 /** When the API could not even be asked — `fetchVersionState` throws rather than answering. */
 const LOAD_FAILED = "Could not load this version";
