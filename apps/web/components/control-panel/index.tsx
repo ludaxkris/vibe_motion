@@ -176,7 +176,12 @@ function AutoSection({
       onClose={() => dispatchPanel({ type: "AUTO_CLOSE" })}
       regenerateDisabled={!onRegenerate || busy}
       replayDisabled={!onReplayAll}
+      // A run in flight re-assigns whatever looks unassigned when it lands, so
+      // a Remove all inside that window would be silently undone.
+      removeAllDisabled={busy}
+      busy={busy}
       error={error}
+      runSeed={lastRun?.seed}
     />
   );
 }

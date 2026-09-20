@@ -49,6 +49,20 @@ describe("SelectedPanel", () => {
     expect(screen.getByRole("button", { name: "Choose custom animation" })).toBeEnabled();
   });
 
+  it("keeps one live region mounted: empty, then busy, then the failure", () => {
+    const { rerender } = render(<SelectedPanel vmId="vm-42" onGenerate={() => undefined} />);
+    const region = screen.getByRole("status");
+    expect(region).toBeEmptyDOMElement();
+
+    rerender(<SelectedPanel vmId="vm-42" onGenerate={() => undefined} busy />);
+    expect(screen.getByRole("status")).toBe(region);
+    expect(region).toHaveTextContent("Generating…");
+
+    rerender(<SelectedPanel vmId="vm-42" onGenerate={() => undefined} error="agent-failed" />);
+    expect(screen.getByRole("status")).toBe(region);
+    expect(region).toHaveTextContent("Couldn't read the page. Try again.");
+  });
+
   it("says why a run failed, under the button", () => {
     render(<SelectedPanel vmId="vm-42" onGenerate={() => undefined} error="agent-failed" />);
 

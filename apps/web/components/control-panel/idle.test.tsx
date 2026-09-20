@@ -100,10 +100,29 @@ describe("IdlePanel", () => {
     expect(screen.getByRole("status")).toHaveTextContent(copy);
   });
 
-  it("has no status line while nothing failed", () => {
-    render(<IdlePanel onAutoGenerate={() => undefined} />);
+  it("mounts the live region before there is anything to say, so the text is a change to it", () => {
+    const { rerender } = render(<IdlePanel onAutoGenerate={() => undefined} />);
+    const region = screen.getByRole("status");
+    expect(region).toBeEmptyDOMElement();
+    expect(screen.queryByTestId("agent-run-error")).not.toBeInTheDocument();
 
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    rerender(<IdlePanel onAutoGenerate={() => undefined} error="no-targets" />);
+
+    expect(screen.getByRole("status")).toBe(region);
+    expect(screen.getByTestId("agent-run-error")).toHaveTextContent(
+      "Nothing on this page looks worth animating.",
+    );
+  });
+
+  it("announces the busy state in the live region, not only on a disabled button", () => {
+    const { rerender } = render(<IdlePanel onAutoGenerate={() => undefined} />);
+    const region = screen.getByRole("status");
+
+    rerender(<IdlePanel onAutoGenerate={() => undefined} busy />);
+
+    expect(screen.getByRole("status")).toBe(region);
+    expect(region).toHaveTextContent("Generating…");
+    expect(screen.queryByTestId("agent-run-error")).not.toBeInTheDocument();
   });
 
   it("hides the animated list until something is animated", () => {

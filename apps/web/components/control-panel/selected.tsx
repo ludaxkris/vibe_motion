@@ -74,7 +74,7 @@ export function SelectedPanel({
         >
           {busy ? "Generating…" : "Auto-generate for this element"}
         </Button>
-        <AgentRunError error={error} />
+        <AgentRunError error={error} busy={busy} />
         <Button variant="secondary" size="lg" onClick={onChooseCustom}>
           Choose custom animation
         </Button>

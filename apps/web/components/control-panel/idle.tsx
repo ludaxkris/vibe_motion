@@ -117,7 +117,7 @@ export function IdlePanel({
         >
           {busy ? "Generating…" : "Auto-generate for this page"}
         </Button>
-        <AgentRunError error={error} />
+        <AgentRunError error={error} busy={busy} />
       </PanelSection>
 
       {entries.length > 0 ? (

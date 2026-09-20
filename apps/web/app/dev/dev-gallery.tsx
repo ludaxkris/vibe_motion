@@ -36,13 +36,13 @@ import { summariseDiff } from "@/lib/diff-summary";
 
 import { StaticDialog } from "./static-dialog";
 
+/** The gallery renders looks, not behaviour: a callback that exists is an enabled control. */
+const noop = () => undefined;
+
 /**
  * Fixed `data-vm-id`s. The bridge (Phase 4) is what puts real ones on screen;
  * until then the element label *is* the id, which is what the panels show.
  */
-/** The gallery renders looks, not behaviour: a callback that exists is an enabled control. */
-const noop = () => undefined;
-
 const VM_HEADLINE = "vm-3";
 const VM_CTA = "vm-9";
 const VM_DROPPED = "vm-14";

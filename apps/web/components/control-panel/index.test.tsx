@@ -603,7 +603,8 @@ describe("ControlPanel · agent flows (Phase 5)", () => {
       expect(screen.getByRole("status")).toHaveTextContent(copy);
 
       fireEvent.click(screen.getByRole("button", { name: "Auto-generate for this page" }));
-      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("agent-run-error")).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("Generating…");
     });
 
     it("does not carry a page failure over to another panel", async () => {
@@ -616,7 +617,7 @@ describe("ControlPanel · agent flows (Phase 5)", () => {
       act(() => useEditorStore.getState().setSelectedVmId("vm-1"));
 
       expect(screen.getByTestId("panel-selected")).toBeInTheDocument();
-      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toBeEmptyDOMElement();
     });
 
     it("replays the whole page from the idle list", () => {
@@ -745,6 +746,39 @@ describe("ControlPanel · agent flows (Phase 5)", () => {
       expect(screen.getByRole("button", { name: "Regenerate" })).toBeDisabled();
       await act(async () => finish({ ok: true, count: 2 }));
       expect(screen.getByRole("button", { name: "Regenerate" })).toBeEnabled();
+    });
+
+    it("Remove all cannot race a run in flight: disabled while busy, and says so", async () => {
+      let finish!: (outcome: { ok: true; count: number }) => void;
+      const onAutoGeneratePage = vi.fn(
+        () => new Promise<{ ok: true; count: number }>((resolve) => (finish = resolve)),
+      );
+      seedRun();
+      render(<ControlPanel onAutoGeneratePage={onAutoGeneratePage} />);
+      expect(screen.getByRole("button", { name: "Remove all" })).toBeEnabled();
+      const draft = useEditorStore.getState().draftState;
+
+      fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+
+      const removeAll = screen.getByRole("button", { name: "Remove all" });
+      expect(removeAll).toBeDisabled();
+      fireEvent.click(removeAll);
+      expect(useEditorStore.getState().draftState).toBe(draft);
+      expect(screen.getByRole("status")).toHaveTextContent("Generating…");
+
+      await act(async () => finish({ ok: true, count: 2 }));
+      expect(screen.getByRole("button", { name: "Remove all" })).toBeEnabled();
+      expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    });
+
+    it("puts the run's seed on the result panel", () => {
+      seedRun();
+      render(<ControlPanel />);
+
+      expect(screen.getByTestId("panel-auto-result")).toHaveAttribute(
+        "data-run-seed",
+        String(useEditorStore.getState().lastRun?.seed),
+      );
     });
 
     it("says why a Regenerate failed", async () => {
