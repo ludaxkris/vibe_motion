@@ -182,6 +182,66 @@ describe("useProjectVersions", () => {
     expect(client.getQueryData(versionStateKey(project.id, v1.id))).toEqual({ "vm-1": saved });
   });
 
+  it("keeps an agent run's assignments through that rebase, as the user's rather than the agent's", async () => {
+    // The Phase 5 / Phase 6 interplay with no good answer: a page
+    // auto-generate finishes while the open load is still in flight, so the
+    // rebase branch above is what takes the draft on. `applyDraftReplacement`
+    // forgets `generated` / `lastRun` (the provenance describes a draft that
+    // was just replaced), which means the result list closes and Regenerate
+    // and "Remove all" no longer claim those elements. Nothing the run wrote
+    // is lost — the assignments come through the rebase and stay unsaved —
+    // and that is the agreed degradation: losing work would be the worse half
+    // of the trade.
+    const { project, v1, saved } = projectWithOneSave();
+    const { Wrapper } = harness();
+    let release = () => {};
+    let asked = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inFlight = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), async () => {
+        asked();
+        await gate;
+        return HttpResponse.json({ versionId: v1.id, state: { "vm-1": saved } });
+      }),
+    );
+
+    renderHook(() => useProjectVersions(project.id, project), { wrapper: Wrapper });
+    await act(async () => {
+      await inFlight;
+    });
+
+    const generated = assignment("pulse");
+    act(() => {
+      useEditorStore.getState().applyPageSuggestion({
+        suggestion: { assignments: { "vm-9": generated }, skipped: [] },
+        seed: 3,
+        prompt: "subtle",
+        truncated: false,
+        viewport: { width: 1280, height: 800 },
+      });
+    });
+    expect(useEditorStore.getState().generated).toEqual({ "vm-9": generated });
+
+    await act(async () => {
+      release();
+      await gate;
+    });
+
+    await waitFor(() => expect(useEditorStore.getState().currentVersionId).toBe(v1.id));
+    const state = useEditorStore.getState();
+    // The work survives…
+    expect(state.draftState).toEqual({ "vm-1": saved, "vm-9": generated });
+    expect(selectUnsaved(state)).toBe(true);
+    // …and it is the designer's now: no provenance, so no run to re-roll.
+    expect(state.generated).toEqual({});
+    expect(state.lastRun).toBeNull();
+  });
+
   it("clears a failed load once a later load for the same project succeeds", async () => {
     // A fails → B (unrelated) → back to A, and this time it loads fine. Only
     // `retryLoad` used to clear `failure`, so the banner from A's first visit
