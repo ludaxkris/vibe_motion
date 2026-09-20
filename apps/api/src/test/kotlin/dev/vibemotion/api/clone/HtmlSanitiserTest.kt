@@ -168,6 +168,25 @@ class HtmlSanitiserTest :
             document.selectFirst("style").shouldNotBeNull().data() shouldContain """url("#")"""
         }
 
+        test("defuses a style block inside svg without deleting the rest of the sheet") {
+            // Foreign content: an svg `<style>` holds a text node, so `data()` is empty and the
+            // old unconditional write-back emptied the element.
+            val document =
+                sanitised(
+                    """<html><body><svg><style>a{background:url(javascript:alert(1))} circle{fill:red}</style></svg></body></html>""",
+                )
+            val css = document.selectFirst("svg style").shouldNotBeNull().wholeText()
+
+            css shouldContain """url("#")"""
+            css shouldContain "circle{fill:red}"
+        }
+
+        test("a style block with nothing to defuse is not rewritten at all") {
+            val document = sanitised("<html><head><style>a > b { color: red }</style></head><body></body></html>")
+
+            document.selectFirst("style").shouldNotBeNull().data() shouldBe "a > b { color: red }"
+        }
+
         test("keeps forms but disarms them") {
             val form =
                 sanitised(

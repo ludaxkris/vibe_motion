@@ -4,7 +4,7 @@ import dev.vibemotion.api.clone.HtmlSanitiser.Companion.CSS_TOKEN_MAX
 import dev.vibemotion.api.clone.HtmlSanitiser.Companion.defuseDangerousCssUrls
 import dev.vibemotion.api.clone.HtmlSanitiser.Companion.isDangerousUrl
 import dev.vibemotion.api.clone.HtmlSanitiser.Companion.relTokens
-import dev.vibemotion.api.clone.HtmlSanitiser.Companion.replaceData
+import dev.vibemotion.api.clone.HtmlSanitiser.Companion.rewriteStyleText
 import org.jsoup.Jsoup
 import org.jsoup.nodes.DataNode
 import org.jsoup.nodes.Document
@@ -139,7 +139,7 @@ class HtmlRewriter(
         deadline: DeadlineCheck,
     ) {
         document.select("style").forEach { style ->
-            style.replaceData(absolutiseCss(style.data(), base, deadline))
+            style.rewriteStyleText { css -> absolutiseCss(css, base, deadline) }
         }
     }
 

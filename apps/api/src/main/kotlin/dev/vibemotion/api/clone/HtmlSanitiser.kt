@@ -168,7 +168,7 @@ class HtmlSanitiser {
         deadline: DeadlineCheck,
     ) {
         document.select("style").forEach { style ->
-            style.replaceData(defuseDangerousCssUrls(style.data(), deadline))
+            style.rewriteStyleText { css -> defuseDangerousCssUrls(css, deadline) }
         }
     }
 
@@ -257,9 +257,32 @@ class HtmlSanitiser {
             return tokens.filterTo(mutableSetOf()) { it.isNotEmpty() }
         }
 
-        internal fun Element.replaceData(data: String) {
-            empty()
-            appendChild(DataNode(data))
+        /**
+         * Applies [transform] to a `<style>` element's CSS, whatever kind of node the parser put
+         * it in, and writes it back only if it changed.
+         *
+         * An HTML `<style>` holds a [DataNode]; a `<style>` inside `<svg>` is foreign content and
+         * holds a [TextNode], for which `data()` is empty. Reading only `data()` and writing back
+         * unconditionally therefore *deleted* an SVG stylesheet outright. The node is mutated in
+         * place rather than replaced, so jsoup keeps serialising it exactly as it parsed it, and
+         * the no-change path touches nothing at all.
+         */
+        internal fun Element.rewriteStyleText(transform: (String) -> String) {
+            when (val child = childNodes().singleOrNull()) {
+                is DataNode -> {
+                    val css = child.wholeData
+                    if (css.isNotEmpty()) transform(css).takeIf { it != css }?.let(child::setWholeData)
+                }
+
+                is TextNode -> {
+                    val css = child.wholeText
+                    if (css.isNotEmpty()) transform(css).takeIf { it != css }?.let(child::text)
+                }
+
+                else -> {
+                    // No single text or data child: nothing to rewrite, and nothing to lose.
+                }
+            }
         }
     }
 }
