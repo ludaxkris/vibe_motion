@@ -176,12 +176,16 @@ Phase 7's exporter must render what the designer saw. Where the editor deliberat
 
 | Aspect | Editor preview (Phase 4) | Export (Phase 7) |
 |---|---|---|
+| Element identity | `data-vm-id="vm-17"`, written by the clone | the class `vm-a17`, **derived** from the id and appended to the element's own classes; `data-vm-id` is removed. Derived rather than allocated, so a snippet pasted last month still matches a full export made today |
 | Keyframes name and body | from `keyframesName()` and the pinned catalog entry | same |
 | `baseStyles` selector specificity | `[data-vm-id="…"]` = (0,1,0) | `.vm-aN` = (0,1,0); both lose equally to a more specific host rule |
 | `in-view` threshold | `IN_VIEW_THRESHOLD` | same constant |
-| `in-view` repeats | re-arms on every entry, so the designer can see it again by scrolling (deliberate divergence) | plays once |
-| `in-view` state before the trigger fires | held on the first keyframe: `paused`, delay `0s`, fill-mode `both` (D3) | same rule, in CSS: `.vm-aN:not(.vm-play) { animation-play-state: paused; animation-delay: 0s; animation-fill-mode: both; }` |
-| `prefers-reduced-motion` | preview always plays | rules wrapped in `@media (prefers-reduced-motion: no-preference)`; without it the element simply shows in its resting state (Phase 7, deferred-task entry) |
+| `in-view` firing condition | `isIntersecting && intersectionRatio >= T` | `isIntersecting && (intersectionRatio >= T \|\| boundingClientRect.height * T >= rootHeight)`, where `rootHeight = entry.rootBounds ? entry.rootBounds.height : window.innerHeight`. The second clause is DT-095: an element taller than `1 / T` viewports can never reach ratio `T`. `rootBounds` is null when the exported page is itself in a cross-origin iframe, and reading `.height` off it would throw and hold everything forever. **The bridge adopts the same condition in a parallel PR; until it does, this row is the one place preview and export differ by accident rather than by decision.** |
+| `in-view` repeats | re-arms on every entry, so the designer can see it again by scrolling (deliberate divergence) | plays once: the element is unobserved when it fires |
+| `in-view` gate | none: the bridge is always running | every `in-view` rule is scoped to `:where(.vm-js)`, a class `vibe-motion.js` puts on `<html>`. `:where()` is free, so the rule stays (0,1,0). With JavaScript off the element rests visible rather than stranded on a first keyframe of `opacity: 0` |
+| `in-view` state before the trigger fires | held on the first keyframe: `paused`, delay `0s`, fill-mode `both` (D3) | the same rule, in CSS, once for the whole page through a fixed marker class: `:where(.vm-js) .vm-in-view:not(.vm-play) { animation-play-state: paused; animation-delay: 0s; animation-fill-mode: both; }` — (0,2,0), so it outranks the assignment's own rule |
+| The `in-view` script tag | n/a | `<script src="vibe-motion.js">` in `<head>`, **not deferred** and emitted only when some assignment uses `in-view`. Deferred, an element in the first viewport would paint at rest, snap to its first keyframe when `vm-js` landed, and then play — the flash the hold rule exists to prevent. This departs from the build plan's literal `defer` |
+| `prefers-reduced-motion` | preview always plays | rules wrapped in `@media (prefers-reduced-motion: no-preference)`, base styles included; without it the element simply shows in its resting state (Phase 7, deferred-task entry) |
 | Absent `animation-*` longhands | written inline at their initial values, so the host's cannot leak in (D3) | the exporter emits the `animation` **shorthand**, which resets every longhand it does not set, for the same reason |
 | `!important` | on the inline `animation-*` group | never (build plan §6) |
 

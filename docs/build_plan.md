@@ -300,9 +300,9 @@ Deliverable: an Export panel with three tabs (HTML, CSS, JS), copy buttons, and 
 
 Output contract
 
-- `vibe-motion.css`: `@keyframes` for every animation used + one class per assignment (`.vm-a1 { animation: ... }`) + custom property values. No inline styles in the exported HTML.
-- `index.html`: the base clone with `data-vm-id` attributes replaced by `class="vm-a1"` markers, our bridge script removed, `<link rel="stylesheet" href="vibe-motion.css">` and `<script src="vibe-motion.js" defer>` added.
-- `vibe-motion.js`: only emitted if any assignment uses the `in-view` trigger; contains an IntersectionObserver that adds `.vm-play`. Otherwise omitted and the HTML has no script tag.
+- `vibe-motion.css`: `@keyframes` for every animation used + one rule group per assignment (`.vm-a1 { animation: ... }`) + custom property values. No inline styles in the exported HTML. Everything but the keyframes is inside `@media (prefers-reduced-motion: no-preference)`.
+- `index.html`: the base clone with every `data-vm-id` removed and, on each assigned element, the class `vm-a<N>` **appended** to whatever classes the page already had (`data-vm-id="vm-17"` → `class="hero vm-a17"`). The class is *derived* from the id, not allocated, so it is stable across versions and a snippet pasted into a site last month still matches a full export made today; an element with an `in-view` assignment also gets the fixed marker class `vm-in-view`. No bridge script and no CSP meta are present to remove — both are added at serve time, never stored. `<link rel="stylesheet" href="vibe-motion.css">` is added as the last child of `<head>`.
+- `vibe-motion.js`: only emitted if any assignment uses the `in-view` trigger; an `IntersectionObserver` that adds `vm-play` to each element as it is scrolled to, and `vm-js` to `<html>` so the stylesheet's `in-view` rules apply at all. Otherwise omitted and the HTML has no script tag. Its `<script src="vibe-motion.js">` follows the link in `<head>` and is **not deferred** (revised from this plan's original `defer`): `vm-js` has to be set before the first paint, or an in-view element in the first viewport paints at rest, snaps to its first keyframe and then plays. The cost is one small render-blocking request; an inline script would avoid it and break hosts with a strict CSP.
 
 Critical decisions
 
