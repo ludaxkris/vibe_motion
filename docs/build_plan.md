@@ -250,27 +250,24 @@ Exit criteria: Storybook or a `/dev` route demonstrates all Control Panel states
 
 Deliverable: clicking an element in the iframe highlights it and opens the Control Panel; adjusting a param updates the element within one frame.
 
-Bridge protocol (`postMessage`, both directions carry `{ source: "vibe-motion", type, payload }` and are origin-checked)
+Bridge protocol: **[docs/plans/phase-4-bridge-protocol.md](plans/phase-4-bridge-protocol.md) is the contract**, and it is where the message table, the payload shapes and the origin checks live. It refines what this section sketched: every shell→iframe message carries a `seq` and is answered with `ack { seq, ms, ok }`, the handshake carries `protocolVersion` and is re-openable with `hello`, `preview` / `preview:clear` are separate from `apply` / `clear`, and `apply` carries finished CSS rather than an animation id — the bridge never reads the catalog. The script itself is a workspace package, `packages/bridge`, which both the api jar and the web mock route serve.
 
-| Direction | Type | Payload |
-|---|---|---|
-| iframe → shell | `ready` | `{ elementCount }` |
-| iframe → shell | `element:hover` | `{ vmId, rect, tag, textPreview }` |
-| iframe → shell | `element:select` | `{ vmId, rect, tag, textPreview }` |
-| shell → iframe | `select` | `{ vmId \| null }` (highlight ring on/off) |
-| shell → iframe | `apply` | `{ vmId, animationId, params, trigger }` |
-| shell → iframe | `clear` | `{ vmId }` |
-| shell → iframe | `replay` | `{ vmId }` |
-| shell → iframe | `state:load` | `{ state }` (used by version restore: reset everything, then apply all) |
+| Direction | Types |
+|---|---|
+| iframe → shell | `ready` · `element:hover` · `element:select` · `element:deselect` · `ack` |
+| shell → iframe | `hello` · `select` · `apply` · `clear` · `replay` · `preview` · `preview:clear` · `state:load` |
 
 Critical decisions
 
-- **How the preview applies an animation.** The bridge script maintains a single `<style id="vm-runtime">` block containing the `@keyframes` for every animation currently in use, and sets per-element inline `style` properties: `animation-name`, `animation-duration`, and the `--vm-*` custom properties. Param changes only touch inline styles, so live updates are cheap and never re-parse keyframes. Recommended: yes. Replay is done by toggling `animation-name` to `none` and back on the next frame. The bridge receives the keyframes name (`vm-<id>-v<M>-<m>-<p>`) from the shell/shared `keyframesName()` generator and never builds it itself.
+- **How the preview applies an animation.** The bridge script maintains a single `<style id="vm-runtime">` block containing the `@keyframes` for every animation currently in use, and sets per-element inline `style` properties: `animation-name`, `animation-duration`, and the `--vm-*` custom properties. Param changes only touch inline styles, so live updates are cheap and never re-parse keyframes. Recommended: yes. Replay sets `animation-name: none`, forces a **synchronous** style flush (`getComputedStyle(el).animationName`) and restores the name, all in the same task — not a next-frame toggle, which the browser is free to coalesce into no change at all. The bridge receives the keyframes name (`vm-<id>-v<M>-<m>-<p>`) from the shell/shared `keyframesName()` generator and never builds it itself.
 - **Live preview never writes to the API.** Slider moves update the iframe immediately and update the draft state in the store. No network call happens until the user clicks Save (Phase 6). This keeps the preview loop entirely client-side and means what a "version" is stays in the user's hands.
 - **Hover/selection overlay.** Drawn inside the iframe by the bridge script (outline + label) rather than by the shell over the iframe, so it scrolls with the content and needs no coordinate translation.
 - **Click interception.** The bridge captures clicks at the document level in the capture phase, calls `preventDefault`, and never lets links navigate. The clone is a canvas, not a browsable page.
 
-Exit criteria: Playwright test loads a fixture page, clicks an element, changes duration, and asserts the inline style on the element inside the iframe; frame time for a param change under 16 ms measured in a perf test.
+- **Unsaved-changes guard on an element switch.** Clicking another element while the selected one has an added or changed animation opens the guard first, and the selection ring does not move until it is answered (spec §5, D10, owner decision §9.1).
+- **Mock mode is cross-origin too.** The shell serves itself from one loopback name and frames the other (`localhost` ⇄ `127.0.0.1`), so a bridge that skipped its origin check could not pass e2e (spec §2).
+
+Exit criteria: Playwright test loads a fixture page, clicks an element, changes duration, and asserts the inline style on the element inside the iframe; frame time for a param change under 16 ms measured in a perf test (`apps/e2e/web/mocked/bridge-perf.spec.ts`).
 
 ### Phase 5 — Mock agent and Control Panel flows
 

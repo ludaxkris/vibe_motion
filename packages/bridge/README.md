@@ -72,16 +72,17 @@ naming rule in CLAUDE.md.
 
 ## How it is consumed
 
-Nothing imports this package yet — PR A is the package on its own.
-
-- **`apps/api`** (Phase 4 PR C): a Gradle `bridgeResources` Sync task copies `src/vm-bridge.js`
-  into the jar the way `catalogResources` copies the catalog, and `BridgeAssets.kt` parses
-  `BRIDGE_VERSION` out of the script instead of hand-syncing a Kotlin constant. Ktor serves it at
-  `/bridge/vm-bridge.js` and `BridgePageRenderer` injects
+- **`apps/api`**: a Gradle `bridgeResources` Sync task copies `src/vm-bridge.js` into the jar the
+  way `catalogResources` copies the catalog, and `BridgeAssets.kt` parses `BRIDGE_VERSION` out of
+  the script instead of hand-syncing a Kotlin constant. Ktor serves it at `/bridge/vm-bridge.js`
+  and `BridgePageRenderer` injects
   `<script src="/bridge/vm-bridge.js" data-vm-parent-origin="<WEB_ORIGIN>" defer>`.
-- **`apps/web`** (Phase 4 PRs B and C): imports the types and constants as TypeScript source —
-  `import type { AppliedAssignment } from "bridge"` — and its mock page route serves the very same
-  `src/vm-bridge.js` file, so mock-mode e2e exercises the script the API ships.
+- **`apps/web`**: imports the types and constants as TypeScript source —
+  `import type { AppliedAssignment } from "bridge"`, with `transpilePackages: ["bridge"]` in
+  `next.config.ts` because there is no `dist/` — and drives the channel from
+  `apps/web/lib/bridge` (`toApplied` builds the payloads, `createBridgeClient` is the shell half
+  of the protocol). Its mock page route serves the very same `src/vm-bridge.js` file, so mock-mode
+  e2e exercises the script the API ships.
 
 ### Why TS source and not `dist/`
 
@@ -117,6 +118,7 @@ three wrong while every jsdom test passed. So `e2e/` exists for exactly that cla
 | the host's `animation` shorthand survives a round trip, and its longhands do not leak in | jsdom's CSSOM does not expand the shorthand at all |
 | the preview plays through a host `prefers-reduced-motion` reset | needs a real cascade |
 | the selection ring tracks a nested scroller | `getBoundingClientRect()` returns zeros |
+| the ring keeps marking the resting box through a page scroll, a nested scroll, a reflow above the element and a viewport change while an `iteration: infinite` animation runs | needs real layout, a real transform, a real `ResizeObserver` and an animation that really never ends; jsdom's version of this (`test/selection.test.ts`) can only assert the arithmetic against stubbed `offset*` and `getBoundingClientRect()` |
 | a message from a third origin is never acked | needs three real origins |
 | `baseStyles` and `keyframesCss` cannot escape their rules | needs a real CSS parser |
 | `elements:query` returns real rects, skips `display:none`, reports the viewport, and meets its 50 ms budget on 2,000 elements | `getBoundingClientRect()` returns zeros, so jsdom tests stub it per element |
@@ -134,7 +136,38 @@ Still unproven anywhere, and worth knowing:
 
 ## Known limits
 
+- **Elements with no offset box (`<svg>`, MathML).** They are not `HTMLElement`s, so the layout-box path cannot serve them. Their ring is always measured live: during an animation it follows the animated box (a spinning logo's ring breathes with the rotation) instead of marking the resting box. It is never empty and it tracks scroll and layout.
 - **Duplicate `data-vm-id` in a clone.** The element map keeps the first element with a given
   vmId, so inline styles land only on that one, but the `[data-vm-id="…"] { … }` base-styles rule
   matches every copy, and `clear` restores only the first. The clone pipeline is what should
   guarantee uniqueness; the bridge does not police it.
+
+- **How the overlay finds the resting box while our animation runs.** The ring marks the box the
+  element rests at, and keeps marking it through scrolls, resizes and reflows — see
+  `positionBox` / `layoutBox` in `src/vm-bridge.js`, and spec §4.
+  `getBoundingClientRect()` is no use mid-play because it reads the *transformed* box, and
+  "re-measure at `animationend`" is no use either: six catalog 1.1.0 entries (pulse, heartbeat,
+  glow, spin, float, shimmer) default to `iteration: infinite` and never end. So while one of our
+  animations is running the box is `offsetLeft`/`offsetTop`/`offsetWidth`/`offsetHeight`
+  accumulated up the `offsetParent` chain — layout values no `transform` can reach — corrected by
+  the difference between that and `getBoundingClientRect()` taken the last time the element was
+  measured at rest. The correction cancels every reason the two disagree that is not our
+  animation, provided it does not change during the play. Measured in Chromium against a page
+  scroll, a nested scroller, a `position: fixed` ancestor, a fixed element, a `position: sticky`
+  ancestor, a sticky element, a transformed ancestor, an absolutely positioned element in both a
+  static and a relative scroller, a sub-pixel box and a wrapped inline: all exact. What it does
+  *not* survive, in rough order of likelihood:
+  - an **ancestor's own transform changing** during our animation (a host carousel sliding the
+    container, a parent of ours also animating) — the correction was measured against the old one,
+    so the ring is off by the change until the element is next measured at rest;
+  - an element whose **wrapping changes** during our animation: `offsetWidth` is the first
+    fragment of a wrapped inline, `getBoundingClientRect()` is the union of all of them;
+  - **keyframes that animate layout** rather than transform (`width`, `margin`, `top`): there is
+    no resting box distinct from the live one, and the ring marks the live one. Nothing in the
+    catalog does this.
+  - an element selected **while it is already mid-animation**: there is no at-rest measurement to
+    correct with, so the uncorrected layout box is used. Right to within `offsetWidth`'s rounding
+    unless an ancestor is transformed.
+  `layoutBox` reads one resolved `position` value per call to tell an absolutely positioned
+  element (which does not move with a scroller between it and its containing block) from
+  everything else. That is the only `getComputedStyle` on the overlay path.

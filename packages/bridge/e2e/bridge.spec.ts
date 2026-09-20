@@ -407,6 +407,261 @@ test("keyframes css that is not exactly one matching @keyframes rule is rejected
   expect(await h.inline("vm-a", "animation-name")).toBe("");
 });
 
+test("the selection ring marks the resting box, not the box mid-animation", async ({ page }) => {
+  const h = await mountBridge(
+    page,
+    `<div class="spacer" style="height:80px"></div>
+     <div class="box" data-vm-id="vm-1">Headline</div>`,
+  );
+
+  const resting = await h.rect('[data-vm-id="vm-1"]');
+  await h.send("select", { vmId: "vm-1", label: "div" });
+  await h.send(
+    "apply",
+    assignment("vm-1", {
+      keyframesName: "vm-fade-in-up-v1-1-0",
+      keyframesCss:
+        "@keyframes vm-fade-in-up-v1-1-0 { from { opacity: 0; transform: translateY(24px) } to { opacity: 1; transform: none } }",
+      style: { "animation-duration": "1200ms", "animation-fill-mode": "both" },
+    }),
+  );
+
+  // Mid-flight the element really is 24px low…
+  await page.waitForTimeout(150);
+  const moved = await h.rect('[data-vm-id="vm-1"]');
+  expect(moved.y).toBeGreaterThan(resting.y);
+
+  // …and the ring stays on the resting box regardless. Sampled repeatedly:
+  // scroll, resize and every message schedule a reposition.
+  for (let sample = 0; sample < 4; sample += 1) {
+    await h.send("replay", { vmId: "vm-1" });
+    await page.waitForTimeout(80);
+    const ring = await h.rect("[data-vm-overlay-ring]");
+    expect(Math.abs(ring.y - resting.y), `sample ${sample}`).toBeLessThanOrEqual(1);
+  }
+
+  // And after it finishes, the ring is still right where the element is.
+  await page.waitForTimeout(1400);
+  const settled = await h.rect("[data-vm-overlay-ring]");
+  expect(Math.abs(settled.y - resting.y)).toBeLessThanOrEqual(1);
+});
+
+// ---------------------------------------------------------------------------------------------
+// 6b. the ring under an animation that never ends
+//
+// Catalog 1.1.0 ships six entries whose `iteration` default is `infinite` — pulse, heartbeat,
+// glow, spin, float and shimmer. None of them ever fires `animationend`, and `animationiteration`
+// is deliberately not a resync trigger, so anything the overlay defers "until the animation is
+// over" is deferred for as long as the element stays selected. These three cover the resync
+// triggers that are not message-driven: the capture-phase `scroll` listener (page and nested
+// scroller), the `ResizeObserver` on <html>, and the `resize` listener.
+// ---------------------------------------------------------------------------------------------
+
+const RING = "[data-vm-overlay-ring]";
+
+/**
+ * `float` crossed with `pulse`, and — unlike either — never passing through the identity
+ * transform: every single sample is off the resting box in both axes *and* in size, so a ring
+ * that measured the live box could not accidentally pass any assertion below.
+ */
+function neverResting(vmId: string) {
+  return assignment(vmId, {
+    keyframesName: "vm-drift-v1-1-0",
+    keyframesCss:
+      "@keyframes vm-drift-v1-1-0 { from { transform: translate(12px, 20px) scale(1.2) } to { transform: translate(28px, 44px) scale(1.4) } }",
+    style: {
+      "animation-duration": "900ms",
+      "animation-iteration-count": "infinite",
+      "animation-timing-function": "linear",
+      "animation-fill-mode": "both",
+    },
+    animationId: "float",
+    catalogVersion: "1.1.0",
+  });
+}
+
+/** Assert the element really is mid-flight and really is never going to stop. */
+async function assertAdrift(h: Awaited<ReturnType<typeof mountBridge>>, vmId: string, resting: { y: number; height: number }) {
+  expect(await h.animations(vmId)).toMatchObject([{ name: "vm-drift-v1-1-0", state: "running" }]);
+  const live = await h.rect(`[data-vm-id="${vmId}"]`);
+  expect(live.y, "the element is translated").toBeGreaterThan(resting.y);
+  expect(live.height, "and scaled").toBeGreaterThan(resting.height);
+}
+
+test("the ring tracks page and nested scrolling while an infinite animation runs", async ({ page }) => {
+  const h = await mountBridge(
+    page,
+    `<div class="spacer" style="height:150px"></div>
+     <div id="sc" style="height:220px;overflow:auto;border:1px solid #999">
+       <div style="height:1200px;padding-top:300px">
+         <div class="box" data-vm-id="vm-deep">deep</div>
+       </div>
+     </div>
+     <div class="spacer"></div>`,
+  );
+
+  const resting = await h.rect('[data-vm-id="vm-deep"]');
+  await h.send("select", { vmId: "vm-deep", label: "div" });
+  await h.send("apply", neverResting("vm-deep"));
+  await page.waitForTimeout(120);
+  await assertAdrift(h, "vm-deep", resting);
+
+  // Before anything scrolls the ring is on the resting box, not on the live one.
+  await expect.poll(() => h.rect(RING)).toEqual(resting);
+
+  // The page scrolls…
+  let pageY = 0;
+  for (const by of [180, 260, -90]) {
+    await h.frame.evaluate((n) => window.scrollBy(0, n), by);
+    pageY = await h.frame.evaluate(() => Math.round(window.scrollY));
+    await expect
+      .poll(() => h.rect(RING), { timeout: 2_000, message: `page scrolled to ${pageY}` })
+      .toEqual({ ...resting, y: resting.y - pageY });
+  }
+  expect(pageY, "the page really scrolled").toBeGreaterThan(0);
+
+  // …and so does a scroller inside it, which only the capture-phase listener hears.
+  for (const top of [120, 420, 40]) {
+    await h.frame.evaluate((n) => {
+      document.getElementById("sc")!.scrollTop = n;
+    }, top);
+    await expect
+      .poll(() => h.rect(RING), { timeout: 2_000, message: `#sc scrolled to ${top}` })
+      .toEqual({ ...resting, y: resting.y - pageY - top });
+  }
+
+  // It never ended, and the ring never once showed the live box.
+  await assertAdrift(h, "vm-deep", { y: resting.y - pageY - 40, height: resting.height });
+});
+
+test("an <svg> has no offset box: its ring stays visible and tracks scroll, selected before or during a spin", async ({ page }) => {
+  // The clone pipeline gives `<svg>` a data-vm-id (it is an opaque, selectable target), and a
+  // spinning logo is the canonical use. SVGSVGElement is not an HTMLElement: offsetLeft/Top/
+  // Width/Height/offsetParent are all undefined, so the layout-box path cannot serve it. The
+  // ring falls back to the live bounding box: it follows the spin's box, but it is never empty
+  // and never frozen.
+  const h = await mountBridge(
+    page,
+    `<div class="spacer" style="height:200px"></div>
+     <svg data-vm-id="vm-logo" width="180" height="90" viewBox="0 0 180 90" style="display:block">
+       <rect width="180" height="90" fill="#7c5cff"></rect>
+     </svg>
+     <div class="spacer"></div>`,
+  );
+  const spin = assignment("vm-logo", {
+    keyframesName: "vm-spin-v1-1-0",
+    keyframesCss: "@keyframes vm-spin-v1-1-0 { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }",
+    style: {
+      "animation-duration": "4000ms",
+      "animation-iteration-count": "infinite",
+      "animation-timing-function": "linear",
+    },
+    animationId: "spin",
+    catalogVersion: "1.1.0",
+  });
+
+  // Selected first, then animated, then scrolled: the ring must move with the page.
+  await h.send("select", { vmId: "vm-logo", label: "svg" });
+  await h.send("apply", spin);
+  await page.waitForTimeout(150);
+  expect(await h.animations("vm-logo")).toMatchObject([{ name: "vm-spin-v1-1-0", state: "running" }]);
+  const before = await h.rect(RING);
+  expect(before.width, "the ring is not empty").toBeGreaterThan(0);
+  await h.frame.evaluate(() => window.scrollBy(0, 120));
+  await expect
+    .poll(async () => {
+      const ring = await h.rect(RING);
+      const live = await h.rect('[data-vm-id="vm-logo"]');
+      return Math.abs(ring.y - live.y) < 12 && ring.width > 0 && ring.y < before.y - 60;
+    }, { timeout: 2_000, message: "ring follows the svg after a scroll" })
+    .toBe(true);
+
+  // Selected while it is ALREADY spinning: the ring appears on the element, not at 0,0 size 0.
+  await h.send("select", { vmId: null });
+  await h.send("select", { vmId: "vm-logo", label: "svg" });
+  await expect
+    .poll(async () => {
+      const ring = await h.rect(RING);
+      const live = await h.rect('[data-vm-id="vm-logo"]');
+      return ring.width > 0 && ring.height > 0 && Math.abs(ring.y - live.y) < 12 && Math.abs(ring.x - live.x) < 12;
+    }, { timeout: 2_000, message: "ring sits on the spinning svg" })
+    .toBe(true);
+});
+
+test("the ring follows a reflow above it and a viewport resize while an infinite animation runs", async ({ page }) => {
+  const h = await mountBridge(
+    page,
+    `<div id="above"></div>
+     <div style="display:flex;justify-content:flex-end">
+       <div class="box" data-vm-id="vm-1">drift</div>
+     </div>`,
+  );
+
+  const resting = await h.rect('[data-vm-id="vm-1"]');
+  await h.send("select", { vmId: "vm-1", label: "div" });
+  await h.send("apply", neverResting("vm-1"));
+  await page.waitForTimeout(120);
+  await assertAdrift(h, "vm-1", resting);
+  await expect.poll(() => h.rect(RING)).toEqual(resting);
+
+  // A late image, font or ad lands above the element. Nothing is scrolled, nothing is resized and
+  // no message arrives: the ResizeObserver on <html> is the only thing that hears this.
+  await h.frame.evaluate(() => {
+    document.getElementById("above")!.style.height = "140px";
+  });
+  await expect
+    .poll(() => h.rect(RING), { timeout: 2_000, message: "after a 140px reflow above the element" })
+    .toEqual({ ...resting, y: resting.y + 140 });
+
+  // And the viewport changes, which in this layout moves the element horizontally.
+  await page.evaluate(() => {
+    document.getElementById("f")!.style.width = "500px";
+  });
+  await expect
+    .poll(() => h.rect(RING), { timeout: 2_000, message: "after narrowing the frame by 300px" })
+    .toEqual({ ...resting, x: resting.x - 300, y: resting.y + 140 });
+
+  await assertAdrift(h, "vm-1", { y: resting.y + 140, height: resting.height });
+});
+
+test("a finite animation's ring still marks the resting box, and tracks a scroll through it", async ({ page }) => {
+  const h = await mountBridge(
+    page,
+    `<div class="spacer" style="height:80px"></div>
+     <div class="box" data-vm-id="vm-1">Headline</div>
+     <div class="spacer"></div>`,
+  );
+
+  const resting = await h.rect('[data-vm-id="vm-1"]');
+  await h.send("select", { vmId: "vm-1", label: "div" });
+  await h.send(
+    "apply",
+    assignment("vm-1", {
+      keyframesName: "vm-fade-in-up-v1-1-0",
+      keyframesCss:
+        "@keyframes vm-fade-in-up-v1-1-0 { from { opacity: 0; transform: translateY(24px) } to { opacity: 1; transform: none } }",
+      // Long enough that the assertions below are comfortably inside the play even on a slow CI
+      // box; the ring is expected to settle within a frame or two, not within the duration.
+      style: { "animation-duration": "4000ms", "animation-timing-function": "linear", "animation-fill-mode": "both" },
+    }),
+  );
+
+  await page.waitForTimeout(150);
+  expect((await h.rect('[data-vm-id="vm-1"]')).y, "mid-flight the element is 24px low").toBeGreaterThan(resting.y);
+
+  // The resting box, through the scroll, *while* it plays — the ring must move by the scroll and
+  // by nothing else.
+  await h.frame.evaluate(() => window.scrollBy(0, 200));
+  const scrolled = await h.frame.evaluate(() => Math.round(window.scrollY));
+  expect(scrolled).toBe(200);
+  await expect.poll(() => h.rect(RING), { timeout: 2_000 }).toEqual({ ...resting, y: resting.y - scrolled });
+  expect((await h.animations("vm-1"))[0], "still playing").toMatchObject({ state: "running" });
+
+  // And once it has finished, still there.
+  await expect.poll(() => h.animations("vm-1").then((a) => a[0]?.state), { timeout: 8_000 }).toBe("finished");
+  expect(await h.rect(RING)).toEqual({ ...resting, y: resting.y - scrolled });
+});
+
 // ---------------------------------------------------------------------------------------------
 // elements:query -> elements:list (Phase 5, bridge 1.1.0)
 // ---------------------------------------------------------------------------------------------
@@ -558,7 +813,10 @@ test.describe("elements:query", () => {
     const h = await mountBridge(page, body, head);
     const ready = (await h.messages("ready"))[0].payload;
     expect(ready.elementCount).toBe(n);
-    expect(ready.bridgeVersion).toBe("1.1.0");
+    // `elements:query` shipped in 1.1.0; the patch digit moves with every bridge release, so this
+    // is the numeric ">= 1.1.0" compare the README tells consumers to do, not a string equality.
+    const [major, minor] = String(ready.bridgeVersion).split(".").map(Number);
+    expect(major > 1 || (major === 1 && minor >= 1), `bridgeVersion ${ready.bridgeVersion}`).toBe(true);
     // Parsing the page and the bridge's own start-up (overlay, runtime sheet) are not the query's.
     await h.frame.evaluate(() => (window as unknown as { __resetMutations: () => void }).__resetMutations());
 

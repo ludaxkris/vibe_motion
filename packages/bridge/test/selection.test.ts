@@ -225,3 +225,152 @@ describe("overlay repositioning", () => {
     expect(measured).toBe(1);
   });
 });
+
+describe("the ring and a running animation", () => {
+  const RESTING = { x: 10, y: 40, width: 200, height: 30 };
+  const MID_FLIGHT = { x: 10, y: 64, width: 200, height: 30 };
+  const KEYFRAMES = "vm-fade-in-up-v1-1-0";
+  /**
+   * What `layoutBox()` sees for the same element at rest — deliberately *not* equal to `RESTING`.
+   * The two genuinely disagree in a browser: `offsetWidth` is rounded, an *ancestor's* transform
+   * never reaches `offsetLeft`, and a wrapped inline reports its first fragment. The ring caches
+   * the difference (here `+2, -1, +1, 0`) while the element is at rest and re-applies it while the
+   * animation runs, so every expectation below is in `getBoundingClientRect()` terms. Drop the
+   * correction and they all move.
+   */
+  const LAYOUT = { left: 8, top: 41, width: 199, height: 30 };
+
+  function ring(h: ReturnType<typeof loadBridge>): HTMLElement {
+    const box = h.overlay()?.querySelector<HTMLElement>("[data-vm-overlay-ring]");
+    if (!box) throw new Error("no selection ring");
+    return box;
+  }
+
+  function applyOurs(h: ReturnType<typeof loadBridge>, vmId: string) {
+    h.send({
+      type: "apply",
+      payload: {
+        vmId,
+        trigger: "load",
+        keyframesName: KEYFRAMES,
+        keyframesCss: `@keyframes ${KEYFRAMES} { from { opacity: 0 } to { opacity: 1 } }`,
+        style: { "animation-duration": "600ms" },
+        baseStyles: "",
+        animationId: "fade-in-up",
+        catalogVersion: "1.1.0",
+        params: {},
+      },
+    });
+  }
+
+  function selectedAndAnimating(h: ReturnType<typeof loadBridge>) {
+    h.setRect("vm-heading", RESTING);
+    applyOurs(h, "vm-heading");
+    h.send({ type: "select", payload: { vmId: "vm-heading", label: "h1" } });
+    return ring(h);
+  }
+
+  function boxOf(el: HTMLElement) {
+    return { left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height };
+  }
+
+  it("keeps the ring on the resting box while our animation is running", () => {
+    const h = loadBridge(selectionPage);
+    const box = selectedAndAnimating(h);
+    expect(box.style.top).toBe("40px");
+
+    // Mid-flight the element is translated by the animation's own distance;
+    // measuring then would put the ring 24px low until `animationend`, which
+    // with a replay on every slider release is most of the time.
+    h.setLiveAnimations("vm-heading", [KEYFRAMES], "running");
+    h.setRect("vm-heading", MID_FLIGHT);
+    h.send({ type: "replay", payload: { vmId: "vm-heading" } });
+    h.flushRaf();
+
+    expect(box.style.top).toBe("40px");
+  });
+
+  it("re-measures once the animation has finished", () => {
+    const h = loadBridge(selectionPage);
+    const box = selectedAndAnimating(h);
+    h.setLiveAnimations("vm-heading", [KEYFRAMES], "running");
+    h.setRect("vm-heading", MID_FLIGHT);
+    h.send({ type: "replay", payload: { vmId: "vm-heading" } });
+    h.flushRaf();
+
+    // The element settles somewhere new — a base style, a font landing — and
+    // the ring has to follow it.
+    h.setLiveAnimations("vm-heading", [KEYFRAMES], "finished");
+    h.setRect("vm-heading", { ...RESTING, y: 52 });
+    h.animationEvent("vm-heading", { animationName: KEYFRAMES });
+    h.flushRaf();
+
+    expect(box.style.top).toBe("52px");
+  });
+
+  it("re-derives the box on a capture-phase scroll while our animation is still running", () => {
+    const h = loadBridge(selectionPage);
+    h.setOffsetBox("vm-heading", LAYOUT);
+    const box = selectedAndAnimating(h);
+    expect(boxOf(box)).toEqual({ left: "10px", top: "40px", width: "200px", height: "30px" });
+
+    // Six catalog 1.1.0 entries default to `iteration: infinite` and never fire `animationend`.
+    // A ring that deferred its re-measure until the animation was over would therefore be stuck
+    // at a stale `position: fixed` box for as long as the element stayed selected. The element is
+    // still mid-flight here — only the page has moved under it.
+    h.setLiveAnimations("vm-heading", [KEYFRAMES], "running");
+    h.setRect("vm-heading", { ...MID_FLIGHT, y: MID_FLIGHT.y - 120 });
+    h.setOffsetBox("vm-heading", { ...LAYOUT, top: LAYOUT.top - 120 });
+    h.document.dispatchEvent(new h.window.Event("scroll", { bubbles: false }));
+    h.flushRaf();
+
+    // The resting box, moved by the scroll and by nothing else — not `MID_FLIGHT - 120`.
+    expect(boxOf(box)).toEqual({ left: "10px", top: "-80px", width: "200px", height: "30px" });
+  });
+
+  it("gives an element selected while it is already animating its resting box", () => {
+    const h = loadBridge(selectionPage);
+    selectedAndAnimating(h);
+
+    // vm-button carries an assignment of ours and is already mid-flight when the ring arrives, so
+    // there is no at-rest measurement to correct with. None is needed: the layout box *is* the
+    // resting box. Waiting for `animationend` to put it right would never have ended for one of
+    // the six infinite entries.
+    applyOurs(h, "vm-button");
+    h.setLiveAnimations("vm-button", [KEYFRAMES], "running");
+    h.setRect("vm-button", MID_FLIGHT);
+    h.setOffsetBox("vm-button", { left: 10, top: 40, width: 200, height: 30 });
+
+    h.send({ type: "select", payload: { vmId: "vm-button", label: "button" } });
+
+    expect(boxOf(ring(h))).toEqual({ left: "10px", top: "40px", width: "200px", height: "30px" });
+  });
+
+  it("never carries one element's resting correction over to the next", () => {
+    const h = loadBridge(selectionPage);
+    h.setOffsetBox("vm-heading", LAYOUT);
+    selectedAndAnimating(h);
+
+    applyOurs(h, "vm-button");
+    h.setLiveAnimations("vm-button", [KEYFRAMES], "running");
+    h.setRect("vm-button", MID_FLIGHT);
+    h.setOffsetBox("vm-button", { left: 70, top: 90, width: 120, height: 24 });
+    h.send({ type: "select", payload: { vmId: "vm-button", label: "button" } });
+
+    // vm-heading's `+2, -1, +1, 0` says nothing about vm-button: its layout box is used as it is.
+    expect(boxOf(ring(h))).toEqual({ left: "70px", top: "90px", width: "120px", height: "24px" });
+  });
+
+  it("still follows an element animated by the host page", () => {
+    const h = loadBridge(selectionPage);
+    const box = selectedAndAnimating(h);
+
+    // Not our keyframes: a host spinner must not freeze our ring.
+    h.setLiveAnimations("vm-heading", ["spin"], "running");
+    h.setRect("vm-heading", MID_FLIGHT);
+    h.send({ type: "replay", payload: { vmId: "vm-heading" } });
+    h.flushRaf();
+
+    expect(box.style.top).toBe("64px");
+  });
+});

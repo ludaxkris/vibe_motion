@@ -1,16 +1,32 @@
+import type { ElementInfo } from "bridge";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
 
 import {
+  createEditorStore,
   initialEditorState,
   selectDirtyVmIdCount,
   selectDirtyVmIds,
+  selectElementDirty,
   selectGuardedVmId,
+  selectGuardOpen,
   selectSelectedVmId,
   selectUnsaved,
   useEditorStore,
 } from "./index";
+
+/** A catalog-default assignment, the way `PICK` builds one. */
+function assignmentFor(animationId: string) {
+  const entry = getCatalogEntry(animationId);
+  if (!entry) throw new Error(`no catalog entry ${animationId}`);
+  return {
+    animationId: entry.id,
+    catalogVersion: CURRENT_CATALOG_VERSION,
+    trigger: entry.defaultTrigger ?? entry.triggers[0],
+    params: resolveCatalogParams(entry),
+  };
+}
 
 beforeEach(() => {
   useEditorStore.setState({ ...initialEditorState });
@@ -414,5 +430,410 @@ describe("selectGuardedVmId", () => {
 
     expect(selectUnsaved(useEditorStore.getState())).toBe(true);
     expect(selectGuardedVmId(useEditorStore.getState())).toBeNull();
+  });
+});
+
+/**
+ * Phase 4 additions: a store factory so the bridge client's tests get a fresh
+ * store, the element metadata the bridge reports, and the element-switch guard
+ * (docs/plans/phase-4-bridge-protocol.md §5, D10).
+ */
+describe("createEditorStore", () => {
+  it("hands out independent stores", () => {
+    const a = createEditorStore();
+    const b = createEditorStore();
+
+    a.getState().setDraftAssignment("vm-1", {
+      animationId: "fade-in-up",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: "load",
+      params: {},
+    });
+
+    expect(Object.keys(a.getState().draftState)).toEqual(["vm-1"]);
+    expect(b.getState().draftState).toEqual({});
+    // …and neither is the module-scope default every component reads.
+    expect(useEditorStore.getState().draftState).toEqual({});
+  });
+
+  it("starts from the same initial state as the default instance", () => {
+    const store = createEditorStore();
+
+    expect(store.getState().panel).toEqual({ status: "idle" });
+    expect(store.getState().hoverVmId).toBeNull();
+    expect(store.getState().elements).toEqual({});
+    expect(store.getState().pendingSelectVmId).toBeNull();
+  });
+});
+
+describe("element metadata from the iframe", () => {
+  const heading: ElementInfo = {
+    vmId: "vm-1",
+    tag: "h1",
+    role: null,
+    textPreview: "Welcome",
+    rect: { x: 0, y: 0, width: 100, height: 20 },
+    pageRect: { x: 0, y: 0, width: 100, height: 20 },
+    order: 0,
+    visible: true,
+  };
+
+  it("remembers what the bridge reported, keyed by vmId", () => {
+    const store = createEditorStore();
+    store.getState().rememberElement(heading);
+
+    expect(store.getState().elements["vm-1"]).toEqual(heading);
+  });
+
+  it("tracks the hovered element and clears it on leave", () => {
+    const store = createEditorStore();
+    store.getState().setHoverVmId("vm-1");
+    expect(store.getState().hoverVmId).toBe("vm-1");
+
+    store.getState().setHoverVmId(null);
+    expect(store.getState().hoverVmId).toBeNull();
+  });
+
+  it("reset() clears the metadata, the hover and any open guard", () => {
+    const store = createEditorStore();
+    store.getState().rememberElement(heading);
+    store.getState().setHoverVmId("vm-1");
+    store.setState({ pendingSelectVmId: "vm-2" });
+
+    store.getState().reset();
+
+    expect(store.getState().elements).toEqual({});
+    expect(store.getState().hoverVmId).toBeNull();
+    expect(store.getState().pendingSelectVmId).toBeNull();
+  });
+});
+
+describe("selectElementDirty", () => {
+  it("is false for a clean element and for no element at all", () => {
+    const store = createEditorStore();
+
+    expect(selectElementDirty(store.getState(), "vm-1")).toBe(false);
+    expect(selectElementDirty(store.getState(), null)).toBe(false);
+  });
+
+  it("is true for an added, a changed and a removed assignment", () => {
+    const store = createEditorStore();
+    const saved = {
+      animationId: "fade-in-up",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: "load" as const,
+      params: { duration: "600ms" },
+    };
+
+    store.getState().setDraftAssignment("vm-1", saved);
+    expect(selectElementDirty(store.getState(), "vm-1")).toBe(true); // added
+
+    store.setState({ currentVersionState: { "vm-1": saved } });
+    expect(selectElementDirty(store.getState(), "vm-1")).toBe(false);
+
+    store.getState().updateDraftParam("vm-1", "duration", "1200ms");
+    expect(selectElementDirty(store.getState(), "vm-1")).toBe(true); // changed
+
+    store.getState().removeDraftAssignment("vm-1");
+    expect(selectElementDirty(store.getState(), "vm-1")).toBe(true); // removed
+  });
+});
+
+describe("requestSelect — the unsaved-changes guard on element switch", () => {
+  function freshWithDirty(vmId: string) {
+    const store = createEditorStore();
+    store.getState().setSelectedVmId(vmId);
+    store.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    store.getState().dispatchPanel({ type: "PICK", animationId: "fade-in-up" });
+    return store;
+  }
+
+  it("selects freely while the selected element is clean", () => {
+    const store = createEditorStore();
+    store.getState().setSelectedVmId("vm-1");
+
+    store.getState().requestSelect("vm-2");
+
+    expect(selectSelectedVmId(store.getState())).toBe("vm-2");
+    expect(selectGuardOpen(store.getState())).toBe(false);
+  });
+
+  it("re-selecting the element already selected is a no-op", () => {
+    const store = createEditorStore();
+    store.getState().setSelectedVmId("vm-1");
+    const before = store.getState().panel;
+
+    store.getState().requestSelect("vm-1");
+
+    expect(store.getState().panel).toBe(before);
+    expect(selectGuardOpen(store.getState())).toBe(false);
+  });
+
+  it("holds the selection and opens the guard when the selected element is dirty", () => {
+    const store = freshWithDirty("vm-1");
+
+    store.getState().requestSelect("vm-2");
+
+    expect(selectSelectedVmId(store.getState())).toBe("vm-1");
+    expect(store.getState().pendingSelectVmId).toBe("vm-2");
+    expect(selectGuardOpen(store.getState())).toBe(true);
+  });
+
+  it("counts a changed param as dirty too", () => {
+    const store = createEditorStore();
+    const saved = {
+      animationId: "fade-in-up",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: "load" as const,
+      params: { duration: "600ms" },
+    };
+    store.setState({ currentVersionState: { "vm-1": saved }, draftState: { "vm-1": saved } });
+    store.getState().setSelectedVmId("vm-1");
+    store.getState().updateDraftParam("vm-1", "duration", "1200ms");
+
+    store.getState().requestSelect("vm-2");
+
+    expect(selectSelectedVmId(store.getState())).toBe("vm-1");
+    expect(selectGuardOpen(store.getState())).toBe(true);
+  });
+
+  it("ignores a deselect while dirty, and honours it while clean (spec §5)", () => {
+    const store = freshWithDirty("vm-1");
+
+    store.getState().requestSelect(null);
+
+    expect(selectSelectedVmId(store.getState())).toBe("vm-1");
+    expect(selectGuardOpen(store.getState())).toBe(false);
+
+    store.getState().revertDraft();
+    store.getState().requestSelect(null);
+
+    expect(selectSelectedVmId(store.getState())).toBeNull();
+  });
+});
+
+describe("resolveGuard", () => {
+  function dirtyWithPending() {
+    const store = createEditorStore();
+    // vm-9 is dirty too, and must survive a Discard aimed at vm-1.
+    store.getState().setDraftAssignment("vm-9", {
+      animationId: "pulse",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: "load",
+      params: {},
+    });
+    store.getState().setSelectedVmId("vm-1");
+    store.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    store.getState().dispatchPanel({ type: "PICK", animationId: "fade-in-up" });
+    store.getState().requestSelect("vm-2");
+    return store;
+  }
+
+  it("discard reverts only the guarded element, then selects the pending one", () => {
+    const store = dirtyWithPending();
+
+    store.getState().resolveGuard("discard");
+
+    expect(store.getState().draftState["vm-1"]).toBeUndefined();
+    expect(store.getState().draftState["vm-9"]).toBeDefined();
+    expect(selectSelectedVmId(store.getState())).toBe("vm-2");
+    expect(selectGuardOpen(store.getState())).toBe(false);
+  });
+
+  it("discard restores the saved assignment when there was one", () => {
+    const store = createEditorStore();
+    const saved = {
+      animationId: "fade-in-up",
+      catalogVersion: CURRENT_CATALOG_VERSION,
+      trigger: "load" as const,
+      params: { duration: "600ms" },
+    };
+    store.setState({ currentVersionState: { "vm-1": saved }, draftState: { "vm-1": saved } });
+    store.getState().setSelectedVmId("vm-1");
+    store.getState().updateDraftParam("vm-1", "duration", "1200ms");
+    store.getState().requestSelect("vm-2");
+
+    store.getState().resolveGuard("discard");
+
+    expect(store.getState().draftState["vm-1"]).toEqual(saved);
+    expect(selectSelectedVmId(store.getState())).toBe("vm-2");
+  });
+
+  it("keep editing drops the pending selection and changes nothing else", () => {
+    const store = dirtyWithPending();
+    const draft = store.getState().draftState;
+
+    store.getState().resolveGuard("keep");
+
+    expect(store.getState().draftState).toBe(draft);
+    expect(selectSelectedVmId(store.getState())).toBe("vm-1");
+    expect(selectGuardOpen(store.getState())).toBe(false);
+  });
+
+  it("saved selects the pending element without touching the draft", () => {
+    const store = dirtyWithPending();
+    const draft = store.getState().draftState;
+
+    store.getState().resolveGuard("saved");
+
+    expect(store.getState().draftState).toBe(draft);
+    expect(selectSelectedVmId(store.getState())).toBe("vm-2");
+    expect(selectGuardOpen(store.getState())).toBe(false);
+  });
+
+  it("is a no-op when no guard is open", () => {
+    const store = createEditorStore();
+    store.getState().setSelectedVmId("vm-1");
+
+    store.getState().resolveGuard("discard");
+
+    expect(selectSelectedVmId(store.getState())).toBe("vm-1");
+  });
+});
+
+describe("selectDirtyVmIds cost", () => {
+  it("answers from cache while the two maps it compares are unchanged", () => {
+    const store = createEditorStore();
+    store.getState().setDraftAssignment("vm-1", assignmentFor("fade-in"));
+
+    const first = selectDirtyVmIds(store.getState());
+    expect(first).toEqual(["vm-1"]);
+
+    // A hover report changes the state object but neither map. The panel has
+    // three subscribers computing this on every store change, so recomputing
+    // here means a Set, an array and a deep compare per hovered element, for
+    // no reader (DT-126).
+    store.getState().setHoverVmId("vm-9");
+    expect(selectDirtyVmIds(store.getState())).toBe(first);
+
+    store.getState().rememberElement({
+      vmId: "vm-2",
+      tag: "p",
+      role: null,
+      textPreview: "",
+      rect: { x: 0, y: 0, width: 1, height: 1 },
+      pageRect: { x: 0, y: 0, width: 1, height: 1 },
+      order: 0,
+      visible: true,
+    });
+    expect(selectDirtyVmIds(store.getState())).toBe(first);
+  });
+
+  it("recomputes as soon as either map moves", () => {
+    const store = createEditorStore();
+    store.getState().setDraftAssignment("vm-1", assignmentFor("fade-in"));
+    const first = selectDirtyVmIds(store.getState());
+
+    store.getState().setDraftAssignment("vm-2", assignmentFor("pulse"));
+    const second = selectDirtyVmIds(store.getState());
+
+    expect(second).not.toBe(first);
+    expect([...second].sort()).toEqual(["vm-1", "vm-2"]);
+
+    store.setState({ currentVersionState: { ...store.getState().draftState } });
+    expect(selectDirtyVmIds(store.getState())).toEqual([]);
+  });
+
+  it("caches the clean answer too, whether the two maps are shared or merely equal", () => {
+    const store = createEditorStore();
+    const clean = selectDirtyVmIds(store.getState());
+    expect(clean).toEqual([]);
+    // A hover changes the state object but neither map, so the clean answer is
+    // identity-stable for the same reason the dirty one is.
+    store.getState().setHoverVmId("vm-9");
+    expect(selectDirtyVmIds(store.getState())).toBe(clean);
+
+    store.getState().setDraftAssignment("vm-1", assignmentFor("fade-in"));
+
+    // The *same object* for both maps. Nothing in the store produces this
+    // today — `initialEditorState` holds two distinct `{}`, `reset()` re-uses
+    // those two and `revertDraft` allocates a copy — which is why there is no
+    // identity fast path in the selector. Phase 6's save is the obvious thing
+    // that might, so the answer has to be right either way.
+    store.setState({ currentVersionState: store.getState().draftState });
+    expect(store.getState().draftState).toBe(store.getState().currentVersionState);
+    expect(selectDirtyVmIds(store.getState())).toEqual([]);
+
+    // …and equal but distinct.
+    store.setState({ currentVersionState: { ...store.getState().draftState } });
+    expect(store.getState().draftState).not.toBe(store.getState().currentVersionState);
+    expect(selectDirtyVmIds(store.getState())).toEqual([]);
+  });
+
+  it("is still correct when two stores interleave", () => {
+    const a = createEditorStore();
+    const b = createEditorStore();
+    a.getState().setDraftAssignment("vm-a", assignmentFor("fade-in"));
+    b.getState().setDraftAssignment("vm-b", assignmentFor("pulse"));
+
+    expect(selectDirtyVmIds(a.getState())).toEqual(["vm-a"]);
+    expect(selectDirtyVmIds(b.getState())).toEqual(["vm-b"]);
+    expect(selectDirtyVmIds(a.getState())).toEqual(["vm-a"]);
+  });
+});
+
+describe("the element the guard named", () => {
+  function dirtyThenRequest(store = createEditorStore()) {
+    store.getState().setSelectedVmId("vm-1");
+    store.getState().setDraftAssignment("vm-1", assignmentFor("fade-in"));
+    store.getState().requestSelect("vm-2");
+    return store;
+  }
+
+  it("is recorded when the guard opens", () => {
+    const store = dirtyThenRequest();
+
+    expect(store.getState().guardedVmId).toBe("vm-1");
+    expect(store.getState().pendingSelectVmId).toBe("vm-2");
+    expect(selectGuardOpen(store.getState())).toBe(true);
+  });
+
+  it("is what Discard reverts, not whatever happens to be selected by then", () => {
+    const store = createEditorStore();
+    store.setState({ currentVersionState: { "vm-1": assignmentFor("pulse") } });
+    store.getState().setSelectedVmId("vm-1");
+    store.getState().setDraftAssignment("vm-1", assignmentFor("shake"));
+    store.getState().requestSelect("vm-2");
+    // Phase 5's result-list rows and Phase 6's version load both move the
+    // selection programmatically; the dialog named `vm-1` and may only take
+    // `vm-1`.
+    store.setState({ panel: { status: "selected", vmId: "vm-3" } });
+    store.getState().setDraftAssignment("vm-3", assignmentFor("glow"));
+
+    store.getState().resolveGuard("discard");
+
+    expect(store.getState().draftState["vm-1"]).toEqual(assignmentFor("pulse"));
+    expect(store.getState().draftState["vm-3"]).toEqual(assignmentFor("glow"));
+  });
+
+  it("is cleared, with the pending selection, by the editor's own selection move", () => {
+    const store = dirtyThenRequest();
+
+    store.getState().setSelectedVmId("vm-7");
+
+    expect(store.getState().guardedVmId).toBeNull();
+    expect(store.getState().pendingSelectVmId).toBeNull();
+    expect(selectGuardOpen(store.getState())).toBe(false);
+  });
+
+  it("is cleared by revertDraft and by reset", () => {
+    const store = dirtyThenRequest();
+    store.getState().revertDraft();
+    expect(store.getState().guardedVmId).toBeNull();
+    expect(store.getState().pendingSelectVmId).toBeNull();
+
+    dirtyThenRequest(store);
+    store.getState().reset();
+    expect(store.getState().guardedVmId).toBeNull();
+    expect(store.getState().pendingSelectVmId).toBeNull();
+  });
+
+  it("is cleared by every guard outcome", () => {
+    for (const outcome of ["discard", "keep", "saved"] as const) {
+      const store = dirtyThenRequest();
+      store.getState().resolveGuard(outcome);
+      expect(store.getState().guardedVmId, outcome).toBeNull();
+      expect(store.getState().pendingSelectVmId, outcome).toBeNull();
+    }
   });
 });

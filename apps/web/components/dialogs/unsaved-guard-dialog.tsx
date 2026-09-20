@@ -32,7 +32,11 @@ export type UnsavedGuardDialogContentProps = {
   currentVersionLabel?: string;
   onDiscard: () => void;
   onKeepEditing: () => void;
-  onSave?: () => void;
+  /**
+   * The Save flow. Allowed to be async — the element-switch guard awaits it
+   * before letting the pending selection through (spec §5).
+   */
+  onSave?: () => void | Promise<void>;
   /** Phase 6 passes `false` once Save has a version to write. */
   saveDisabled?: boolean;
   /** Supplied by the modal wrapper so the popup can point `aria-labelledby` here. */
@@ -99,7 +103,9 @@ export function UnsavedGuardDialogContent({
         <Button variant="secondary" className="ml-auto" onClick={onKeepEditing}>
           Keep editing
         </Button>
-        <Button disabled={saveDisabled} onClick={onSave}>
+        {/* The note below says the same thing in the open; the tooltip is for
+            a pointer that lands on the button and nowhere else. */}
+        <Button disabled={saveDisabled} title={saveDisabled ? SAVE_NOTE : undefined} onClick={onSave}>
           Save
         </Button>
       </div>

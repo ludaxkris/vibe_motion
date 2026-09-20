@@ -27,7 +27,8 @@ apps/web/                 Next.js app (editor shell, control panel, help page, b
 apps/e2e/                 end-to-end tests for every client (web/ today, mobile/ later), fixtures, the Docker full-stack (docker/)
 apps/api/                 Ktor service (clone, versions, export, catalog endpoint), openapi.yaml, Dockerfile, Flyway migrations
 packages/animation-catalog/  versions/<semver>.json (immutable), current, schema.json, CHANGELOG.md, type generation, check-immutable gate
-docs/                     build_plan.md, architecture.md, user_flow.md, deferred_tasks.md, agents/pr-comment.md
+packages/bridge/          the script that runs inside the cloned page's iframe (src/vm-bridge.js) and the shared postMessage protocol (src/protocol.ts); served by both the api jar and the web mock route
+docs/                     build_plan.md, architecture.md, user_flow.md, deferred_tasks.md, plans/, agents/pr-comment.md
 .claude/agents/           subagent definitions (see below)
 .github/workflows/        gates.yml (CI)
 render.yaml               Render blueprint: web + api + Postgres
@@ -42,8 +43,10 @@ Once Phase 0 lands these are the canonical entry points. Until then, see the pha
 ```bash
 pnpm install                     # JS workspace
 pnpm dev                         # web on :3000, expects API on :8080
-pnpm gates                       # ALL gates (catalog + web + api + e2e + full-stack Docker e2e); what CI runs
+pnpm gates                       # ALL gates (catalog + bridge + web + api + e2e + full-stack Docker e2e); what CI runs
+pnpm gates:bridge                # the bridge group alone: typecheck, vitest + jsdom, real-browser Playwright
 pnpm --filter web test           # vitest
+pnpm --filter bridge test        # vitest + jsdom over packages/bridge
 pnpm e2e                         # playwright (apps/e2e), web-only specs against `next dev`
 pnpm e2e:docker                  # full-stack e2e: a NEW throwaway Docker stack per run (db + api image + prod web build + fixtures + runner); safe to run concurrently from any worktree; agents run it (and `pnpm gates`) in the background. See apps/e2e/README.md
 pnpm --filter animation-catalog validate

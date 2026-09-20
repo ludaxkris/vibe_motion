@@ -254,8 +254,13 @@ describe("/dev", () => {
   it("never touches the editor store", async () => {
     const { store } = await renderGallery();
 
-    const { panel, draftState, currentVersionState, mode } = store.useEditorStore.getState();
-    expect({ panel, draftState, currentVersionState, mode }).toEqual(store.initialEditorState);
+    // Key by key off `initialEditorState` rather than a hand-written subset of
+    // it, so a new field in the store cannot quietly drop out of this check.
+    const state: Record<string, unknown> = store.useEditorStore.getState();
+    const initial: Record<string, unknown> = store.initialEditorState;
+    for (const key of Object.keys(initial)) {
+      expect(state[key], key).toEqual(initial[key]);
+    }
   });
 
   it("calls notFound() in production", async () => {

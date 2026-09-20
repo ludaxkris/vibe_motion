@@ -283,3 +283,44 @@ describe("TuningPanel", () => {
     }
   });
 });
+
+describe("TuningPanel bridge seam", () => {
+  it("replays on request once a preview exists to replay", () => {
+    const onReplay = vi.fn();
+    renderTuning("fade-in", { onReplay });
+
+    const replay = screen.getByRole("button", { name: "Replay" });
+    expect(replay).toBeEnabled();
+
+    fireEvent.click(replay);
+    expect(onReplay).toHaveBeenCalledOnce();
+  });
+
+  it("reports the settled value when a slider is released, with its unit", () => {
+    const onParamCommit = vi.fn();
+    const { onParamChange } = renderTuning("fade-in", { onParamCommit });
+
+    const slider = screen.getByLabelText("Duration");
+    slider.focus();
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    fireEvent.keyUp(slider, { key: "ArrowRight" });
+
+    expect(onParamChange).toHaveBeenCalled();
+    expect(onParamCommit).toHaveBeenCalledWith("duration", expect.stringMatching(/^\d+ms$/));
+  });
+
+  it("leaves the number field out of it: only a released slider replays", () => {
+    // Spec §5 names the slider release. Typing a number is a considered edit
+    // that the live preview already shows; restarting the animation under the
+    // caret would fight the person typing.
+    const onParamCommit = vi.fn();
+    const { onParamChange } = renderTuning("fade-in", { onParamCommit });
+
+    const field = screen.getByRole("spinbutton", { name: "Duration value" });
+    fireEvent.change(field, { target: { value: "900" } });
+    fireEvent.blur(field);
+
+    expect(onParamChange).toHaveBeenCalledWith("duration", "900ms");
+    expect(onParamCommit).not.toHaveBeenCalled();
+  });
+});

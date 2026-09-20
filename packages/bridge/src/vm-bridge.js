@@ -19,7 +19,7 @@
   "use strict";
 
   /** Parsed out of this file by the API at build time; never hand-synced into Kotlin. */
-  var BRIDGE_VERSION = "1.1.0";
+  var BRIDGE_VERSION = "1.1.1";
   var MESSAGE_SOURCE = "vibe-motion";
   var PROTOCOL_VERSION = 1;
   /** Kept in sync with IN_VIEW_THRESHOLD in src/protocol.ts; the Phase 7 exporter uses it too. */
@@ -815,6 +815,18 @@
   var selectBox = /** @type {HTMLElement | null} */ (null);
   var selectLabel = /** @type {HTMLElement | null} */ (null);
   var selectedVmId = /** @type {string | null} */ (null);
+  /**
+   * Per overlay box: which element it is drawn for, and that element's resting *correction* —
+   * `getBoundingClientRect() - layoutBox()` as of the last measurement taken while none of our
+   * animations was running on it. See `positionBox`.
+   *
+   * @returns {{ vmId: string | null, dx: number, dy: number, dw: number, dh: number }}
+   */
+  function newBoxState() {
+    return { vmId: null, dx: 0, dy: 0, dw: 0, dh: 0 };
+  }
+  var hoverBoxState = newBoxState();
+  var selectBoxState = newBoxState();
   var overlayFrame = 0;
 
   var BOX_BASE = "position:fixed;left:0;top:0;width:0;height:0;box-sizing:border-box;display:none;pointer-events:none;";
@@ -850,36 +862,180 @@
   }
 
   /**
-   * @param {HTMLElement | null} box
-   * @param {Element | undefined} el
+   * Is one of *our* animations moving this element right now?
+   *
+   * `getAnimations()` also returns animations that have finished but still
+   * fill (`fill-mode: both`, which most entrance animations use), and those
+   * leave the element at its resting box — so play state is the question, not
+   * existence. A host animation does not count: the ring has to keep following
+   * an element the page itself is moving.
+   *
+   * @param {string} vmId
    */
-  function positionBox(box, el) {
+  function isMidOwnAnimation(vmId) {
+    var record = records.get(vmId);
+    if (!record) return false;
+    var assignment = effective(record);
+    if (!assignment) return false;
+    var el = record.el;
+    if (typeof el.getAnimations !== "function") return false;
+    var running = el.getAnimations();
+    for (var i = 0; i < running.length; i += 1) {
+      var animation = /** @type {CSSAnimation} */ (running[i]);
+      if (!animation || animation.animationName !== assignment.keyframesName) continue;
+      // Only "running". A *paused* one — an `in-view` element held at its
+      // first keyframe — is sitting still at the box the designer can see, so
+      // the ring should mark that; and freezing on it would stop the ring
+      // following a scroll for as long as the element stayed off-screen.
+      if (animation.playState === "running") return true;
+    }
+    return false;
+  }
+
+  /**
+   * The element's border box in viewport coordinates, computed from *layout* instead of from
+   * `getBoundingClientRect()`.
+   *
+   * `offsetLeft` / `offsetTop` / `offsetWidth` / `offsetHeight` are layout values: a `transform`
+   * on the element or on any ancestor never reaches them, which is the whole point here.
+   * `offsetLeft`/`offsetTop` are measured from the offsetParent's *padding* edge and are blind to
+   * scrolling, so the walk adds each offsetParent's border (`clientLeft`/`clientTop`) and then
+   * subtracts every ancestor's scroll offset — `documentElement`'s included, which is the page
+   * scroll in standards mode.
+   *
+   * `offsetParent` is null on `<body>` and on a `position: fixed` box, so where the first walk
+   * stops says which of the two the accumulated coordinates are relative to: the document (stop
+   * at `<body>`, so subtract every scroll up to the root) or the viewport (stop at a fixed box,
+   * so subtract only the scrolls inside it).
+   *
+   * @param {Element} element
+   * @returns {{ left: number, top: number, width: number, height: number }}
+   */
+  function layoutBox(element) {
+    var el = /** @type {HTMLElement} */ (element);
+    var left = 0;
+    var top = 0;
+    var node = el;
+    for (;;) {
+      left += node.offsetLeft || 0;
+      top += node.offsetTop || 0;
+      var parent = /** @type {HTMLElement | null} */ (node.offsetParent);
+      if (!parent) break;
+      left += parent.clientLeft || 0;
+      top += parent.clientTop || 0;
+      node = parent;
+    }
+    var viewportRelative = node !== document.body && node !== document.documentElement;
+    // An absolutely positioned element does not move with a scroller between it and its
+    // containing block — only with scrollers at or above that block, which is `offsetParent`.
+    // Everything else moves with every scroller above it. One resolved-value read, on an element
+    // whose style the `offsetLeft` reads above have already forced up to date.
+    var computed = window.getComputedStyle ? window.getComputedStyle(el) : null;
+    var start = computed && computed.position === "absolute" ? el.offsetParent : el.parentElement;
+    var ancestor = /** @type {HTMLElement | null} */ (viewportRelative && node === el ? null : start);
+    while (ancestor) {
+      left -= ancestor.scrollLeft || 0;
+      top -= ancestor.scrollTop || 0;
+      if (viewportRelative && ancestor === node) break;
+      ancestor = ancestor.parentElement;
+    }
+    return { left: left, top: top, width: el.offsetWidth || 0, height: el.offsetHeight || 0 };
+  }
+
+  /**
+   * Draw one overlay box on `vmId`.
+   *
+   * The ring marks the element's *resting* box, and it marks it at all times: it follows every
+   * scroll, resize and reflow, including while one of our animations is running on the element.
+   *
+   * Two halves to that. `getBoundingClientRect()` reads the *animated* box — a Fade In Up would
+   * sit the ring its `distance` below the element for the length of the play, and with a replay
+   * on every slider release that is most of the time — so while our animation is running the box
+   * comes from `layoutBox()`, which no transform can reach. But `layoutBox()` is not
+   * `getBoundingClientRect()`: it rounds (`offsetWidth` is an integer), it cannot see an
+   * *ancestor's* transform, and it reports the first fragment of a wrapped inline rather than the
+   * union. So it is corrected by the difference between the two, taken the last time this element
+   * was measured at rest, which cancels every such disagreement that does not change during the
+   * play. Known limits are listed in `packages/bridge/README.md`.
+   *
+   * Deferring instead — leaving the box where it was until `animationend` — is what this used to
+   * do, and it cannot work: six catalog 1.1.0 entries default to `iteration: infinite`, so for
+   * them `animationend` never comes and the ring would be frozen at a stale `position: fixed` box
+   * for as long as the element stayed selected.
+   *
+   * @param {HTMLElement | null} box
+   * @param {string | null} vmId
+   * @param {{ vmId: string | null, dx: number, dy: number, dw: number, dh: number }} state
+   */
+  function positionBox(box, vmId, state) {
     if (!box) return;
-    if (!el) {
+    var el = vmId ? elements.get(vmId) : undefined;
+    if (!el || !vmId) {
       box.style.display = "none";
+      state.vmId = null;
       return;
     }
-    var rect = el.getBoundingClientRect();
+    // Only an HTMLElement has an offset box. An `<svg>` (a first-class target: the clone gives it
+    // a data-vm-id, and a spinning logo is the canonical use) reports every `offset*` as
+    // undefined, so `layoutBox()` would be an empty box at the origin. Such an element is always
+    // measured live: its ring follows the animated box rather than the resting one, but it is
+    // never empty and it tracks scroll and layout like any other.
+    var hasOffsetBox = typeof (/** @type {HTMLElement} */ (el).offsetWidth) === "number";
+    var layout = hasOffsetBox ? layoutBox(el) : { left: 0, top: 0, width: 0, height: 0 };
+    var left;
+    var top;
+    var width;
+    var height;
+    if (hasOffsetBox && isMidOwnAnimation(vmId)) {
+      // A correction measured against some *other* element says nothing about this one. Dropping
+      // it leaves `layoutBox()` uncorrected, which is still the resting box — that is how an
+      // element selected while it is already animating gets a ring in the right place at once,
+      // rather than one offset by whatever phase the animation happened to be in.
+      if (state.vmId !== vmId) {
+        state.dx = 0;
+        state.dy = 0;
+        state.dw = 0;
+        state.dh = 0;
+      }
+      left = layout.left + state.dx;
+      top = layout.top + state.dy;
+      width = layout.width + state.dw;
+      height = layout.height + state.dh;
+    } else {
+      var rect = el.getBoundingClientRect();
+      left = rect.left;
+      top = rect.top;
+      width = rect.width;
+      height = rect.height;
+      state.dx = left - layout.left;
+      state.dy = top - layout.top;
+      state.dw = width - layout.width;
+      state.dh = height - layout.height;
+    }
+    state.vmId = vmId;
     box.style.display = "block";
-    box.style.left = rect.left + "px";
-    box.style.top = rect.top + "px";
-    box.style.width = rect.width + "px";
-    box.style.height = rect.height + "px";
+    box.style.left = left + "px";
+    box.style.top = top + "px";
+    box.style.width = width + "px";
+    box.style.height = height + "px";
   }
 
   function syncOverlay() {
-    positionBox(hoverBox, hoveredVmId ? elements.get(hoveredVmId) : undefined);
-    positionBox(selectBox, selectedVmId ? elements.get(selectedVmId) : undefined);
+    positionBox(hoverBox, hoveredVmId, hoverBoxState);
+    positionBox(selectBox, selectedVmId, selectBoxState);
   }
 
   var overlayResize = /** @type {ResizeObserver | null} */ (null);
 
   /**
    * Scroll and resize are not the only things that move a box. A late image or font load in the
-   * clone shifts everything under it, `baseStyles` can change the box itself, and an `apply`
-   * during an animation leaves the ring where the element used to be. One observer on the root
-   * plus the two elements the overlay is actually drawing catches all of it, without a per-frame
-   * loop chasing the element through its animation: the ring marks the resting box.
+   * clone shifts everything under it, and `baseStyles` can change the box itself. One observer on
+   * the root plus the two elements the overlay is actually drawing catches all of it.
+   *
+   * This is a resync trigger like any other, so `positionBox` re-derives the box from it even
+   * while one of our animations is running — which is the only way a reflow under an `infinite`
+   * animation is ever caught, since `animationend` never arrives for one. There is still no
+   * per-frame loop: nothing here chases the element through its animation.
    */
   function observeOverlayTargets() {
     if (!overlayResize) {
@@ -1017,7 +1173,7 @@
       if (nearest) overlayRoot.setAttribute(HOVERED_ATTR, nearest);
       else overlayRoot.removeAttribute(HOVERED_ATTR);
     }
-    positionBox(hoverBox, nearest ? elements.get(nearest) : undefined);
+    positionBox(hoverBox, nearest, hoverBoxState);
     observeOverlayTargets();
     // Only on a change: a message per mouse move would flood the channel (spec §6).
     post("element:hover", nearest ? elementInfo(nearest) : { vmId: null });
@@ -1069,7 +1225,11 @@
     if (!vmId) return;
     var record = records.get(vmId);
     if (!record || record.el !== el) return;
-    if (selectedVmId === vmId && event.type !== "animationiteration") scheduleOverlaySync();
+    // The element has stopped moving, so whatever box the overlay is holding
+    // for it is now stale: this is the resync `positionBox` defers to.
+    if ((selectedVmId === vmId || hoveredVmId === vmId) && event.type !== "animationiteration") {
+      scheduleOverlaySync();
+    }
     if (!record.replaying) return;
     var assignment = effective(record);
     if (!assignment || event.animationName !== assignment.keyframesName) return;
@@ -1129,7 +1289,7 @@
       else overlayRoot.removeAttribute(SELECTED_ATTR);
     }
     if (selectLabel) selectLabel.textContent = label || "";
-    positionBox(selectBox, vmId ? elements.get(vmId) : undefined);
+    positionBox(selectBox, vmId, selectBoxState);
     observeOverlayTargets();
   }
 

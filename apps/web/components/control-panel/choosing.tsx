@@ -39,6 +39,8 @@ export function ChoosingPanel({
   onCategoryChange,
   onPick,
   onBack,
+  onPreview,
+  onPreviewEnd,
 }: {
   /** The element being animated; shown as the header's tag. */
   vmId: string;
@@ -53,6 +55,9 @@ export function ChoosingPanel({
   onCategoryChange?: (category: string) => void;
   onPick?: (animationId: string) => void;
   onBack?: () => void;
+  /** Hovering or focusing a card shows that animation on the page, transiently (spec D4). */
+  onPreview?: (animationId: string) => void;
+  onPreviewEnd?: () => void;
 }) {
   // The highlight *is* the focused card (roving focus): a second copy of
   // "which card the arrows are on" could disagree with the one the user can
@@ -186,6 +191,8 @@ export function ChoosingPanel({
                 catalogVersion={catalogVersion}
                 applied={entry.id === appliedAnimationId}
                 onApply={() => onPick?.(entry.id)}
+                onPreviewStart={() => onPreview?.(entry.id)}
+                onPreviewEnd={onPreviewEnd}
               />
             ))}
           </div>
