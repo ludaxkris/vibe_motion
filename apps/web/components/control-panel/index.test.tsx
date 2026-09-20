@@ -1,6 +1,7 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { VersionHistory } from "@/components/history/use-version-history";
 import { CURRENT_CATALOG_VERSION, defaultAssignmentFor, getCatalogEntry } from "@/lib/catalog";
 import { initialEditorState, useEditorStore } from "@/lib/store";
 
@@ -368,7 +369,65 @@ describe("ControlPanel · unsaved guard", () => {
     fireEvent.click(screen.getByRole("tab", { name: "History" }));
 
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(screen.getByText("Saving arrives with version history.")).toBeInTheDocument();
+    expect(screen.getByText("Saving isn’t available here.")).toBeInTheDocument();
+  });
+
+  it("makes the switch once the save flow says a version was written", async () => {
+    makeDirty();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<ControlPanel onSave={onSave} />);
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    const save = within(screen.getByRole("dialog")).getByRole("button", { name: "Save" });
+    expect(save).toBeEnabled();
+    expect(screen.queryByText("Saving isn’t available here.")).not.toBeInTheDocument();
+
+    fireEvent.click(save);
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("data-active"),
+    );
+    expect(onSave).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Unlike Discard, the draft is the version now: nothing was reverted.
+    expect(useEditorStore.getState().draftState["vm-1"]).toBeDefined();
+  });
+
+  it("keeps the guard standing when the save does not happen", async () => {
+    makeDirty();
+    // What `requestSave()` rejects with when the Save dialog is cancelled.
+    const onSave = vi.fn().mockRejectedValue(new Error("save cancelled"));
+    render(<ControlPanel onSave={onSave} />);
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(screen.getByRole("dialog", { name: "Save changes to vm-1?" })).toBeInTheDocument();
+    // The switch has not happened: Animate's body is still the one behind the
+    // modal. (By role the tabs are unreachable — the open dialog inerts the
+    // page — so this asks the DOM rather than the accessibility tree.)
+    expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
+  });
+
+  it("lets the pending tab through when the draft goes clean without a version of its own", async () => {
+    makeDirty();
+    // What the 409's "Discard my changes" leaves behind: their version is
+    // loaded, so the draft is clean — and the promise still rejects, because
+    // nothing of *mine* was written. The guard would otherwise stay open
+    // claiming unsaved changes, with a Save that could do nothing at all.
+    const onSave = vi.fn().mockRejectedValue(new Error("save cancelled"));
+    render(<ControlPanel onSave={onSave} />);
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+
+    act(() => {
+      useEditorStore.getState().loadVersion("their-version", {});
+    });
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("data-active");
   });
 
   it("switches straight away once the draft is clean again", () => {
@@ -512,6 +571,104 @@ describe("ControlPanel bridge seams", () => {
     render(<ControlPanel />);
 
     expect(screen.getByRole("button", { name: "Replay" })).toBeDisabled();
+  });
+});
+
+describe("ControlPanel · History and viewing", () => {
+  /** What the shell's `useVersionHistory` hands down, in the state a test needs. */
+  function historyStub(overrides: Partial<VersionHistory> = {}): VersionHistory {
+    return {
+      versions: [],
+      pending: false,
+      listError: false,
+      retry: () => undefined,
+      currentVersionId: "current-id",
+      viewingVersionId: null,
+      viewing: false,
+      viewingLabel: undefined,
+      currentLabel: "v5",
+      nextLabel: "v6",
+      error: null,
+      restoring: false,
+      view: async () => undefined,
+      back: () => undefined,
+      restore: async () => undefined,
+      ...overrides,
+    };
+  }
+
+  it("mounts the History tab once the shell hands it a project's history", () => {
+    render(<ControlPanel history={historyStub()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    expect(screen.getByTestId("panel-history")).toBeInTheDocument();
+    expect(screen.queryByText(/only created when you click Save/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the placeholder when there is no project behind the panel", () => {
+    render(<ControlPanel />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    expect(screen.queryByTestId("panel-history")).not.toBeInTheDocument();
+    expect(screen.getByText(/only created when you click Save/i)).toBeInTheDocument();
+  });
+
+  it("makes Animate read-only while a past version is on screen, and says why", () => {
+    useEditorStore.setState({ mode: "viewing", viewingVersionId: "viewed-id" });
+    render(
+      <ControlPanel
+        history={historyStub({ viewing: true, viewingVersionId: "viewed-id", viewingLabel: "v3" })}
+      />,
+    );
+
+    expect(screen.getByText("Viewing v3 — read-only. Go back to v5 to edit.")).toBeInTheDocument();
+    // The store already refuses every draft write while viewing; this is the
+    // half the reader can see — no control that looks live and does nothing.
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("inert");
+  });
+
+  it("leaves Animate alone while editing", () => {
+    render(<ControlPanel history={historyStub()} />);
+
+    expect(screen.getByRole("tabpanel")).not.toHaveAttribute("inert");
+    expect(screen.queryByText(/read-only/)).not.toBeInTheDocument();
+  });
+
+  it("cancels a version still loading when the reader leaves the History tab", () => {
+    const back = vi.fn();
+    render(<ControlPanel history={historyStub({ back })} />);
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    // Nothing is on screen yet — a row was clicked and its `/state` is still
+    // in flight — and `back()` is what cancels it (the hook drops the answer),
+    // so it is called on the way out whether or not viewing has begun.
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+
+    expect(back).toHaveBeenCalledOnce();
+  });
+
+  it("comes back to the current version when the reader leaves the History tab", () => {
+    const back = vi.fn();
+    useEditorStore.setState({ mode: "viewing", viewingVersionId: "viewed-id" });
+    render(
+      <ControlPanel
+        history={historyStub({
+          viewing: true,
+          viewingVersionId: "viewed-id",
+          viewingLabel: "v3",
+          back,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Animate" }));
+
+    // The editor must never sit in viewing mode with the History tab closed.
+    expect(back).toHaveBeenCalledOnce();
+    expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
   });
 });
 

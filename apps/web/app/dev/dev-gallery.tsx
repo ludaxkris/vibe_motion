@@ -2,6 +2,7 @@
 
 import { getEntry } from "animation-catalog";
 import { cn } from "cn";
+import Link from "next/link";
 import { useId, useState, type ReactNode } from "react";
 
 import { AutoResultPanel, type AutoResultRow } from "@/components/control-panel/auto-result";
@@ -291,6 +292,15 @@ export function DevGallery() {
         <p className="max-w-[70ch] text-md leading-body text-vm-ink-2">
           Dev-only route, 404 in production. Each frame is rendered from props at its real width —
           nothing here reads or writes the editor store, and nothing calls the API.
+        </p>
+        {/* Its own page: the version list, the viewing banner and the conflict
+            dialog need a project's worth of history to stand in a frame. */}
+        <p className="text-md leading-body text-vm-ink-2">
+          The History tab&rsquo;s states live on{" "}
+          <Link href="/dev/history" className="font-medium text-vm-accent hover:underline">
+            /dev/history
+          </Link>
+          .
         </p>
       </header>
 

@@ -168,7 +168,7 @@ The overlay container and everything in it is excluded from hit-testing and from
 - `ack.ms` is a **p95**, with a max < 8 ms sanity bound on the same series. It was a max; one preempted handler on a loaded machine is not a regression, and §6 already says p95 for the same reason on the line above.
 - What gates **everywhere**, CI included, is a set of deterministic cost facts counted inside the frame, because a millisecond regression is made of them: a param change performs exactly one inline `setProperty` and no `insertRule`, `deleteRule`, `getBoundingClientRect` or `getComputedStyle`; a `state:load` performs one `insertRule` per *distinct* keyframes body and no layout read; and a frame's worth of store writes reaches the frame as one `apply` per vmId carrying the last value.
 
-Wall-clock budgets are asserted on the fastest of up to three measurement passes: interference from a shared machine can only slow a pass down, so the fastest pass is the closest to what the code costs, and a real regression is slow on every pass. Every pass is printed.
+Wall-clock budgets are not asserted when the run starts on a saturated machine (1-minute load average above 1.5 times the core count, sampled at the start of the test and again when the numbers are judged), for the same reason they are not asserted in CI; the numbers are still printed and the run is annotated. Otherwise they are asserted on the fastest of up to three measurement passes: interference from a shared machine can only slow a pass down, so the fastest pass is the closest to what the code costs, and a real regression is slow on every pass. Every pass is printed.
 
 ## 6a. Preview / export parity
 

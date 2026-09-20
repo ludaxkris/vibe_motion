@@ -5,12 +5,14 @@ import { HttpResponse, delay, http } from "msw";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { apiClient, type Assignment, type Project } from "@/lib/api-client";
+import { apiClient, type Assignment, type Project, type Version } from "@/lib/api-client";
 import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
 import { env } from "@/lib/env";
 import { previewOrigin } from "@/lib/preview-url";
 import { readRecentProjects, rememberRecentProject } from "@/lib/recent-projects";
 import { initialEditorState, selectSelectedVmId, useEditorStore } from "@/lib/store";
+import { saveVersion } from "@/lib/versions/api";
+import { listVersions } from "@/mocks/db";
 import { server } from "@/mocks/server";
 
 import { EditorShell } from "./editor-shell";
@@ -42,6 +44,11 @@ function assignmentFor(animationId: string): Assignment {
     trigger: entry.defaultTrigger ?? entry.triggers[0],
     params: resolveCatalogParams(entry),
   };
+}
+
+/** The shell forks the draft from the project's current version when it opens (Phase 6). */
+async function openLoaded() {
+  await waitFor(() => expect(useEditorStore.getState().currentVersionId).not.toBeNull());
 }
 
 /** Puts the store in the state an element with an unsaved animation leaves it in. */
@@ -222,6 +229,10 @@ describe("EditorShell", () => {
     const project = await createProject();
     renderShell(project.id);
     await screen.findByText("example.com/pricing");
+    // The shell forks the draft from the project's current version when it
+    // opens; this test stands a *saved* animation in that draft's place, so it
+    // waits for the open load rather than racing it.
+    await openLoaded();
 
     const saved = assignmentFor("pulse");
     useEditorStore.setState({ currentVersionState: { "vm-1": saved }, draftState: { "vm-1": saved } });
@@ -611,6 +622,260 @@ describe("EditorShell bridge readiness", () => {
   });
 });
 
+describe("EditorShell save flow", () => {
+  async function opened(projectId: string) {
+    renderShell(projectId);
+    await screen.findByText("example.com/pricing");
+    await openLoaded();
+  }
+
+  it("forks the draft from the project's current version when it opens", async () => {
+    const project = await createProject();
+
+    await opened(project.id);
+
+    // v0 of a fresh clone animates nothing, but the *fork* is what matters:
+    // without it the first Save would diff against an empty map.
+    expect(useEditorStore.getState().currentVersionId).toBe(project.currentVersionId);
+    expect(screen.queryByText("Unsaved")).not.toBeInTheDocument();
+  });
+
+  it("opens the Save dialog from the top bar, naming the version it would create", async () => {
+    const project = await createProject();
+    await opened(project.id);
+    selectAndAnimate("vm-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Save as v1" });
+    expect(within(dialog).getByText("from v0")).toBeInTheDocument();
+    expect(within(dialog).getByText("vm-1")).toBeInTheDocument();
+  });
+
+  it("saves, moves the version chip on and clears the unsaved indicator", async () => {
+    const project = await createProject();
+    await opened(project.id);
+    selectAndAnimate("vm-1");
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await screen.findByRole("dialog", { name: "Save as v1" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save version" }));
+
+    expect(await screen.findByText("v1")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Unsaved")).not.toBeInTheDocument());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("names the next version correctly on a second save, before the list refetches", async () => {
+    const project = await createProject();
+    let answered = 0;
+    server.use(
+      http.get(api("/projects/:projectId/versions"), ({ params }) => {
+        answered += 1;
+        // The refetch after the first save never usefully answers, which is
+        // the window "Save as v1" used to be shown in while v2 was being
+        // created. (Hanging it instead would hang the save itself.)
+        if (answered > 1) {
+          return HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 });
+        }
+        return HttpResponse.json(listVersions(String(params.projectId)));
+      }),
+    );
+    await opened(project.id);
+
+    act(() => {
+      selectAndAnimate("vm-1");
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await screen.findByRole("dialog", { name: "Save as v1" });
+    fireEvent.click(screen.getByRole("button", { name: "Save version" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    act(() => {
+      selectAndAnimate("vm-2", "pulse");
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("dialog", { name: "Save as v2" })).toBeInTheDocument();
+    expect(within(screen.getByTestId("save-dialog")).getByText("from v1")).toBeInTheDocument();
+  });
+
+  it("says so and offers a Retry when the project's saved animations will not load", async () => {
+    const project = await createProject();
+    server.use(
+      http.get(
+        api("/projects/:projectId/versions/:versionId/state"),
+        () => HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 }),
+        { once: true },
+      ),
+    );
+
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+
+    const banner = await screen.findByRole("alert");
+    expect(banner).toHaveTextContent(/saved animations/i);
+
+    fireEvent.click(within(banner).getByRole("button", { name: "Retry" }));
+
+    await openLoaded();
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  it("can still save an element animated while the project's state was in flight", async () => {
+    const project = await createProject();
+    let release = () => {};
+    let asked = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inFlight = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), async ({ params }) => {
+        asked();
+        await gate;
+        return HttpResponse.json({ versionId: String(params.versionId), state: {} });
+      }),
+    );
+
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+    await act(async () => {
+      await inFlight;
+    });
+    // The click lands while `stateAt()` is still on its way: the draft is
+    // dirty before it has a version to fork from.
+    act(() => {
+      selectAndAnimate("vm-1");
+    });
+    await act(async () => {
+      release();
+      await gate;
+    });
+
+    // The answer rebases the draft rather than dropping it, so Save works —
+    // it used to refuse for ever, and only a reload (losing the work) got out.
+    await openLoaded();
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Save as v1" });
+    expect(within(dialog).getByText("vm-1")).toBeInTheDocument();
+  });
+
+  it("moves the selection the element-switch guard was holding across a 409 rebase", async () => {
+    const project = await createProject();
+    await opened(project.id);
+    act(() => {
+      selectAndAnimate("vm-1");
+    });
+    await screen.findByText("Unsaved");
+    // Another tab saves on the same parent version, so this save will 409.
+    const theirs = assignmentFor("pulse");
+    const outcome = await saveVersion(project.id, {
+      parentVersionId: project.currentVersionId,
+      catalogVersion: theirs.catalogVersion,
+      label: "Pulse on vm-3",
+      diff: { set: { "vm-3": theirs }, remove: [] },
+    });
+    if (outcome.kind !== "saved") throw new Error(`setup: the other tab's save was ${outcome.kind}`);
+
+    // A click on another element inside the frame, held by the guard.
+    act(() => {
+      useEditorStore.getState().requestSelect("vm-2");
+    });
+    const guard = await screen.findByRole("dialog", { name: /^Save changes/ });
+    fireEvent.click(within(guard).getByRole("button", { name: "Save" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save version" }));
+    await screen.findByRole("dialog", { name: "v1 was saved somewhere else" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply my changes on top" }));
+    const again = await screen.findByTestId("save-dialog");
+    fireEvent.click(within(again).getByRole("button", { name: "Save version" }));
+
+    // The rebase replaced the draft, but it took nothing away — so the
+    // selection the guard was holding still has somewhere to go once the
+    // version exists.
+    await waitFor(() => expect(selectSelectedVmId(useEditorStore.getState())).toBe("vm-2"));
+    expect(useEditorStore.getState().draftState).toEqual({
+      "vm-1": assignmentFor("fade-in"),
+      "vm-3": theirs,
+    });
+  });
+
+  it("lets the tab guard go once a 409 answered with Discard leaves the draft clean", async () => {
+    const project = await createProject();
+    await opened(project.id);
+    act(() => {
+      selectAndAnimate("vm-1");
+    });
+    await screen.findByText("Unsaved");
+
+    // The tab guard, answered with its own Save…
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    const guard = await screen.findByRole("dialog", { name: /^Save changes/ });
+    // …while another tab has saved on the same parent version.
+    const theirs = assignmentFor("pulse");
+    const outcome = await saveVersion(project.id, {
+      parentVersionId: project.currentVersionId,
+      catalogVersion: theirs.catalogVersion,
+      label: "Pulse on vm-2",
+      diff: { set: { "vm-2": theirs }, remove: [] },
+    });
+    if (outcome.kind !== "saved") throw new Error(`setup: the other tab's save was ${outcome.kind}`);
+
+    fireEvent.click(within(guard).getByRole("button", { name: "Save" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save version" }));
+    await screen.findByRole("dialog", { name: "v1 was saved somewhere else" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard my changes" }));
+
+    // Nothing of mine was written, so `requestSave()` rejects — but the draft
+    // is their version now, and a guard still asking about unsaved changes
+    // with an inert Save is a dead end.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("data-active");
+    expect(screen.getByTestId("panel-history")).toBeInTheDocument();
+    expect(useEditorStore.getState().draftState).toEqual({ "vm-2": theirs });
+  });
+
+  it("offers Save in the element-switch guard, and lets the selection through once it lands", async () => {
+    const project = await createProject();
+    await opened(project.id);
+    act(() => {
+      useEditorStore.getState().rememberElement({
+        vmId: "vm-1",
+        tag: "h1",
+        role: null,
+        textPreview: "",
+        rect: { x: 0, y: 0, width: 10, height: 10 },
+        pageRect: { x: 0, y: 0, width: 10, height: 10 },
+        order: 0,
+        visible: true,
+      });
+    });
+    selectAndAnimate("vm-1");
+    await screen.findByText("Unsaved");
+    act(() => {
+      useEditorStore.getState().requestSelect("vm-2");
+    });
+
+    const guard = await screen.findByRole("dialog", { name: "Save changes to h1?" });
+    const save = within(guard).getByRole("button", { name: "Save" });
+    expect(save).toBeEnabled();
+    expect(screen.queryByText("Saving isn’t available here.")).not.toBeInTheDocument();
+
+    fireEvent.click(save);
+    fireEvent.click(await screen.findByRole("button", { name: "Save version" }));
+
+    // The guard only lets the pending selection through once the version exists.
+    await waitFor(() => expect(selectSelectedVmId(useEditorStore.getState())).toBe("vm-2"));
+    expect(useEditorStore.getState().draftState["vm-1"]).toBeDefined();
+  });
+});
+
 describe("EditorShell sandbox invariant", () => {
   afterEach(() => {
     vi.doUnmock("@/lib/preview-url");
@@ -638,5 +903,106 @@ describe("EditorShell sandbox invariant", () => {
     // page unsandbox itself, so there is no iframe to have the attributes on.
     expect(screen.getByTestId("preview-origin-refused")).toBeInTheDocument();
     expect(screen.queryByTitle("Cloned page preview")).not.toBeInTheDocument();
+  });
+});
+
+describe("EditorShell · viewing a past version", () => {
+  /** A project saved once: v0 "Initial clone", and v1 as the current version. */
+  async function projectWithASave(): Promise<{ project: Project; v0: Version; v1: Version }> {
+    const project = await createProject();
+    const applied = assignmentFor("fade-in");
+    const outcome = await saveVersion(project.id, {
+      parentVersionId: project.currentVersionId,
+      catalogVersion: applied.catalogVersion,
+      label: "Fade In on vm-1",
+      diff: { set: { "vm-1": applied }, remove: [] },
+    });
+    if (outcome.kind !== "saved") throw new Error(`setup: the save was ${outcome.kind}`);
+    const listed = listVersions(project.id);
+    const v0 = listed?.versions.find((version) => version.seq === 0);
+    if (!v0) throw new Error("setup: the project has no v0");
+    return { project, v0, v1: outcome.version };
+  }
+
+  /** What clicking v0's row in the History tab does, via the store the tab drives. */
+  function view(versionId: string) {
+    act(() => {
+      useEditorStore.getState().enterViewing(versionId, {});
+    });
+  }
+
+  it("hides Save, Cancel and the unsaved dot, and keeps the chip on the current version", async () => {
+    const { project, v0 } = await projectWithASave();
+    renderShell(project.id);
+    await openLoaded();
+
+    view(v0.id);
+
+    expect(await screen.findByText("Viewing v0 · read-only")).toBeInTheDocument();
+    // docs/user_flow.md §6: "viewing vN · controls disabled · Save hidden".
+    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Unsaved")).not.toBeInTheDocument();
+    // Help is the one action that still makes sense on a read-only screen.
+    expect(screen.getByRole("link", { name: "Help" })).toBeInTheDocument();
+    // The chip names what the editor would go back to, not what it is showing;
+    // the banner names the version on screen.
+    const context = screen.getByRole("banner").querySelector("[data-slot='top-bar-context']");
+    expect(context).toHaveTextContent("v1");
+  });
+
+  it("dims the preview sheet only, and takes the clone out of the pointer's reach", async () => {
+    const { project, v0 } = await projectWithASave();
+    renderShell(project.id);
+    await openLoaded();
+
+    view(v0.id);
+
+    const preview = screen.getByRole("region", { name: "Preview" });
+    expect(await within(preview).findByTestId("viewing-overlay")).toBeInTheDocument();
+    // Never over the Control Panel: the History tab is how another version is
+    // picked and how the reader gets back.
+    expect(
+      within(screen.getByRole("complementary", { name: "Control Panel" })).queryByTestId(
+        "viewing-overlay",
+      ),
+    ).not.toBeInTheDocument();
+    const iframe = within(preview).getByTitle("Cloned page preview");
+    expect(iframe).toHaveStyle({ pointerEvents: "none" });
+    // …and out of the keyboard's reach too: there is nothing to select on a
+    // version being viewed, and Tab must not walk into the clone.
+    expect(iframe).toHaveAttribute("inert");
+  });
+
+  it("comes back to the current version on Escape", async () => {
+    const { project, v0 } = await projectWithASave();
+    renderShell(project.id);
+    await openLoaded();
+    view(v0.id);
+    await screen.findByText("Viewing v0 · read-only");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => expect(useEditorStore.getState().mode).toBe("editing"));
+    expect(screen.queryByTestId("viewing-overlay")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+  });
+
+  it("opens a version from the History tab, and Back to v1 closes it again", async () => {
+    const { project } = await projectWithASave();
+    renderShell(project.id);
+    await openLoaded();
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Initial clone/ }));
+
+    expect(await screen.findByText("Viewing v0 · read-only")).toBeInTheDocument();
+    expect(useEditorStore.getState().viewingVersionId).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to v1" }));
+
+    await waitFor(() => expect(useEditorStore.getState().mode).toBe("editing"));
+    // Still on History: Back is about the preview, not about the tab.
+    expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("data-active");
   });
 });
