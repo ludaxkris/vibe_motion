@@ -133,6 +133,20 @@ async function autoGenerate(page: Page): Promise<{ rows: Row[]; received: () => 
   return { rows: await readRows(page), received };
 }
 
+/**
+ * Clicks Regenerate and waits for the new run to land. The panel's
+ * `data-run-seed` changes exactly then; what the frame hears does not say so,
+ * because a new seed may reproduce every pick and send nothing at all.
+ */
+async function regenerate(page: Page) {
+  const panel = page.getByTestId("panel-auto-result");
+  const seed = await panel.getAttribute("data-run-seed");
+  expect(seed).toMatch(/^\d+$/);
+  await page.getByRole("button", { name: "Regenerate" }).click();
+  await expect(panel).not.toHaveAttribute("data-run-seed", seed as string);
+  await bridgeSettled(page);
+}
+
 async function setDuration(page: Page, ms: number) {
   const duration = page.getByRole("spinbutton", { name: "Duration value" });
   await duration.fill(String(ms));
@@ -394,17 +408,8 @@ test("Regenerate and Remove all keep what the designer tuned by hand", async ({ 
   await expect(row(page, headlineId)).toContainText("edited");
   await expect(row(page, headlineId).getByTestId("auto-result-row-meta")).toContainText("1350ms");
 
-  // Regenerate re-rolls the agent's elements only. The frame hears about it
-  // as one `state:load` or as a few `apply`s, depending on how many picks the
-  // new seed happened to change.
-  const before = (await receivedTypes(page)).length;
-  await page.getByRole("button", { name: "Regenerate" }).click();
-  await expect
-    .poll(async () =>
-      (await receivedTypes(page)).slice(before).some((type) => type === "state:load" || type === "apply"),
-    )
-    .toBe(true);
-  await bridgeSettled(page);
+  // Regenerate re-rolls the agent's elements only.
+  await regenerate(page);
 
   await expect(page.getByTestId("agent-run-error")).toHaveCount(0);
   await expect(page.getByTestId("auto-result-row")).toHaveCount(rows.length);
@@ -429,6 +434,67 @@ test("Regenerate and Remove all keep what the designer tuned by hand", async ({ 
   }
   expect(await inline(headline, "animation-name")).toBe(tunedName);
   expect(await inline(headline, "animation-duration")).toBe("1350ms");
+
+  expect(versionPosts()).toBe(0);
+  await expect(page.getByTestId("unsaved-indicator")).toBeVisible();
+});
+
+test("a card the designer animated by hand is still a block: a page run leaves its heading and text alone", async ({
+  page,
+}) => {
+  const versionPosts = watchVersionPosts(page);
+  await cloneFixture(page);
+
+  const cardSelector = ".cards > article.card:first-child";
+  const cardId = await vmIdOf(page, cardSelector);
+  const card = element(page, cardId);
+  const insideIds = [await vmIdOf(page, `${cardSelector} > h2`), await vmIdOf(page, `${cardSelector} > p`)];
+
+  // There is no way from a hand-picked, unsaved element back to the idle
+  // panel before Phase 6's Save (Esc and a background click do nothing while
+  // it is dirty), so the page run that follows the hand pick is a Regenerate.
+  const { rows } = await autoGenerate(page);
+  const agentPick = rows.find((r) => r.vmId === cardId)?.entry.name;
+  expect(agentPick).toBeDefined();
+  // A different entrance than the agent's: re-picking the same one keeps it agent-owned.
+  const mine = agentPick === "Fade In Up" ? "Fade In" : "Fade In Up";
+  const mineId = ENTRY_BY_NAME.get(mine)?.id;
+
+  await row(page, cardId).click();
+  const tuning = page.getByTestId("panel-tuning");
+  await expect(tuning.getByText(cardId, { exact: true })).toBeVisible();
+  await tuning.getByRole("button", { name: "Change" }).click();
+  await page.getByRole("button", { name: mine, exact: true }).click();
+  await expect(tuning).toBeVisible();
+  await expect
+    .poll(() => inline(card, "animation-name"))
+    .toMatch(new RegExp(`^vm-${mineId}-v\\d+-\\d+-\\d+$`));
+  const pickedName = await inline(card, "animation-name");
+
+  await tuning.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByTestId("panel-auto-result")).toBeVisible();
+  await expect(row(page, cardId)).toContainText("edited");
+
+  await regenerate(page);
+
+  await expect(page.getByTestId("agent-run-error")).toHaveCount(0);
+  // The card is the designer's, so the agent was not asked about it; what is
+  // inside it is still inside an animated block.
+  await expect(page.getByTestId("auto-result-row")).toHaveCount(rows.length);
+  for (const vmId of insideIds) {
+    await expect(row(page, vmId), `row for ${vmId}`).toHaveCount(0);
+    expect((await element(page, vmId).getAttribute("style")) ?? "", vmId).not.toContain("vm-");
+  }
+  await expect(row(page, cardId)).toContainText("edited");
+  await expect(row(page, cardId)).toContainText(mine);
+  expect(await inline(card, "animation-name")).toBe(pickedName);
+
+  // Still counted as skipped, the card's two included.
+  const nestedCount = await preview(page)
+    .locator("article.card h2, article.card p, blockquote p, figure img")
+    .count();
+  const caption = (await page.getByTestId("auto-result-caption").textContent()) ?? "";
+  expect(Number(/Skipped (\d+) elements?/.exec(caption)?.[1])).toBe(nestedCount);
 
   expect(versionPosts()).toBe(0);
   await expect(page.getByTestId("unsaved-indicator")).toBeVisible();
