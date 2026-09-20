@@ -580,6 +580,15 @@ Rebase onto `main`. Verify each assumption and fix this plan's text in the same 
 - [ ] Whether Phase 5 Track A has merged (`panel-machine.ts` `auto` state, `CHANGE` event). If it has not, tell that session via memory.md before touching `store/index.ts` or `control-panel/index.tsx`.
 - [ ] `editor-shell.tsx` still has local `fetchVersions` + the `["project", id, "versions"]` query to replace with `useVersions`. **Hard rule:** that local query resolves to `Version[]` while `useVersions` resolves to `{ currentVersionId, versions }` under the *same key*. They share one cache entry, so if both are ever mounted together the editor throws on render (`data.find is not a function`). Delete the local `fetchVersions` + query in the **same commit** that first mounts `useVersions` or `HistoryList`; never land a partial wiring step.
 
+#### Task 7 results (2026-09-19, against `main` dfb8b8b = Phase 4 PR #18 + Phase 5 Track A) — these override the task text below where they differ
+
+- Store is a factory: `createEditorState: StateCreator<EditorStore>` in `lib/store/index.ts`. ✓ Phase 4 added `hoverVmId`, `elements`, `pendingSelectVmId`, `guardedVmId`, `requestSelect`, `resolveGuard`, `selectElementDirty`, `selectGuardOpen`. `setMode` still exists.
+- **No bridge work is needed.** `lib/bridge/client.ts` subscribes to the store and mirrors every `draftState` change (per element, or one `state:load` above `BULK_APPLY_LIMIT`), so replacing `draftState` wholesale is all viewing / restore / rebase have to do. Ignore the "add a `loadState(state)` call" fallback.
+- **The guard was not lifted (DT-099 still open).** Two mountings: the tab guard inside `control-panel/index.tsx` (local `pendingTab`, Discard = `revertDraft()`), and `components/editor/element-switch-guard.tsx` in the shell (`resolveGuard`). Both take `onSave?: () => void | Promise<void>` and treat a resolved promise as "saved"; a rejection keeps the guard open. So the save flow exposes `requestSave(): Promise<void>` — resolves after a 201, rejects when the Save dialog is cancelled or the save fails.
+- **Phase 5 Track B is editing `store/index.ts`, `control-panel/{idle,selected,index}.tsx` and the shell concurrently.** Keep shared-file edits thin: the new state/actions live in a NEW `lib/store/version-slice.ts` spread into `createEditorState`; mode-awareness is ONE early return in `selectDirtyVmIds`; do not touch `selectElementDirty`. Phase 5's plan D2: any writer that replaces `currentVersionState` must clear its `generated` + `lastRun` — add that on rebase if Phase 5 lands first (memory.md notice 2026-09-19).
+- `editor-shell.tsx` still has the local `fetchVersions` + same-key query. ✓ Same-commit rule applies (Task 9).
+- Read-only while viewing is enforced in the store: `requestSelect` and every draft writer return early when `mode === "viewing"`.
+
 ### Task 8: Store wiring
 
 **Files:** Modify `apps/web/lib/store/index.ts` (+ test).
