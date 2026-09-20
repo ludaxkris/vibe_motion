@@ -182,6 +182,28 @@ describe("VersionRow", () => {
     expect(document.getElementById(controlsId as string)).not.toBeNull();
   });
 
+  it("disables the row itself while restoring, rather than swallowing the click", () => {
+    const handlers = callbacks();
+    render(
+      <VersionRow
+        version={version()}
+        rows={[]}
+        isCurrent={false}
+        isViewing={false}
+        now={NOW}
+        restoring
+        {...handlers}
+      />,
+    );
+
+    // The hook refuses a view while a restore is in flight (it would land on
+    // top of the version the restore creates), so the row must not look live.
+    const view = screen.getByRole("button", { name: /^v5/ });
+    expect(view).toBeDisabled();
+    fireEvent.click(view);
+    expect(handlers.onView).not.toHaveBeenCalled();
+  });
+
   it("disables Restore while restoring", () => {
     render(
       <VersionRow

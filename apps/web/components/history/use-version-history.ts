@@ -154,6 +154,12 @@ export function useVersionHistory(
 
   const view = useCallback(
     async (versionId: string): Promise<void> => {
+      // A restore is in flight, and it ends by landing the editor on the
+      // version it creates. A view started now is either dropped when that
+      // lands or — if its own `/state` answers later — puts a past version on
+      // screen *as* the current one. The row's button is disabled while
+      // `restoring`, so this is the second half of that fact, not a guess.
+      if (running.current) return;
       const before = useEditorStore.getState();
       // Only reachable through the History tab, which the unsaved guard stands
       // in front of — so a dirty draft here is a bug, and `enterViewing`
@@ -252,6 +258,10 @@ export function useVersionHistory(
             const created = outcome.version;
             try {
               const state = await fetchVersionState(projectId, created.id);
+              // Bumped again as the store write happens, not only when the
+              // restore started: anything still in the air belongs to the
+              // screen as it was before this version existed.
+              generation.current += 1;
               // Leaves viewing as it lands: the restored version *is* the
               // current one now, so there is nothing left to go back to.
               loadVersion(created.id, state);

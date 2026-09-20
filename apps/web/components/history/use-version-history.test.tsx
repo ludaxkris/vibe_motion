@@ -397,6 +397,54 @@ describe("useVersionHistory · answers that arrive too late", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("refuses to view a past version while a restore is in flight", async () => {
+    const { project, versions, states } = await projectWithHistory();
+    const { result } = renderHistory(project.id);
+    await waitFor(() => expect(result.current.versions).toHaveLength(4));
+    let release = () => {};
+    let ask = () => {};
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const asked = new Promise<void>((resolve) => {
+      ask = resolve;
+    });
+    server.use(
+      http.post(api("/projects/:projectId/versions/:versionId/restore"), async ({ params }) => {
+        ask();
+        await blocked;
+        const written = restoreVersion(String(params.projectId), String(params.versionId));
+        return HttpResponse.json(written.body, { status: written.status });
+      }),
+    );
+
+    let pending: Promise<void> = Promise.resolve();
+    await act(async () => {
+      pending = result.current.restore(versions[1].id);
+      await asked;
+    });
+
+    // A restore ends viewing by landing on the version it creates, so a view
+    // started now is either thrown away or lands *after* it and puts a past
+    // version back on screen as the current one. The row's button is disabled
+    // for the same reason, so the click never gets this far in the app.
+    await act(async () => {
+      await result.current.view(versions[0].id);
+    });
+    expect(useEditorStore.getState().mode).toBe("editing");
+    expect(useEditorStore.getState().viewingVersionId).toBeNull();
+
+    await act(async () => {
+      release();
+      await pending;
+    });
+
+    const store = useEditorStore.getState();
+    expect(store.mode).toBe("editing");
+    expect(store.draftState).toEqual(states[1]);
+    expect(result.current.error).toBeNull();
+  });
+
   it("keeps a restore that outlives the tab, and says nothing into the void", async () => {
     const { project, versions } = await projectWithHistory();
     const { result, unmount } = renderHistory(project.id);

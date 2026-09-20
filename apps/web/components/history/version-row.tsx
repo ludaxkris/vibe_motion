@@ -69,6 +69,10 @@ export function VersionRow({
         onClick={() => onView(version.id)}
         aria-expanded={isViewing}
         aria-controls={regionId}
+        // A restore is about to land the editor on the version it creates, so
+        // the hook refuses a view while one is in flight. Disabled rather than
+        // silently swallowed (same reason Restore is).
+        disabled={restoring}
         className="flex items-start gap-2.5 text-left"
       >
         <span
