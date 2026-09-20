@@ -173,6 +173,86 @@ describe("autoGeneratePage", () => {
     expect(store.getState().draftState["vm-rogue"]).toBeUndefined();
   });
 
+  it("a user-owned article is a block: its h2 and p come back nested and the article is untouched", async () => {
+    const at = (vmId: string, tag: string, order: number, x: number, y: number, width: number, height: number) => ({
+      ...el(vmId, tag, order),
+      rect: { x, y, width, height },
+      pageRect: { x, y, width, height },
+    });
+    const page = [
+      at("vm-card", "article", 0, 0, 100, 300, 200),
+      at("vm-card-h2", "h2", 1, 16, 116, 268, 28),
+      at("vm-card-p", "p", 2, 16, 160, 268, 24),
+      at("vm-card-a", "a", 3, 16, 200, 120, 40),
+      at("vm-h1", "h1", 4, 0, 400, 600, 37),
+    ];
+    const contexts: string[][] = [];
+    const { store, deps } = setup({
+      elements: page,
+      createAgent: (seed) => {
+        const real = new MockAnimationAgent(seed);
+        return {
+          suggestForElement: (ctx) => real.suggestForElement(ctx),
+          suggestForPage: (ctx) => {
+            contexts.push((ctx.context ?? []).map((element) => element.vmId));
+            return real.suggestForPage(ctx);
+          },
+        };
+      },
+    });
+    const mine = { animationId: "shake", catalogVersion: "1.1.0", trigger: "load" as const, params: {} };
+    store.getState().setDraftAssignment("vm-card", mine);
+
+    const outcome = await autoGeneratePage(deps);
+
+    expect(contexts).toEqual([["vm-card"]]);
+    expect(outcome).toEqual({ ok: true, count: 2 });
+    const state = store.getState();
+    expect(Object.keys(state.draftState).sort()).toEqual(["vm-card", "vm-card-a", "vm-h1"]);
+    expect(state.draftState["vm-card"]).toBe(mine);
+    expect(state.generated["vm-card"]).toBeUndefined();
+    expect(state.lastRun?.skippedCount).toBe(2);
+  });
+
+  it("a user-owned hover assignment is not a block", async () => {
+    const contexts: string[][] = [];
+    const { store, deps } = setup({
+      createAgent: (seed) => {
+        const real = new MockAnimationAgent(seed);
+        return {
+          suggestForElement: (ctx) => real.suggestForElement(ctx),
+          suggestForPage: (ctx) => {
+            contexts.push((ctx.context ?? []).map((element) => element.vmId));
+            return real.suggestForPage(ctx);
+          },
+        };
+      },
+    });
+    store.getState().setDraftAssignment("vm-h1", {
+      animationId: "pulse",
+      catalogVersion: "1.1.0",
+      trigger: "hover",
+      params: {},
+    });
+
+    await autoGeneratePage(deps);
+
+    expect(contexts).toEqual([[]]);
+  });
+
+  it("does nothing, and asks the bridge nothing, while a version is being viewed", async () => {
+    const { store, deps, queryElements } = setup();
+    store.getState().rememberElement(PAGE[0]);
+    store.getState().setMode("viewing");
+    const before = store.getState();
+
+    await expect(autoGeneratePage(deps)).resolves.toEqual({ ok: false, reason: "query-failed" });
+    await expect(generateForElement(deps, "vm-h1")).resolves.toEqual({ ok: false, reason: "query-failed" });
+
+    expect(queryElements).not.toHaveBeenCalled();
+    expect(store.getState()).toBe(before);
+  });
+
   it("is no-targets when everything listed is already the user's", async () => {
     const { store, deps } = setup({ elements: [PAGE[0]] });
     store.getState().setDraftAssignment("vm-h1", {
@@ -230,6 +310,61 @@ describe("autoGeneratePage", () => {
     await autoGeneratePage(deps, { regenerate: true });
 
     expect(store.getState().draftState["vm-h1"].trigger).toBe("load");
+  });
+
+  it("a second run from idle uses the remembered boxes of assigned elements", async () => {
+    const { store, deps, queryElements } = setup();
+    store.getState().rememberElements(PAGE);
+    await autoGeneratePage(deps);
+    store.getState().dispatchPanel({ type: "AUTO_CLOSE" });
+
+    const moved = PAGE.map((element) =>
+      element.vmId === "vm-h1" ? { ...element, pageRect: { ...element.pageRect, y: 5000 } } : element,
+    );
+    queryElements.mockImplementationOnce(async () => {
+      store.getState().rememberElements(moved);
+      return { elements: moved, truncated: false, viewport: VIEWPORT };
+    });
+
+    await autoGeneratePage(deps); // not a regenerate
+
+    expect(store.getState().draftState["vm-h1"].trigger).toBe("load");
+  });
+
+  it("a changed viewport uses the fresh boxes", async () => {
+    const { store, deps, queryElements } = setup();
+    store.getState().rememberElements(PAGE);
+    await autoGeneratePage(deps);
+
+    const moved = PAGE.map((element) =>
+      element.vmId === "vm-h1" ? { ...element, pageRect: { ...element.pageRect, y: 5000 } } : element,
+    );
+    queryElements.mockImplementationOnce(async () => {
+      store.getState().rememberElements(moved);
+      return { elements: moved, truncated: false, viewport: { width: 800, height: 600 } };
+    });
+
+    await autoGeneratePage(deps, { regenerate: true });
+
+    expect(store.getState().draftState["vm-h1"].trigger).toBe("in-view");
+  });
+
+  it("an assigned element with no previous run (hand-picked) keeps its remembered box", async () => {
+    // The user-owned block is mid-entrance when the list is measured.
+    const card = { ...el("vm-card", "article", 0), pageRect: { x: 0, y: 0, width: 300, height: 300 } };
+    const inside = { ...el("vm-in", "p", 1), pageRect: { x: 10, y: 10, width: 200, height: 40 } };
+    const { store, deps } = setup({
+      elements: [{ ...card, pageRect: { x: 0, y: 40, width: 300, height: 300 } }, inside],
+    });
+    store.getState().rememberElement(card);
+    store.getState().setDraftAssignment("vm-card", {
+      animationId: "shake",
+      catalogVersion: "1.1.0",
+      trigger: "load",
+      params: {},
+    });
+
+    await expect(autoGeneratePage(deps)).resolves.toEqual({ ok: false, reason: "no-targets" });
   });
 
   it("a first run trusts the fresh measurement", async () => {

@@ -45,6 +45,8 @@ function agentFor(deps: AgentDeps, seed: number): AnimationAgent {
  */
 export async function generateForElement(deps: AgentDeps, vmId: string): Promise<RunOutcome> {
   const state = deps.store.getState();
+  // A version being viewed is read-only (Phase 6): a run has no draft to fill.
+  if (state.mode === "viewing") return failed("query-failed");
   const element = state.elements[vmId];
   // Selection always stores the element first, so this is a vmId nobody
   // selected: there is nothing to describe to the agent.
@@ -83,13 +85,12 @@ export async function autoGeneratePage(
   opts: { regenerate?: boolean } = {},
 ): Promise<RunOutcome> {
   const before = deps.store.getState();
+  if (before.mode === "viewing") return failed("query-failed");
   const seed =
     opts.regenerate && before.lastRun ? before.lastRun.seed + 1 : (deps.now ?? Date.now)();
   // Before the query, because the client overwrites `elements` with what it
-  // lists: on a Regenerate the page is animated, and a box measured
-  // mid-animation is the transformed one — enough to flip `load` to `in-view`
-  // or make a target look too small.
-  const known: Record<string, ElementInfo> = opts.regenerate ? before.elements : {};
+  // lists. See `restingBox` below.
+  const known = before.elements;
 
   let listed: Awaited<ReturnType<BridgeClient["queryElements"]>>;
   try {
@@ -103,14 +104,35 @@ export async function autoGeneratePage(
 
   // Re-read: the designer may have edited the draft while the query was out.
   const state = deps.store.getState();
-  const elements = listed.elements.map((element) => known[element.vmId] ?? element);
+  // An element that had an assignment when the list was measured may have
+  // been caught mid-animation or held on its first keyframe, and that box is
+  // the transformed one — enough to flip `load` to `in-view`, make a target
+  // look too small, or move a child out of its card. Its remembered box is the
+  // better one, as long as the layout it was measured in still stands: a
+  // previous run's viewport that differs from this one means it does not.
+  const sameLayout =
+    before.lastRun === null ||
+    (before.lastRun.viewport.width === listed.viewport.width &&
+      before.lastRun.viewport.height === listed.viewport.height);
+  const restingBox = (element: ElementInfo): ElementInfo =>
+    (sameLayout && before.draftState[element.vmId] !== undefined ? known[element.vmId] : undefined) ??
+    element;
+  const elements = listed.elements.map(restingBox);
   const { candidates, existing } = selectAutoCandidates(state, elements);
   if (candidates.length === 0) return failed("no-targets");
+  // Nesting is decided against every listed element that holds an entrance,
+  // the designer's own included: a hand-animated card is still a block. A
+  // hover assignment hides nothing, so it shields nothing.
+  const context = elements.filter((element) => {
+    const assignment = existing[element.vmId];
+    return assignment !== undefined && assignment.trigger !== "hover";
+  });
 
   let suggestion: Awaited<ReturnType<AnimationAgent["suggestForPage"]>>;
   try {
     suggestion = await agentFor(deps, seed).suggestForPage({
       elements: candidates,
+      context,
       existing,
       prompt: state.prompt,
       viewport: listed.viewport,

@@ -1069,6 +1069,63 @@ describe("agent provenance (Phase 5, D2)", () => {
       expect(store.getState().draftState["vm-a"]).toEqual(assignmentFor("pulse"));
       expect(store.getState().generated["vm-a"]).toEqual(assignmentFor("pulse"));
     });
+
+    it("leaves an element alone that the designer animated while the agent was thinking", () => {
+      const store = createEditorStore();
+      store.getState().setSelectedVmId("vm-a");
+      store.getState().setDraftAssignment("vm-a", assignmentFor("shake"));
+      const before = store.getState();
+
+      store.getState().applyGenerated("vm-a", assignmentFor("pulse"));
+
+      expect(store.getState()).toBe(before);
+    });
+
+    it("still re-rolls an element whose assignment is the agent's own", () => {
+      const store = createEditorStore();
+      store.getState().applyGenerated("vm-a", assignmentFor("pulse"));
+
+      store.getState().applyGenerated("vm-a", assignmentFor("fade-in"));
+
+      expect(store.getState().draftState["vm-a"]).toEqual(assignmentFor("fade-in"));
+      expect(store.getState().generated["vm-a"]).toEqual(assignmentFor("fade-in"));
+    });
+
+    it("does not pull the designer out of the picker on the same element", () => {
+      const store = createEditorStore();
+      store.getState().setSelectedVmId("vm-a");
+      store.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
+      const panel = store.getState().panel;
+      expect(panel.status).toBe("choosing");
+
+      store.getState().applyGenerated("vm-a", assignmentFor("pulse"));
+
+      expect(store.getState().panel).toBe(panel);
+      expect(store.getState().draftState["vm-a"]).toEqual(assignmentFor("pulse"));
+    });
+
+    it("does nothing while a version is being viewed", () => {
+      const store = createEditorStore();
+      store.getState().setSelectedVmId("vm-a");
+      store.getState().setMode("viewing");
+      const before = store.getState();
+
+      store.getState().applyGenerated("vm-a", assignmentFor("pulse"));
+
+      expect(store.getState()).toBe(before);
+    });
+  });
+
+  describe("applyPageSuggestion while viewing", () => {
+    it("does nothing", () => {
+      const store = createEditorStore();
+      store.getState().setMode("viewing");
+      const before = store.getState();
+
+      store.getState().applyPageSuggestion(pageRun({ "vm-a": assignmentFor("fade-in") }));
+
+      expect(store.getState()).toBe(before);
+    });
   });
 
   describe("ownership is derived from equality", () => {
@@ -1216,6 +1273,44 @@ describe("agent provenance (Phase 5, D2)", () => {
       store.getState().removeAllGenerated();
 
       expect(notifications).toBe(1);
+    });
+
+    it("is an identity no-op with nothing agent-owned and no provenance", () => {
+      const store = createEditorStore();
+      store.getState().setDraftAssignment("vm-user", assignmentFor("shake"));
+      const before = store.getState();
+      let notifications = 0;
+      store.subscribe(() => {
+        notifications += 1;
+      });
+
+      store.getState().removeAllGenerated();
+
+      expect(store.getState()).toBe(before);
+      expect(notifications).toBe(0);
+    });
+
+    it("keeps the draft's identity when every generated row has been edited", () => {
+      const store = createEditorStore();
+      store.getState().applyPageSuggestion(pageRun({ "vm-a": assignmentFor("fade-in") }));
+      store.getState().updateDraftParam("vm-a", "duration", "1250ms");
+      const draftState = store.getState().draftState;
+
+      store.getState().removeAllGenerated();
+
+      expect(store.getState().draftState).toBe(draftState);
+      expect(store.getState().generated).toEqual({});
+    });
+
+    it("does nothing while a version is being viewed", () => {
+      const store = createEditorStore();
+      store.getState().applyPageSuggestion(pageRun({ "vm-a": assignmentFor("fade-in") }));
+      store.getState().setMode("viewing");
+      const before = store.getState();
+
+      store.getState().removeAllGenerated();
+
+      expect(store.getState()).toBe(before);
     });
 
     it("drops a panel tuning a removed element back to selected", () => {

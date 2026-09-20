@@ -185,22 +185,26 @@ export type EditorActions = {
   setPrompt: (prompt: string) => void;
   /**
    * "✦ Auto-generate for this element": write the agent's assignment into the
-   * draft, remember it as agent-made, and — when `vmId` is still the selected
-   * element — move the panel to `tuning` on it, keeping `returnTo`. The agent
-   * is async: if the selection moved on meanwhile the draft is still written
-   * but the panel is left where the designer put it.
+   * draft, remember it as agent-made, and — when the panel is still `selected`
+   * on `vmId` — move it to `tuning`, keeping `returnTo`. The agent is async: if
+   * the designer moved on meanwhile (another element, or the picker on this
+   * one) the draft is still written but the panel is left where they put it;
+   * if they gave the element an animation of their own meanwhile, nothing is
+   * written at all. A no-op while viewing.
    */
   applyGenerated: (vmId: string, assignment: Assignment) => void;
   /**
    * A page run, applied in one `set()` so the bridge subscriber sees one
    * change. Assigns every suggested element that is unassigned or agent-owned;
-   * a user-owned one is never overwritten, whatever the suggestion says.
+   * a user-owned one is never overwritten, whatever the suggestion says. A
+   * no-op while viewing.
    */
   applyPageSuggestion: (input: PageSuggestionInput) => void;
   /**
    * The result list's "Remove all": drops agent-owned assignments only and
    * forgets all provenance. `lastRun` stays (hand-tuned rows remain listed);
-   * `auto` closes to `idle` once no row of the last run is left.
+   * `auto` closes to `idle` once no row of the last run is left. An identity
+   * no-op with nothing to forget, and while viewing.
    */
   removeAllGenerated: () => void;
   reset: () => void;
@@ -596,23 +600,33 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
   setPrompt: (prompt) => set((state) => (state.prompt === prompt ? state : { prompt })),
 
   applyGenerated: (vmId, assignment) =>
-    set((state) => ({
-      draftState: { ...state.draftState, [vmId]: assignment },
-      generated: { ...state.generated, [vmId]: assignment },
-      // `SELECT` with the new `draftAnimationId` is the machine's existing
-      // "this element, tuning this animation, keep `returnTo`" — no new event.
-      panel:
-        selectSelectedVmId(state) === vmId
+    set((state) => {
+      if (state.mode === "viewing") return state;
+      // The agent is async: the designer may have picked something for this
+      // element meanwhile, and one click never discards hand work (plan D2).
+      if (state.draftState[vmId] !== undefined && !isAgentOwned(state, vmId)) return state;
+      // Only from the panel the button lives on. Same element but `choosing`
+      // means the designer opened the picker while the agent was thinking: the
+      // draft is written, the picker stays.
+      const onSelected = state.panel.status === "selected" && state.panel.vmId === vmId;
+      return {
+        draftState: { ...state.draftState, [vmId]: assignment },
+        generated: { ...state.generated, [vmId]: assignment },
+        // `SELECT` with the new `draftAnimationId` is the machine's existing
+        // "this element, tuning this animation, keep `returnTo`" — no new event.
+        panel: onSelected
           ? transition(state.panel, {
               type: "SELECT",
               vmId,
               draftAnimationId: assignment.animationId,
             })
           : state.panel,
-    })),
+      };
+    }),
 
   applyPageSuggestion: ({ suggestion, seed, prompt, truncated, viewport }) =>
     set((state) => {
+      if (state.mode === "viewing") return state;
       const draftState = { ...state.draftState };
       const generated = { ...state.generated };
       const assigned: string[] = [];
@@ -650,15 +664,23 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
 
   removeAllGenerated: () =>
     set((state) => {
-      const draftState = { ...state.draftState };
-      for (const vmId of Object.keys(state.generated)) {
-        if (isAgentOwned(state, vmId)) delete draftState[vmId];
+      if (state.mode === "viewing") return state;
+      const owned = Object.keys(state.generated).filter((vmId) => isAgentOwned(state, vmId));
+      // `generated` non-empty with nothing owned still forgets the provenance.
+      if (owned.length === 0 && Object.keys(state.generated).length === 0) return state;
+
+      let draftState = state.draftState;
+      if (owned.length > 0) {
+        draftState = { ...state.draftState };
+        for (const vmId of owned) delete draftState[vmId];
       }
 
       let panel = state.panel;
       const selected = selectSelectedVmId(state);
       if (selected !== null && state.draftState[selected] && !draftState[selected]) {
-        // The element the panel is on just lost its assignment.
+        // The element the panel is on just lost its assignment. The button
+        // only exists on `auto`, where nothing is selected, but the action is
+        // public and `tuning` without a draft assignment is a broken panel.
         panel = transition(panel, { type: "CLEAR" });
       }
       const rowLeft = (state.lastRun?.vmIds ?? []).some((vmId) => draftState[vmId] !== undefined);
