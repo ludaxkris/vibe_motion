@@ -2,8 +2,10 @@
 
 import { Button } from "@/components/ui/button";
 import { ElementTag } from "@/components/ui/element-tag";
+import type { RunFailure } from "@/lib/agent/run";
 import type { Trigger } from "@/lib/api-client";
 
+import { AgentRunError } from "./agent-run-error";
 import { PanelBackButton } from "./panel-back-button";
 import { PanelCard, PanelSection } from "./panel-card";
 import { rowMeta } from "./row-meta";
@@ -35,6 +37,8 @@ export type AutoResultProps = {
   replayDisabled?: boolean;
   regenerateDisabled?: boolean;
   removeAllDisabled?: boolean;
+  /** Why the last Regenerate did nothing (plan D10). */
+  error?: RunFailure | null;
 };
 
 function plural(count: number, noun: string): string {
@@ -71,6 +75,7 @@ export function AutoResultPanel({
   replayDisabled = false,
   regenerateDisabled = false,
   removeAllDisabled = false,
+  error,
 }: AutoResultProps) {
   const quotedPrompt = prompt.trim();
 
@@ -105,6 +110,7 @@ export function AutoResultPanel({
             &ldquo;{quotedPrompt}&rdquo;
           </p>
         ) : null}
+        <AgentRunError error={error} />
       </PanelSection>
 
       {rows.length === 0 ? (

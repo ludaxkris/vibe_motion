@@ -19,7 +19,7 @@ describe("SelectedPanel", () => {
     expect(screen.getByText("Ship faster with Nimbus")).toBeInTheDocument();
   });
 
-  it("offers auto-generate (still to come) and the custom picker", () => {
+  it("offers auto-generate and the custom picker; auto-generate is disabled with nothing to run it", () => {
     render(<SelectedPanel vmId="vm-42" />);
 
     expect(screen.getByText("Add animation")).toBeInTheDocument();
@@ -27,6 +27,32 @@ describe("SelectedPanel", () => {
       screen.getByRole("button", { name: "Auto-generate for this element" }),
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Choose custom animation" })).toBeEnabled();
+  });
+
+  it("generates for the element on click", () => {
+    const onGenerate = vi.fn();
+    render(<SelectedPanel vmId="vm-42" onGenerate={onGenerate} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Auto-generate for this element" }));
+
+    expect(onGenerate).toHaveBeenCalledOnce();
+  });
+
+  it("shows a busy, disabled button while a run is in flight", () => {
+    const onGenerate = vi.fn();
+    render(<SelectedPanel vmId="vm-42" onGenerate={onGenerate} busy />);
+
+    const button = screen.getByRole("button", { name: "Generating…" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
+    // The picker stays available: choosing by hand needs no agent.
+    expect(screen.getByRole("button", { name: "Choose custom animation" })).toBeEnabled();
+  });
+
+  it("says why a run failed, under the button", () => {
+    render(<SelectedPanel vmId="vm-42" onGenerate={() => undefined} error="agent-failed" />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Couldn't read the page. Try again.");
   });
 
   it("asks for the picker when Choose custom animation is clicked", () => {

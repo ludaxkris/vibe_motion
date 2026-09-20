@@ -380,24 +380,87 @@ describe("EditorShell bridge", () => {
   });
 
   /** A `ready` from the frame, with the `source` the client checks. */
-  function handshake(protocolVersion: number = PROTOCOL_VERSION) {
+  function fromFrame(type: string, payload: unknown) {
     const frame = screen.getByTitle("Cloned page preview") as HTMLIFrameElement;
-    const source = frame.contentWindow;
-    if (source) vi.spyOn(source, "postMessage").mockImplementation(() => {});
     act(() => {
       window.dispatchEvent(
         new MessageEvent("message", {
-          data: {
-            source: "vibe-motion",
-            type: "ready",
-            payload: { elementCount: 3, bridgeVersion: "1.0.0", protocolVersion },
-          },
+          data: { source: "vibe-motion", type, payload },
           origin: previewOrigin("ignored"),
-          source,
+          source: frame.contentWindow,
         }),
       );
     });
   }
+
+  /** A `ready` from the frame, with the `source` the client checks. Returns what the shell posts. */
+  function handshake(protocolVersion: number = PROTOCOL_VERSION, bridgeVersion = "1.0.0") {
+    const frame = screen.getByTitle("Cloned page preview") as HTMLIFrameElement;
+    const source = frame.contentWindow;
+    if (!source) throw new Error("the preview frame has no window");
+    const posted = vi.spyOn(source, "postMessage").mockImplementation(() => {});
+    fromFrame("ready", { elementCount: 3, bridgeVersion, protocolVersion });
+    return posted;
+  }
+
+  it("keeps auto-generate disabled until the frame has handshaked, then enables it", async () => {
+    const project = await createProject();
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+
+    expect(screen.getByRole("button", { name: "Auto-generate for this page" })).toBeDisabled();
+
+    handshake(PROTOCOL_VERSION, "1.1.1");
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Auto-generate for this page" })).toBeEnabled(),
+    );
+  });
+
+  it("auto-generates the page through the bridge: query, list, result list, unsaved", async () => {
+    const project = await createProject();
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+    const posted = handshake(PROTOCOL_VERSION, "1.1.1");
+    expect(screen.queryByTestId("unsaved-indicator")).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Auto-generate for this page" }));
+
+    const query = posted.mock.calls
+      .map(([message]) => message as { type: string; seq: number; payload: unknown })
+      .find((message) => message.type === "elements:query");
+    expect(query?.payload).toMatchObject({ filter: { minWidth: 40, minHeight: 40 }, limit: 200 });
+
+    const big = (vmId: string, tag: string, order: number) => ({
+      ...info(vmId, tag),
+      order,
+      rect: { x: 0, y: 0, width: 300, height: 80 },
+      pageRect: { x: 0, y: 0, width: 300, height: 80 },
+    });
+    fromFrame("elements:list", {
+      seq: query?.seq,
+      elements: [big("vm-1", "h1", 0), big("vm-2", "a", 1)],
+      truncated: false,
+      viewport: { width: 1200, height: 600 },
+    });
+
+    expect(await screen.findByTestId("panel-auto-result")).toBeInTheDocument();
+    expect(screen.getAllByTestId("auto-result-row")).toHaveLength(2);
+    expect(screen.getByTestId("unsaved-indicator")).toBeInTheDocument();
+    expect(Object.keys(useEditorStore.getState().draftState)).toEqual(["vm-1", "vm-2"]);
+  });
+
+  it("says it could not read the page when the frame's bridge predates elements:query", async () => {
+    const project = await createProject();
+    renderShell(project.id);
+    await screen.findByText("example.com/pricing");
+    handshake(PROTOCOL_VERSION, "1.0.0");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Auto-generate for this page" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Couldn't read the page. Try again.");
+    expect(useEditorStore.getState().draftState).toEqual({});
+  });
 
   it("shows a reload banner when the frame speaks a protocol this build does not know", async () => {
     const project = await createProject();

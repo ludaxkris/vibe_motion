@@ -1,9 +1,11 @@
 "use client";
 
+import { ELEMENTS_QUERY_LIMIT } from "bridge";
 import { useCallback, useMemo, useState } from "react";
 
 import { UnsavedGuardDialog } from "@/components/dialogs/unsaved-guard-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { RunFailure, RunOutcome } from "@/lib/agent/run";
 import type { Assignment, Trigger } from "@/lib/api-client";
 import {
   ALL_CATEGORIES,
@@ -12,6 +14,8 @@ import {
   getCatalogEntryAt,
 } from "@/lib/catalog";
 import {
+  selectAgentOwnedVmIds,
+  selectAutoResultVmIds,
   selectDirtyVmIdCount,
   selectGuardedVmId,
   useEditorStore,
@@ -19,12 +23,20 @@ import {
   type EditorState,
 } from "@/lib/store";
 
-import { AutoResultPanel } from "./auto-result";
+import { AutoResultPanel, type AutoResultRow } from "./auto-result";
 import { ChoosingPanel } from "./choosing";
 import { IdlePanel } from "./idle";
 import { PanelCard, PanelSection } from "./panel-card";
 import { SelectedPanel } from "./selected";
 import { TuningPanel } from "./tuning";
+import { useAgentRun } from "./use-agent-run";
+
+/** What the three agent-driven sections share: one run at a time, one message. */
+type AgentRunProps = {
+  busy: boolean;
+  /** The last failure, already narrowed to "it happened on this panel". */
+  error: RunFailure | null;
+};
 
 /** A tab whose screen lands in a later phase: one muted line, no empty chrome. */
 function PlaceholderTab({ children }: { children: string }) {
@@ -45,11 +57,128 @@ function PlaceholderTab({ children }: { children: string }) {
  * `draftState` on every frame — cannot re-render the tabs, the guard
  * computations and the dialog behind the tuning form (DT-126).
  */
-function IdleSection() {
+function IdleSection({
+  onAutoGenerate,
+  onReplayAll,
+  busy,
+  error,
+}: AgentRunProps & { onAutoGenerate?: () => void; onReplayAll?: () => void }) {
   const draftState = useEditorStore((state) => state.draftState);
   const setSelectedVmId = useEditorStore((state) => state.setSelectedVmId);
+  const prompt = useEditorStore((state) => state.prompt);
+  const setPrompt = useEditorStore((state) => state.setPrompt);
 
-  return <IdlePanel assignments={draftState} onSelectElement={setSelectedVmId} />;
+  return (
+    <IdlePanel
+      assignments={draftState}
+      onSelectElement={setSelectedVmId}
+      prompt={prompt}
+      onPromptChange={setPrompt}
+      onAutoGenerate={onAutoGenerate}
+      busy={busy}
+      error={error}
+      onReplayAll={onReplayAll}
+    />
+  );
+}
+
+/** The selected panel, connected: the element's own text comes from what the bridge reported. */
+function SelectedSection({
+  vmId,
+  onGenerate,
+  onBack,
+  busy,
+  error,
+}: AgentRunProps & { vmId: string; onGenerate?: () => void; onBack?: () => void }) {
+  const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
+  const elementText = useEditorStore((state) => state.elements[vmId]?.textPreview);
+
+  return (
+    <SelectedPanel
+      vmId={vmId}
+      elementText={elementText}
+      onChooseCustom={() => dispatchPanel({ type: "CHOOSE_CUSTOM" })}
+      onBack={onBack}
+      onGenerate={onGenerate}
+      busy={busy}
+      error={error}
+    />
+  );
+}
+
+/** Document order; an element the bridge never described (or could not place) goes last. */
+function orderOf(order: number | undefined): number {
+  return order === undefined || order < 0 ? Number.POSITIVE_INFINITY : order;
+}
+
+/**
+ * The result list, connected, and mounted only in the `auto` state — like
+ * `IdleSection`, it reads the whole `draftState`, and the tuning form behind it
+ * must not re-render on a slider tick (DT-126).
+ *
+ * Rows are the last run's elements that still have an assignment (plan D3):
+ * a row the designer tuned stays, tagged "edited", because it is no longer the
+ * agent's to re-roll or remove.
+ */
+function AutoSection({
+  onRegenerate,
+  onReplayAll,
+  busy,
+  error,
+}: AgentRunProps & { onRegenerate?: () => void; onReplayAll?: () => void }) {
+  const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
+  // A request, not a move (Task 0 result item 9). From the list nothing is
+  // selected, so the guard never opens; the front door is still the right one.
+  const requestSelect = useEditorStore((state) => state.requestSelect);
+  const removeAllGenerated = useEditorStore((state) => state.removeAllGenerated);
+  const lastRun = useEditorStore((state) => state.lastRun);
+  const draftState = useEditorStore((state) => state.draftState);
+  const elements = useEditorStore((state) => state.elements);
+  // Both memoised in the store: stable snapshots while their inputs are.
+  const resultVmIds = useEditorStore(selectAutoResultVmIds);
+  const agentOwnedVmIds = useEditorStore(selectAgentOwnedVmIds);
+
+  const rows = useMemo(() => {
+    const agentOwned = new Set(agentOwnedVmIds);
+    const built: (AutoResultRow & { order: number })[] = [];
+    for (const vmId of resultVmIds) {
+      const assignment = draftState[vmId];
+      if (!assignment) continue;
+      built.push({
+        vmId,
+        tag: elements[vmId]?.tag ?? "element",
+        // The version the assignment pinned, never the current one (rule 9).
+        animationName:
+          getCatalogEntryAt(assignment.catalogVersion, assignment.animationId)?.name ??
+          assignment.animationId,
+        trigger: assignment.trigger,
+        duration: assignment.params.duration,
+        delay: assignment.params.delay,
+        edited: !agentOwned.has(vmId),
+        order: orderOf(elements[vmId]?.order),
+      });
+    }
+    // `sort` is stable, so unknown elements keep the run's own order.
+    return built.sort((a, b) => (a.order === b.order ? 0 : a.order < b.order ? -1 : 1));
+  }, [resultVmIds, agentOwnedVmIds, draftState, elements]);
+
+  return (
+    <AutoResultPanel
+      rows={rows}
+      prompt={lastRun?.prompt ?? ""}
+      skippedCount={lastRun?.skippedCount ?? 0}
+      truncated={lastRun?.truncated ?? false}
+      consideredLimit={ELEMENTS_QUERY_LIMIT}
+      onSelectRow={requestSelect}
+      onRegenerate={() => onRegenerate?.()}
+      onReplayAll={() => onReplayAll?.()}
+      onRemoveAll={removeAllGenerated}
+      onClose={() => dispatchPanel({ type: "AUTO_CLOSE" })}
+      regenerateDisabled={!onRegenerate || busy}
+      replayDisabled={!onReplayAll}
+      error={error}
+    />
+  );
 }
 
 /**
@@ -226,9 +355,6 @@ const TABS = [
   { value: "export", label: "Export" },
 ] as const;
 
-/** Stable: the `auto` state has no rows until Phase 5 Track B derives them. */
-const NO_ROWS: never[] = [];
-
 /**
  * Control Panel: idle -> selected -> choosing -> tuning (+ the `auto` result
  * list), driven by the
@@ -247,13 +373,19 @@ export function ControlPanel({
   onPreview,
   onClearPreview,
   onReplay,
+  onGenerateElement,
+  onAutoGeneratePage,
 }: {
   currentVersionLabel?: string;
   /** Show an animation transiently on the page (spec D4). Absent until the bridge is mounted. */
   onPreview?: (vmId: string, assignment: Assignment) => void;
   onClearPreview?: () => void;
-  /** Restart one element's animation in the preview iframe. */
-  onReplay?: (vmId: string) => void;
+  /** Restart one element's animation in the preview iframe, or every one when `null`. */
+  onReplay?: (vmId: string | null) => void;
+  /** "✦ Auto-generate for this element". Absent (button disabled) until the bridge is ready. */
+  onGenerateElement?: (vmId: string) => Promise<RunOutcome>;
+  /** "✦ Auto-generate for this page" and the result list's Regenerate. Absent until the bridge is ready. */
+  onAutoGeneratePage?: (opts?: { regenerate?: boolean }) => Promise<RunOutcome>;
 }) {
   const panel = useEditorStore((state) => state.panel);
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
@@ -285,8 +417,19 @@ export function ControlPanel({
   const unsavedElementCount = useEditorStore(selectDirtyVmIdCount);
   // Scalars, not the draft map: this panel must not wake up on a slider tick.
   const guardedAnimationName = useEditorStore(selectGuardedAnimationName);
-  // A stable action, so subscribing to it never re-renders this panel.
-  const setSelectedVmId = useEditorStore((state) => state.setSelectedVmId);
+
+  // Busy / error for every agent button lives here, not in the store (Task 0
+  // result item 5). A run is started with the `panel` object it was clicked
+  // on, and its failure is shown only while that is still the panel: a failure
+  // moves nothing, so the message stays put, and it does not follow the
+  // designer to a panel it says nothing about.
+  const agentRun = useAgentRun();
+  const runProps: AgentRunProps = {
+    busy: agentRun.busy,
+    error: agentRun.errorScope === panel ? agentRun.error : null,
+  };
+  const { run } = agentRun;
+  const replayAll = useMemo(() => (onReplay ? () => onReplay(null) : undefined), [onReplay]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -321,34 +464,35 @@ export function ControlPanel({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3">
           <TabsContent value="animate">
-            {panel.status === "idle" && <IdleSection />}
-            {/* Unreachable in the app until Phase 5 Track B (Tasks 4-5): nothing
-                dispatches AUTO_DONE yet, and the rows, prompt, Regenerate,
-                Replay all and Remove all need store state (`lastRun`,
-                `generated`, `prompt`) that lands there. What needs no new
-                state is already wired: row -> select, "‹" -> AUTO_CLOSE. The
-                rest is disabled, so no control looks live and does nothing. */}
+            {panel.status === "idle" && (
+              <IdleSection
+                {...runProps}
+                onAutoGenerate={
+                  onAutoGeneratePage ? () => void run(() => onAutoGeneratePage(), panel) : undefined
+                }
+                onReplayAll={replayAll}
+              />
+            )}
             {panel.status === "auto" && (
-              <AutoResultPanel
-                rows={NO_ROWS}
-                prompt=""
-                skippedCount={0}
-                truncated={false}
-                consideredLimit={0}
-                onSelectRow={setSelectedVmId}
-                onRegenerate={() => undefined}
-                onReplayAll={() => undefined}
-                onRemoveAll={() => undefined}
-                onClose={() => dispatchPanel({ type: "AUTO_CLOSE" })}
-                regenerateDisabled
-                replayDisabled
-                removeAllDisabled
+              <AutoSection
+                {...runProps}
+                onRegenerate={
+                  onAutoGeneratePage
+                    ? () => void run(() => onAutoGeneratePage({ regenerate: true }), panel)
+                    : undefined
+                }
+                onReplayAll={replayAll}
               />
             )}
             {panel.status === "selected" && (
-              <SelectedPanel
+              <SelectedSection
+                {...runProps}
                 vmId={panel.vmId}
-                onChooseCustom={() => dispatchPanel({ type: "CHOOSE_CUSTOM" })}
+                onGenerate={
+                  onGenerateElement
+                    ? () => void run(() => onGenerateElement(panel.vmId), panel)
+                    : undefined
+                }
                 onBack={backToResults}
               />
             )}

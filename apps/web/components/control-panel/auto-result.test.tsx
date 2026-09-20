@@ -280,4 +280,27 @@ describe("AutoResultPanel", () => {
 
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  it("says why a Regenerate did nothing, and says nothing otherwise", () => {
+    const { rerender } = renderResult();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    rerender(
+      <AutoResultPanel
+        rows={ROWS}
+        prompt=""
+        skippedCount={0}
+        truncated={false}
+        consideredLimit={200}
+        onSelectRow={() => undefined}
+        onRegenerate={() => undefined}
+        onReplayAll={() => undefined}
+        onRemoveAll={() => undefined}
+        onClose={() => undefined}
+        error="query-failed"
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("Couldn't read the page. Try again.");
+  });
 });
