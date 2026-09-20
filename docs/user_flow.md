@@ -32,7 +32,7 @@ flowchart TD
   idle["Control Panel · idle<br/>'Click any element to begin'<br/>+ Auto-generate page button<br/>+ prompt box"]
   idle -->|"hover element"| hover["Element outlined"] --> idle
   idle -->|"click element"| selected["Panel · selected<br/>element highlighted + label<br/>[Generate] [Custom]"]
-  idle -->|"Auto-generate"| auto["Mock agent picks animations for<br/>headings, images, buttons, cards<br/>staggered by document order"] --> tuningMany["Panel · tuning<br/>list of assigned elements"]
+  idle -->|"Auto-generate"| auto["Mock agent picks animations for<br/>headings, text, images, links/buttons, cards (as one unit)<br/>staggered by document order"] --> tuningMany["Panel · result list<br/>one row per generated element<br/>[Regenerate] [Replay all] [Remove all]<br/>row click → tuning, ‹ returns to the list"]
 
   selected -->|"Generate"| gen["Mock agent picks one animation<br/>(random from catalog, light heuristics)"] --> tuning
   selected -->|"Custom"| choosing["Panel · choosing<br/>catalog grouped by category<br/>hover a card → preview on element"]
@@ -51,7 +51,7 @@ flowchart TD
 Notes
 
 - Nothing in this section calls the API. Every change updates the draft in the browser and the preview iframe.
-- "Generate" and "Auto-generate" are the mock agent in v0. The prompt box is present and passed into the agent context but ignored by the mock; a tooltip says so.
+- "Generate" and "Auto-generate" are the mock agent in v0. Auto-generate and Regenerate keep hand-tuned work and re-roll only what the agent made and the user has not touched; switching elements away from untouched agent work never raises the unsaved-changes dialog, while the top bar's Unsaved indicator still shows. The prompt box is present and passed into the agent context but ignored by the mock; a tooltip says so.
 - "Help" is reachable from the panel header at any time and opens `/help` in a new tab so the draft is untouched.
 
 ## 3. Saving a version

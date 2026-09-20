@@ -1,6 +1,7 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 import { stack } from "./env";
+import { cloneFixture, preview } from "./helpers";
 
 /**
  * The selection bridge against the real thing: the production web build frames
@@ -18,22 +19,7 @@ import { stack } from "./env";
  * the fixture's own markup and their `data-vm-id` read off them.
  */
 
-const FIXTURE_URL = `${stack.fixtureOrigin}/marketing.html`;
 const KEYFRAMES = /^vm-fade-in-up-v\d+-\d+-\d+$/;
-
-function preview(page: Page) {
-  return page.frameLocator('iframe[title="Cloned page preview"]');
-}
-
-async function cloneFixture(page: Page) {
-  await page.goto("/");
-  await page.getByLabel("Page URL").fill(FIXTURE_URL);
-  await page.getByRole("button", { name: "Clone" }).click();
-  // A real clone: fetch, parse, rewrite, instrument, insert. Give the JVM room.
-  await page.waitForURL(/\/p\/[^/]+$/, { timeout: 60_000 });
-  // The overlay only exists once the bridge has handshaked.
-  await expect(preview(page).locator("[data-vm-overlay]")).toBeAttached({ timeout: 30_000 });
-}
 
 test("clicking a cloned element selects it, and an animation applies inside the frame", async ({
   page,

@@ -29,6 +29,8 @@ test("the /dev gallery renders every state at the handoff's widths", async ({ pa
   for (const frame of [
     "dev-frame-panel-idle-empty",
     "dev-frame-panel-idle-assignments",
+    "dev-frame-panel-idle-generating",
+    "dev-frame-panel-idle-error",
     "dev-frame-panel-selected",
     "dev-frame-panel-choosing",
     "dev-frame-panel-choosing-empty-search",
