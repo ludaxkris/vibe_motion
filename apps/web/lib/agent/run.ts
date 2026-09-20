@@ -118,6 +118,11 @@ export async function autoGeneratePage(
     (sameLayout && before.draftState[element.vmId] !== undefined ? known[element.vmId] : undefined) ??
     element;
   const elements = listed.elements.map(restingBox);
+  // The client has just overwritten the remembered boxes with the measured
+  // ones. Put the resting ones back, or the next run would "remember" a
+  // transformed box. Metadata only: the draft is untouched on every path.
+  const restored = elements.filter((element, index) => element !== listed.elements[index]);
+  if (restored.length > 0) state.rememberElements(restored);
   const { candidates, existing } = selectAutoCandidates(state, elements);
   if (candidates.length === 0) return failed("no-targets");
   // Nesting is decided against every listed element that holds an entrance,

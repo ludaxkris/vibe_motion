@@ -331,6 +331,27 @@ describe("autoGeneratePage", () => {
     expect(store.getState().draftState["vm-h1"].trigger).toBe("load");
   });
 
+  it("keeps the resting box remembered, so a third run is shielded like the second", async () => {
+    const { store, deps, queryElements } = setup();
+    store.getState().rememberElements(PAGE);
+    await autoGeneratePage(deps);
+
+    const moved = PAGE.map((element) =>
+      element.vmId === "vm-h1" ? { ...element, pageRect: { ...element.pageRect, y: 5000 } } : element,
+    );
+    // What the real client does: it overwrites `elements` with what it listed.
+    queryElements.mockImplementation(async () => {
+      store.getState().rememberElements(moved);
+      return { elements: moved, truncated: false, viewport: VIEWPORT };
+    });
+
+    await autoGeneratePage(deps, { regenerate: true });
+    expect(store.getState().elements["vm-h1"]).toEqual(PAGE[0]);
+    await autoGeneratePage(deps, { regenerate: true });
+
+    expect(store.getState().draftState["vm-h1"].trigger).toBe("load");
+  });
+
   it("a changed viewport uses the fresh boxes", async () => {
     const { store, deps, queryElements } = setup();
     store.getState().rememberElements(PAGE);
