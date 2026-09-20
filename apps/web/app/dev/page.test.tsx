@@ -11,6 +11,8 @@ vi.mock("next/navigation", () => ({ notFound }));
 const FRAMES = [
   "dev-frame-panel-idle-empty",
   "dev-frame-panel-idle-assignments",
+  "dev-frame-panel-idle-generating",
+  "dev-frame-panel-idle-error",
   "dev-frame-panel-selected",
   "dev-frame-panel-choosing",
   "dev-frame-panel-choosing-empty-search",
@@ -95,6 +97,8 @@ describe("/dev", () => {
     const panels: [string, string][] = [
       ["dev-frame-panel-idle-empty", "panel-idle"],
       ["dev-frame-panel-idle-assignments", "panel-idle"],
+      ["dev-frame-panel-idle-generating", "panel-idle"],
+      ["dev-frame-panel-idle-error", "panel-idle"],
       ["dev-frame-panel-selected", "panel-selected"],
       ["dev-frame-panel-choosing", "panel-choosing"],
       ["dev-frame-panel-choosing-empty-search", "panel-choosing"],

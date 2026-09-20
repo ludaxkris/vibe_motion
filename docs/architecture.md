@@ -98,10 +98,18 @@ sequenceDiagram
   W->>F: postMessage select { vmId }  (highlight ring)
   W->>W: panel state: selected
 
-  alt Generate
-    D->>W: click Generate
+  alt Generate (one element)
+    D->>W: click Auto-generate for this element
     W->>M: suggestForElement(context)
-    M-->>W: { animationId, params, trigger }
+    M-->>W: Assignment { animationId, catalogVersion, trigger, params }
+  else Auto-generate (whole page, from idle)
+    D->>W: click Auto-generate for this page
+    W->>F: postMessage elements:query { filter: tags + min size, limit }
+    F-->>W: postMessage elements:list { elements, truncated, viewport }
+    W->>M: suggestForPage(candidates, existing, prompt, viewport)
+    M-->>W: PageSuggestion { assignments by vmId, skipped }
+    W->>W: one store update: draft + generated + lastRun, panel: result list
+    W->>F: postMessage state:load (more than 8 changes) or apply × n
   else Custom
     D->>W: click Custom → pick animation from catalog list
   end

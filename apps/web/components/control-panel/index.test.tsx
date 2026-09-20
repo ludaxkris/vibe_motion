@@ -671,3 +671,329 @@ describe("ControlPanel · History and viewing", () => {
     expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
   });
 });
+
+describe("ControlPanel · agent flows (Phase 5)", () => {
+  function info(vmId: string, tag: string, order: number) {
+    return {
+      vmId,
+      tag,
+      role: null,
+      textPreview: `${tag} text`,
+      rect: { x: 0, y: 0, width: 300, height: 80 },
+      pageRect: { x: 0, y: 0, width: 300, height: 80 },
+      order,
+      visible: true,
+    };
+  }
+
+  function assignmentFor(animationId: string) {
+    return defaultAssignmentFor(getCatalogEntry(animationId)!);
+  }
+
+  /** A page run that assigned a `p` (listed first by the agent) and the `h1` above it. */
+  function seedRun(overrides: { truncated?: boolean; prompt?: string } = {}) {
+    const store = useEditorStore.getState();
+    store.rememberElements([info("vm-h1", "h1", 0), info("vm-p", "p", 5)]);
+    store.applyPageSuggestion({
+      suggestion: {
+        assignments: { "vm-p": assignmentFor("fade-in"), "vm-h1": assignmentFor("fade-in-up") },
+        skipped: [{ vmId: "vm-x", reason: "too-small" }],
+      },
+      seed: 1,
+      prompt: overrides.prompt ?? "calm entrances",
+      truncated: overrides.truncated ?? false,
+      viewport: { width: 1200, height: 600 },
+    });
+  }
+
+  const ok = () => Promise.resolve({ ok: true as const, count: 1 });
+
+  describe("idle", () => {
+    it("binds the prompt to the store", () => {
+      render(<ControlPanel />);
+
+      fireEvent.change(screen.getByLabelText("Describe the feel"), { target: { value: "bouncy" } });
+
+      expect(useEditorStore.getState().prompt).toBe("bouncy");
+      expect(screen.getByLabelText("Describe the feel")).toHaveValue("bouncy");
+    });
+
+    it("keeps auto-generate and Replay all disabled with no bridge", () => {
+      useEditorStore.getState().setDraftAssignment("vm-1", assignmentFor("fade-in"));
+      render(<ControlPanel />);
+
+      expect(screen.getByRole("button", { name: "Auto-generate for this page" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Replay all" })).toBeDisabled();
+    });
+
+    it("runs a page auto-generate once on a double click, busy meanwhile", async () => {
+      let finish!: (outcome: { ok: true; count: number }) => void;
+      const onAutoGeneratePage = vi.fn(
+        () => new Promise<{ ok: true; count: number }>((resolve) => (finish = resolve)),
+      );
+      render(<ControlPanel onAutoGeneratePage={onAutoGeneratePage} />);
+
+      const button = screen.getByRole("button", { name: "Auto-generate for this page" });
+      fireEvent.click(button);
+      fireEvent.click(button);
+
+      expect(onAutoGeneratePage).toHaveBeenCalledExactlyOnceWith();
+      expect(screen.getByRole("button", { name: "Generating…" })).toBeDisabled();
+
+      await act(async () => finish({ ok: true, count: 2 }));
+      expect(screen.getByRole("button", { name: "Auto-generate for this page" })).toBeEnabled();
+    });
+
+    it.each([
+      ["query-failed", "Couldn't read the page. Try again."],
+      ["no-targets", "Nothing on this page looks worth animating."],
+    ] as const)("shows the %s message, and clears it on the next run", async (reason, copy) => {
+      const onAutoGeneratePage = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, reason })
+        .mockImplementation(() => new Promise(() => undefined));
+      render(<ControlPanel onAutoGeneratePage={onAutoGeneratePage} />);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Auto-generate for this page" }));
+      });
+      expect(screen.getByRole("status")).toHaveTextContent(copy);
+
+      fireEvent.click(screen.getByRole("button", { name: "Auto-generate for this page" }));
+      expect(screen.queryByTestId("agent-run-error")).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("Generating…");
+    });
+
+    it("does not carry a page failure over to another panel", async () => {
+      const onAutoGeneratePage = vi.fn().mockResolvedValue({ ok: false, reason: "no-targets" });
+      render(<ControlPanel onAutoGeneratePage={onAutoGeneratePage} onGenerateElement={ok} />);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Auto-generate for this page" }));
+      });
+
+      act(() => useEditorStore.getState().setSelectedVmId("vm-1"));
+
+      expect(screen.getByTestId("panel-selected")).toBeInTheDocument();
+      expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    });
+
+    it("replays the whole page from the idle list", () => {
+      const onReplay = vi.fn();
+      useEditorStore.getState().setDraftAssignment("vm-1", assignmentFor("fade-in"));
+      render(<ControlPanel onReplay={onReplay} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Replay all" }));
+
+      expect(onReplay).toHaveBeenCalledExactlyOnceWith(null);
+    });
+  });
+
+  describe("selected", () => {
+    it("shows the element's text and generates for that element", async () => {
+      const onGenerateElement = vi.fn(ok);
+      useEditorStore.getState().rememberElement(info("vm-h1", "h1", 0));
+      useEditorStore.getState().setSelectedVmId("vm-h1");
+      render(<ControlPanel onGenerateElement={onGenerateElement} />);
+
+      expect(screen.getByText("h1 text")).toBeInTheDocument();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Auto-generate for this element" }));
+      });
+
+      expect(onGenerateElement).toHaveBeenCalledExactlyOnceWith("vm-h1");
+    });
+
+    it("keeps the button disabled with no bridge, and shows a failure under it", async () => {
+      useEditorStore.getState().setSelectedVmId("vm-h1");
+      const { rerender } = render(<ControlPanel />);
+      expect(screen.getByRole("button", { name: "Auto-generate for this element" })).toBeDisabled();
+
+      rerender(
+        <ControlPanel onGenerateElement={() => Promise.resolve({ ok: false, reason: "agent-failed" })} />,
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Auto-generate for this element" }));
+      });
+
+      expect(screen.getByRole("status")).toHaveTextContent("Couldn't read the page. Try again.");
+    });
+  });
+
+  describe("the result list", () => {
+    it("lists the last run in document order, by tag and pinned animation name", () => {
+      seedRun();
+      render(<ControlPanel />);
+
+      const rows = screen.getAllByTestId("auto-result-row");
+      expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
+        "Tune Fade In Up on h1 (vm-h1)",
+        "Tune Fade In on p (vm-p)",
+      ]);
+      expect(screen.getByTestId("auto-result-title")).toHaveTextContent("Generated 2 animations");
+      expect(screen.getByTestId("auto-result-prompt")).toHaveTextContent("calm entrances");
+      expect(screen.getByTestId("auto-result-caption")).toHaveTextContent("Skipped 1 element");
+      expect(within(rows[0]).queryByText("edited")).not.toBeInTheDocument();
+    });
+
+    it("quotes the query limit when the listing was truncated", () => {
+      seedRun({ truncated: true });
+      render(<ControlPanel />);
+
+      expect(screen.getByTestId("auto-result-caption")).toHaveTextContent(
+        "Only the first 200 elements were considered.",
+      );
+    });
+
+    it("falls back to a generic tag, listed last, for an element the bridge never described", () => {
+      seedRun();
+      useEditorStore.getState().applyPageSuggestion({
+        suggestion: { assignments: { "vm-ghost": assignmentFor("pulse") }, skipped: [] },
+        seed: 2,
+        prompt: "",
+        truncated: false,
+        viewport: { width: 1200, height: 600 },
+      });
+      render(<ControlPanel />);
+
+      const labels = screen.getAllByTestId("auto-result-row").map((row) => row.getAttribute("aria-label"));
+      expect(labels[labels.length - 1]).toBe("Tune Pulse on element (vm-ghost)");
+    });
+
+    it("tags a hand-tuned row as edited and keeps it listed", () => {
+      seedRun();
+      useEditorStore.getState().updateDraftParam("vm-h1", "duration", "1250ms");
+      render(<ControlPanel />);
+
+      const [h1, p] = screen.getAllByTestId("auto-result-row");
+      expect(within(h1).getByText("edited")).toBeInTheDocument();
+      expect(within(p).queryByText("edited")).not.toBeInTheDocument();
+    });
+
+    it("a row click goes through requestSelect and lands on tuning with a way back", () => {
+      seedRun();
+      const real = useEditorStore.getState().requestSelect;
+      const requestSelect = vi.fn(real);
+      useEditorStore.setState({ requestSelect });
+      render(<ControlPanel />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Tune Fade In on p (vm-p)" }));
+      useEditorStore.setState({ requestSelect: real });
+
+      // Through the guard's front door (Task 0 result item 9), not around it.
+      expect(requestSelect).toHaveBeenCalledWith("vm-p");
+      expect(useEditorStore.getState().panel).toEqual({
+        status: "tuning",
+        vmId: "vm-p",
+        animationId: "fade-in",
+        returnTo: "auto",
+      });
+    });
+
+    it("Regenerate re-runs the page with regenerate: true, disabled while busy", async () => {
+      let finish!: (outcome: { ok: true; count: number }) => void;
+      const onAutoGeneratePage = vi.fn(
+        () => new Promise<{ ok: true; count: number }>((resolve) => (finish = resolve)),
+      );
+      seedRun();
+      render(<ControlPanel onAutoGeneratePage={onAutoGeneratePage} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+
+      expect(onAutoGeneratePage).toHaveBeenCalledExactlyOnceWith({ regenerate: true });
+      expect(screen.getByRole("button", { name: "Regenerate" })).toBeDisabled();
+      await act(async () => finish({ ok: true, count: 2 }));
+      expect(screen.getByRole("button", { name: "Regenerate" })).toBeEnabled();
+    });
+
+    it("Remove all cannot race a run in flight: disabled while busy, and says so", async () => {
+      let finish!: (outcome: { ok: true; count: number }) => void;
+      const onAutoGeneratePage = vi.fn(
+        () => new Promise<{ ok: true; count: number }>((resolve) => (finish = resolve)),
+      );
+      seedRun();
+      render(<ControlPanel onAutoGeneratePage={onAutoGeneratePage} />);
+      expect(screen.getByRole("button", { name: "Remove all" })).toBeEnabled();
+      const draft = useEditorStore.getState().draftState;
+
+      fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+
+      const removeAll = screen.getByRole("button", { name: "Remove all" });
+      expect(removeAll).toBeDisabled();
+      fireEvent.click(removeAll);
+      expect(useEditorStore.getState().draftState).toBe(draft);
+      expect(screen.getByRole("status")).toHaveTextContent("Generating…");
+
+      await act(async () => finish({ ok: true, count: 2 }));
+      expect(screen.getByRole("button", { name: "Remove all" })).toBeEnabled();
+      expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    });
+
+    it("puts the run's seed on the result panel", () => {
+      seedRun();
+      render(<ControlPanel />);
+
+      expect(screen.getByTestId("panel-auto-result")).toHaveAttribute(
+        "data-run-seed",
+        String(useEditorStore.getState().lastRun?.seed),
+      );
+    });
+
+    it("says why a Regenerate failed", async () => {
+      seedRun();
+      render(
+        <ControlPanel
+          onAutoGeneratePage={() => Promise.resolve({ ok: false, reason: "query-failed" })}
+        />,
+      );
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+      });
+
+      expect(screen.getByRole("status")).toHaveTextContent("Couldn't read the page. Try again.");
+    });
+
+    it("keeps Regenerate and Replay all disabled with no bridge; Remove all needs none", () => {
+      seedRun();
+      render(<ControlPanel />);
+
+      expect(screen.getByRole("button", { name: "Regenerate" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Replay all" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Remove all" })).toBeEnabled();
+    });
+
+    it("Replay all replays the whole page", () => {
+      const onReplay = vi.fn();
+      seedRun();
+      render(<ControlPanel onReplay={onReplay} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Replay all" }));
+
+      expect(onReplay).toHaveBeenCalledExactlyOnceWith(null);
+    });
+
+    it("Remove all drops the agent's work, keeps the edited row, and closes once none is left", () => {
+      seedRun();
+      useEditorStore.getState().updateDraftParam("vm-h1", "duration", "1250ms");
+      render(<ControlPanel />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Remove all" }));
+
+      expect(Object.keys(useEditorStore.getState().draftState)).toEqual(["vm-h1"]);
+      expect(screen.getAllByTestId("auto-result-row")).toHaveLength(1);
+
+      act(() => useEditorStore.getState().removeDraftAssignment("vm-h1"));
+      expect(screen.getByText("No generated animations left.")).toBeInTheDocument();
+    });
+
+    it("Remove all with only agent work lands on idle", () => {
+      seedRun();
+      render(<ControlPanel />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Remove all" }));
+
+      expect(useEditorStore.getState().panel).toEqual({ status: "idle" });
+      expect(screen.getByTestId("panel-idle")).toBeInTheDocument();
+    });
+  });
+});

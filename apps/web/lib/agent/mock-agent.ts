@@ -37,7 +37,8 @@ function pool(category: CatalogEntry["category"]): CatalogEntry[] {
  * The v0 agent: a seeded random pick with light heuristics. It always resolves
  * against `CURRENT_VERSION` and ignores `existing`, `prompt`, `catalogVersion`
  * and `signal`; they are in the context so the server-side agent (DT-003)
- * needs no interface change. Every call reseeds, so one instance gives the
+ * needs no interface change. A page run does read `context` (blocks it may not
+ * assign but must not animate inside of) and `viewport` (the `too-large` rule). Every call reseeds, so one instance gives the
  * same answer for the same context however often it is asked.
  */
 export class MockAnimationAgent implements AnimationAgent {
@@ -63,7 +64,10 @@ export class MockAnimationAgent implements AnimationAgent {
   }
 
   async suggestForPage(ctx: PageContext): Promise<PageSuggestion> {
-    const { targets, skipped } = selectTargets(ctx.elements);
+    const { targets, skipped } = selectTargets(ctx.elements, {
+      blocks: ctx.context,
+      viewport: ctx.viewport,
+    });
     const rng = createRng(this.seed);
     const assignments: Record<string, Assignment> = {};
     let loadIndex = 0;

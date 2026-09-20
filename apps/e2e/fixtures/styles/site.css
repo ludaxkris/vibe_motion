@@ -1,6 +1,17 @@
 /* Linked, not inline: the cloner has to fetch and inline this through the SSRF guard. */
-body { font-family: system-ui, sans-serif; margin: 0; color: #14213d; }
+/* A px line-height, as a real stylesheet has: line boxes do not depend on the host's fonts. Headings
+   keep their browser-default sizes ON PURPOSE (h1 32 px, h2 24 px, both under 40 px tall): the agent
+   must target ordinary headings and one-line text (Phase 5 plan D6); agent-flows.spec.ts asserts it. */
+body { font-family: system-ui, sans-serif; margin: 0; color: #14213d; line-height: 24px; }
+h1 { line-height: 36px; }
+h2 { line-height: 28px; }
 .hero { padding: 64px 24px; background: #fca311; }
-.cta { display: inline-block; padding: 12px 20px; background: #14213d; color: #fff; border-radius: 8px; }
+.cta { display: inline-block; padding: 16px 24px; background: #14213d; color: #fff; border-radius: 8px; }
 .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 24px; }
 .card { border: 1px solid #e5e5e5; border-radius: 12px; padding: 16px; }
+.proof { padding: 24px; }
+.quote { margin: 16px 0; padding: 16px 24px; border-left: 4px solid #fca311; }
+.shot { margin: 16px 0; }
+/* Pushes what follows far below the preview iframe's fold (~600 px), where the agent picks `in-view`. */
+.spacer { min-height: 1600px; }
+.more { padding: 24px; }

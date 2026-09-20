@@ -37,6 +37,9 @@ import { summariseDiff } from "@/lib/diff-summary";
 
 import { StaticDialog } from "./static-dialog";
 
+/** The gallery renders looks, not behaviour: a callback that exists is an enabled control. */
+const noop = () => undefined;
+
 /**
  * Fixed `data-vm-id`s. The bridge (Phase 4) is what puts real ones on screen;
  * until then the element label *is* the id, which is what the panels show.
@@ -307,7 +310,7 @@ export function DevGallery() {
           title="Idle · nothing animated yet"
           bodyClassName={PANEL_FRAME}
         >
-          <IdlePanel assignments={{}} />
+          <IdlePanel assignments={{}} prompt="" onPromptChange={noop} onAutoGenerate={noop} />
         </Frame>
 
         <Frame
@@ -316,7 +319,43 @@ export function DevGallery() {
           note="The ANIMATED list and Replay all appear once the draft holds anything."
           bodyClassName={PANEL_FRAME}
         >
-          <IdlePanel assignments={DRAFT_STATE} />
+          <IdlePanel
+            assignments={DRAFT_STATE}
+            prompt=""
+            onPromptChange={noop}
+            onAutoGenerate={noop}
+            onReplayAll={noop}
+          />
+        </Frame>
+
+        <Frame
+          slug="panel-idle-generating"
+          title="Idle · auto-generate running"
+          note="One run at a time: the button says so and takes no clicks."
+          bodyClassName={PANEL_FRAME}
+        >
+          <IdlePanel
+            assignments={{}}
+            prompt="calm, staggered entrances, nothing loops"
+            onPromptChange={noop}
+            onAutoGenerate={noop}
+            busy
+          />
+        </Frame>
+
+        <Frame
+          slug="panel-idle-error"
+          title="Idle · auto-generate found nothing"
+          note="A failed run leaves the draft untouched and says why under the button."
+          bodyClassName={PANEL_FRAME}
+        >
+          <IdlePanel
+            assignments={{}}
+            prompt=""
+            onPromptChange={noop}
+            onAutoGenerate={noop}
+            error="no-targets"
+          />
         </Frame>
 
         <Frame
@@ -324,7 +363,7 @@ export function DevGallery() {
           title="Selected · no animation yet"
           bodyClassName={PANEL_FRAME}
         >
-          <SelectedPanel vmId={VM_HEADLINE} />
+          <SelectedPanel vmId={VM_HEADLINE} onGenerate={noop} />
         </Frame>
 
         <Frame

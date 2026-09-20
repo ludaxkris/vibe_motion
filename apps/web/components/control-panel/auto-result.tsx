@@ -2,8 +2,10 @@
 
 import { Button } from "@/components/ui/button";
 import { ElementTag } from "@/components/ui/element-tag";
+import type { RunFailure } from "@/lib/agent/run";
 import type { Trigger } from "@/lib/api-client";
 
+import { AgentRunError } from "./agent-run-error";
 import { PanelBackButton } from "./panel-back-button";
 import { PanelCard, PanelSection } from "./panel-card";
 import { rowMeta } from "./row-meta";
@@ -35,6 +37,12 @@ export type AutoResultProps = {
   replayDisabled?: boolean;
   regenerateDisabled?: boolean;
   removeAllDisabled?: boolean;
+  /** A run is in flight; announced in the live region. */
+  busy?: boolean;
+  /** Why the last Regenerate did nothing (plan D10). */
+  error?: RunFailure | null;
+  /** The last run's seed, as `data-run-seed` on the root: changes exactly when a new run lands. */
+  runSeed?: number;
 };
 
 function plural(count: number, noun: string): string {
@@ -71,11 +79,14 @@ export function AutoResultPanel({
   replayDisabled = false,
   regenerateDisabled = false,
   removeAllDisabled = false,
+  busy = false,
+  error,
+  runSeed,
 }: AutoResultProps) {
   const quotedPrompt = prompt.trim();
 
   return (
-    <PanelCard data-testid="panel-auto-result">
+    <PanelCard data-testid="panel-auto-result" data-run-seed={runSeed}>
       <PanelSection className="gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <PanelBackButton onClick={onClose} />
@@ -105,6 +116,7 @@ export function AutoResultPanel({
             &ldquo;{quotedPrompt}&rdquo;
           </p>
         ) : null}
+        <AgentRunError error={error} busy={busy} />
       </PanelSection>
 
       {rows.length === 0 ? (
@@ -154,7 +166,7 @@ export function AutoResultPanel({
             >
               Click a row to tune it, or click the element on the page.
               {skippedCount > 0
-                ? ` Skipped ${plural(skippedCount, "element")} (too small, hidden or not content).`
+                ? ` Skipped ${plural(skippedCount, "element")} (inside an animated block, too large, too small, hidden or not content).`
                 : null}
               {truncated ? ` Only the first ${consideredLimit} elements were considered.` : null}
             </p>

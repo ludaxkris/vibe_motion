@@ -8,8 +8,12 @@ import { ControlPanel } from "@/components/control-panel";
 import { useVersionHistory } from "@/components/history/use-version-history";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
+import { autoGeneratePage, generateForElement } from "@/lib/agent/run";
+// `Version` is no longer named here: the versions list moved to
+// `useProjectVersions` / `lib/versions/queries.ts` (Phase 6).
 import { apiClient, type Assignment, type Project } from "@/lib/api-client";
 import { env } from "@/lib/env";
+import { atLeast, ELEMENTS_QUERY_MIN_BRIDGE } from "@/lib/bridge";
 import { useBridge } from "@/lib/bridge/use-bridge";
 import { previewIsSameOrigin, previewOrigin, previewPageUrl } from "@/lib/preview-url";
 import { forgetRecentProject, rememberRecentProject } from "@/lib/recent-projects";
@@ -91,7 +95,10 @@ function isTextEntry(target: EventTarget | null): boolean {
 /** The bar's 7px dot + caption, shown only while the draft differs from the saved version. */
 function UnsavedIndicator() {
   return (
-    <span className="flex shrink-0 items-center gap-[5px] text-xs text-vm-bar-ink-muted">
+    <span
+      data-testid="unsaved-indicator"
+      className="flex shrink-0 items-center gap-[5px] text-xs text-vm-bar-ink-muted"
+    >
       <span aria-hidden="true" className="size-[7px] rounded-full bg-vm-bar-dot" />
       Unsaved
     </span>
@@ -180,6 +187,9 @@ export function EditorShell({ projectId }: { projectId: string }) {
   }, [sameOrigin]);
   const { frameRef, handleFrameLoad, status, client } = useBridge({ expectedOrigin });
   const bridgeReady = client !== null && status === "ready";
+  // Deploy skew: an older api image serves a bridge that cannot list elements.
+  // Disabled buttons, rather than a failure on every click.
+  const canQuery = bridgeReady && atLeast(client.bridgeVersion(), ELEMENTS_QUERY_MIN_BRIDGE);
 
   const handlePreview = useCallback(
     (vmId: string, assignment: Assignment) => client?.preview(vmId, assignment),
@@ -187,7 +197,7 @@ export function EditorShell({ projectId }: { projectId: string }) {
   );
   const handleClearPreview = useCallback(() => client?.clearPreview(), [client]);
   const handleReplay = useCallback(
-    (vmId: string) => {
+    (vmId: string | null) => {
       // `replay()` flushes the client's coalescing frame itself, so a draft
       // change made in this same turn is already on its way and `postMessage`
       // ordering does the rest — no ack round trip needed.
@@ -198,6 +208,24 @@ export function EditorShell({ projectId }: { projectId: string }) {
       // promise nobody handles.
       client?.replay(vmId).catch(() => {});
     },
+    [client],
+  );
+  // The mock agent's two runs (Phase 5). `useEditorStore` is the hook *and*
+  // the store handle, the same object `useBridge` gives the client, so the run
+  // writes the draft this client is subscribed to. Neither ever rejects, and
+  // neither calls the API: a run only fills the client-side draft.
+  const handleGenerateElement = useCallback(
+    (vmId: string) =>
+      client
+        ? generateForElement({ store: useEditorStore, bridge: client }, vmId)
+        : Promise.resolve({ ok: false, reason: "query-failed" } as const),
+    [client],
+  );
+  const handleAutoGeneratePage = useCallback(
+    (opts?: { regenerate?: boolean }) =>
+      client
+        ? autoGeneratePage({ store: useEditorStore, bridge: client }, opts)
+        : Promise.resolve({ ok: false, reason: "query-failed" } as const),
     [client],
   );
 
@@ -454,11 +482,13 @@ export function EditorShell({ projectId }: { projectId: string }) {
               onSave={requestSave}
               // Gated on the handshake, not merely on the client existing:
               // while `connecting` or `version-mismatch` the client refuses
-              // every post, so an enabled Replay and live card hovers would be
-              // controls that silently do nothing.
+              // every post, so an enabled Replay, live card hovers and the
+              // generate buttons would be controls that silently do nothing.
               onPreview={bridgeReady ? handlePreview : undefined}
               onClearPreview={bridgeReady ? handleClearPreview : undefined}
               onReplay={bridgeReady ? handleReplay : undefined}
+              onGenerateElement={canQuery ? handleGenerateElement : undefined}
+              onAutoGeneratePage={canQuery ? handleAutoGeneratePage : undefined}
             />
           </aside>
         }
