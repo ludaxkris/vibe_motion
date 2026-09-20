@@ -74,6 +74,38 @@ class HtmlEmitterTest :
                 """<script src="vibe-motion.js"></script>"""
         }
 
+        test("a re-cloned export does not stack a second link, wherever the old one sits") {
+            // A clone of an exported page keeps our link where the browser put it — `<body>`, once
+            // the parser has moved it — and a designer may have written it `./vibe-motion.css`.
+            val recloned =
+                """
+                <html><head><link rel="stylesheet" href="vibe-motion.css"></head>
+                <body><link rel="stylesheet" href="./vibe-motion.css"><p data-vm-id="vm-1">x</p></body></html>
+                """.trimIndent()
+
+            val document = Jsoup.parse(emitter.emit(recloned, mapOf("vm-1" to listOf("vm-a1")), needsScript = false))
+
+            document.select("""link[href$=vibe-motion.css]""").size shouldBe 1
+            document
+                .head()
+                .children()
+                .last()
+                .shouldNotBeNull()
+                .attr("href") shouldBe "vibe-motion.css"
+            document.body().select("link").size shouldBe 0
+        }
+
+        test("a third-party stylesheet that happens to be called vibe-motion.css is left alone") {
+            // The clone absolutises every URL the page had, so anything with a host belongs to the
+            // page. Only a relative reference can be one of ours.
+            val html = """<html><head><link rel="stylesheet" href="https://cdn.example.net/vibe-motion.css"></head><body></body></html>"""
+
+            val document = Jsoup.parse(emitter.emit(html, emptyMap(), needsScript = false))
+
+            document.select("link").map { it.attr("href") } shouldContainExactly
+                listOf("https://cdn.example.net/vibe-motion.css", "vibe-motion.css")
+        }
+
         test("an export of an export does not stack a second link or script") {
             val once = emitter.emit(golden("marketing.html"), emptyMap(), needsScript = true)
             val twice = emitter.emit(once, emptyMap(), needsScript = true)

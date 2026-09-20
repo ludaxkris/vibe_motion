@@ -43,7 +43,7 @@ class ExportService(
     private val versions: VersionRepository,
     catalog: CatalogRepository,
     private val transactions: TransactionRunner,
-    private val html: HtmlEmitter = HtmlEmitter(),
+    private val html: PageEmitter = HtmlEmitter(),
     maxConcurrentFullExports: Int = DEFAULT_MAX_CONCURRENT_FULL_EXPORTS,
 ) {
     private val css = CssEmitter(catalog)
@@ -53,15 +53,35 @@ class ExportService(
         when (request.mode) {
             ExportMode.SNIPPET -> {
                 val input = transactions.transactional { read(request) }
-                withContext(Dispatchers.Default) { snippet(request, input) }
+                withContext(Dispatchers.Default) { asIntegrityFailure { snippet(request, input) } }
             }
 
             ExportMode.FULL -> {
                 fullExports.withPermit {
                     val input = transactions.transactional { read(request) }
-                    withContext(Dispatchers.Default) { full(input) }
+                    withContext(Dispatchers.Default) { asIntegrityFailure { full(input) } }
                 }
             }
+        }
+
+    /**
+     * Anything the emitters throw that is not a deliberate domain failure becomes a 500.
+     *
+     * `IllegalArgumentException` already maps to 400 `bad_request` (the `StatusPages` block), so a
+     * jsoup `Validate`, a stray `require` or any other internal fault inside the exporter would
+     * reach the client as "your request was malformed". It was not: the request was fine and we
+     * could not render it. The cause is kept for the log; the message carries nothing from the
+     * document or the params.
+     */
+    private fun <T> asIntegrityFailure(block: () -> T): T =
+        try {
+            block()
+        } catch (expected: ResourceNotFoundException) {
+            throw expected
+        } catch (expected: ExportIntegrityException) {
+            throw expected
+        } catch (failure: RuntimeException) {
+            throw ExportIntegrityException("The exporter could not render this version", failure)
         }
 
     /** Everything the emitters need, read in one transaction. Must be called inside one. */

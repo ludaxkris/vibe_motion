@@ -148,10 +148,24 @@ class CssEmitter(
         return listOf(if (declarations.endsWith(";")) declarations else "$declarations;")
     }
 
+    /**
+     * One declaration per non-standard param, in catalog order.
+     *
+     * Keyed on `isStandard`, not on the presence of `cssVar`: a param that was somehow both would
+     * otherwise be written twice, once here and once inside the shorthand. The schema forbids it
+     * and [CssEmitterTest] holds the catalog to that, so this is the belt to those braces.
+     */
     private fun ResolvedAssignment.customPropertyLines(): List<String> =
-        entry.params.mapNotNull { param ->
-            param.cssVar?.let { cssVar -> "$cssVar: ${params.getValue(param.key)};" }
-        }
+        entry.params
+            .filterNot { it.isStandard }
+            .map { param ->
+                val cssVar =
+                    param.cssVar
+                        ?: throw ExportIntegrityException(
+                            "Catalog param '${param.key}' on ${entry.id} is neither standard nor cssVar-backed",
+                        )
+                "$cssVar: ${params.getValue(param.key)};"
+            }
 
     private fun group(
         comment: String,
@@ -173,10 +187,11 @@ class CssEmitter(
                 ?: throw ExportIntegrityException(
                     "Assignment on $vmId pins catalog version ${assignment.catalogVersion}, which this build does not have",
                 )
-        // The resolved entry's own id is what names the rule, whatever the stored string says.
+        // Exact match, the same as `DiffValidator`: an exporter has no business accepting an id
+        // the validator would have refused. The rule is then named from the entry's own id and
+        // never from the stored string (DT-069), so nothing unresolved can reach the CSS.
         val entry =
             entries.firstOrNull { it.id == assignment.animationId }
-                ?: entries.firstOrNull { it.id.equals(assignment.animationId, ignoreCase = true) }
                 ?: throw ExportIntegrityException(
                     "Assignment on $vmId names an animation that catalog ${assignment.catalogVersion} does not have",
                 )
@@ -251,17 +266,22 @@ private data class ResolvedAssignment(
         get() =
             (listOf(keyframesName) + SHORTHAND_SLOTS.map { (key, initial) -> params[key] ?: initial })
                 .joinToString(" ")
-
-    private companion object {
-        /** Catalog param key -> the CSS initial value of the longhand it fills, in shorthand order. */
-        val SHORTHAND_SLOTS =
-            listOf(
-                "duration" to "0s",
-                "easing" to "ease",
-                "delay" to "0s",
-                "iteration" to "1",
-                "direction" to "normal",
-                "fillMode" to "none",
-            )
-    }
 }
+
+/**
+ * Catalog param key -> the CSS initial value of the longhand it fills, in shorthand order.
+ *
+ * Every standard key must be here. One that is not would be dropped from the export entirely — it
+ * has no `cssVar`, so the custom-property pass skips it too — while the TypeScript preview would
+ * still write it. `CssEmitterTest` holds this list equal to `CatalogParam.STANDARD_KEYS`, so a
+ * seventh standard key fails by name rather than as a shorthand one component short.
+ */
+internal val SHORTHAND_SLOTS: List<Pair<String, String>> =
+    listOf(
+        "duration" to "0s",
+        "easing" to "ease",
+        "delay" to "0s",
+        "iteration" to "1",
+        "direction" to "normal",
+        "fillMode" to "none",
+    )

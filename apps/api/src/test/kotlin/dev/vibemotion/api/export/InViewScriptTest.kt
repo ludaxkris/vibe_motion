@@ -5,6 +5,7 @@ import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import io.kotest.matchers.types.shouldBeSameInstanceAs
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -23,7 +24,7 @@ class InViewScriptTest :
         }
 
         test("reading it twice gives the same instance, so an export does not re-read the jar") {
-            InViewScript.source() shouldBe InViewScript.source()
+            InViewScript.source() shouldBeSameInstanceAs InViewScript.source()
         }
 
         test("uses exactly the class names the stylesheet and the HTML emitter agree on") {

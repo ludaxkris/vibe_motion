@@ -37,14 +37,14 @@ import java.nio.charset.StandardCharsets
  */
 class HtmlEmitter(
     private val sanitiser: HtmlSanitiser = HtmlSanitiser(),
-) {
+) : PageEmitter {
     /**
      * @param classesByVmId the classes to append to each assigned element, in order. An element
      *   whose id is absent keeps its own classes and loses only the `data-vm-id`.
      * @param needsScript whether some assignment uses the `in-view` trigger, which is the only
      *   thing an exported page needs JavaScript for.
      */
-    fun emit(
+    override fun emit(
         baseHtml: String,
         classesByVmId: Map<String, List<String>>,
         needsScript: Boolean,
@@ -74,20 +74,42 @@ class HtmlEmitter(
      * small render-blocking request. An inline script would avoid it but break hosts with a strict
      * CSP. This departs from the build plan's literal `defer`.
      *
-     * Ours are removed first, so exporting a page that was exported (and re-cloned) once before
-     * does not stack a second link.
+     * An earlier copy of our own link is removed first, so a page that was exported, re-cloned and
+     * exported again does not stack a second one. The sweep is **document-wide** and matches on the
+     * file name, because a re-clone leaves the link wherever the browser put it — `<body>` included
+     * — and may have written it `./vibe-motion.css`. There is no matching sweep for `<script>`:
+     * [HtmlSanitiser] has already removed every one, ours included, which is why ours is added
+     * after it and not before.
      */
     private fun linkOurFiles(
         document: Document,
         needsScript: Boolean,
     ) {
+        document.select("link[href]").filter { it.attr("href").isOurStylesheet() }.forEach { it.remove() }
+
         val head = document.head()
-        head.select("""link[href="${CSS_FILE.name}"], script[src="${JS_FILE.name}"]""").remove()
         head.appendChild(Element("link").attr("rel", "stylesheet").attr("href", CSS_FILE.name))
         if (needsScript) head.appendChild(Element("script").attr("src", JS_FILE.name))
     }
 
     private companion object {
+        /**
+         * Whether this `href` is one we wrote.
+         *
+         * Only a relative reference can be: the clone absolutises every URL the source page had,
+         * so anything carrying a scheme or an authority belongs to the page and stays, whatever it
+         * happens to be called.
+         */
+        private fun String.isOurStylesheet(): Boolean {
+            val href = trim()
+            if (href.contains("://") || href.startsWith("//")) return false
+            return href
+                .substringBefore('?')
+                .substringBefore('#')
+                .substringAfterLast('/')
+                .equals(CSS_FILE.name, ignoreCase = true)
+        }
+
         /**
          * Appended, never replaced: cloned pages carry their own classes and their order is part
          * of the page's own cascade. A `class` attribute is created when the element has none.

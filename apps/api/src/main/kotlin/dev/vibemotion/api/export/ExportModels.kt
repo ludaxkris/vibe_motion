@@ -156,7 +156,23 @@ internal fun storedElementClass(vmId: String): String =
  */
 class ExportIntegrityException(
     message: String,
-) : RuntimeException(message)
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)
+
+/**
+ * The page half of an export: `base_html` plus the class map, out the other side as `index.html`.
+ *
+ * A seam, the way [dev.vibemotion.api.clone.PageCloner] and
+ * [dev.vibemotion.api.clone.PageRenderer] are seams, so a test can prove that a fault inside the
+ * emitters reaches the client as a 500 and not as a 400.
+ */
+fun interface PageEmitter {
+    fun emit(
+        baseHtml: String,
+        classesByVmId: Map<String, List<String>>,
+        needsScript: Boolean,
+    ): String
+}
 
 /** The value is attacker-influenced, so the message describes the shape and never echoes it. */
 private fun requireVmId(vmId: String) {

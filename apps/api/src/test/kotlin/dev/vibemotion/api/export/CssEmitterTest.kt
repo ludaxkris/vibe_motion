@@ -1,5 +1,6 @@
 package dev.vibemotion.api.export
 
+import dev.vibemotion.api.catalog.CatalogParam
 import dev.vibemotion.api.catalog.CatalogRepository
 import dev.vibemotion.api.catalog.ClasspathCatalogRepository
 import dev.vibemotion.api.domain.Assignment
@@ -193,10 +194,40 @@ class CssEmitterTest :
         test("the id in the keyframes name comes from the resolved entry, never from the stored string") {
             // DT-069: `keyframesName` validates the version but not the id, so the exporter
             // resolves the entry first and names the rule from `entry.id`.
-            val css = stylesheet(mapOf("vm-1" to assignment(animationId = "FADE-IN-UP")))
+            val css = stylesheet(mapOf("vm-1" to assignment(animationId = "fade-in-up")))
 
             css shouldContain "@keyframes vm-fade-in-up-v1-1-0 {"
-            css shouldNotContain "FADE-IN-UP"
+        }
+
+        test("an animationId that differs from the catalog's even in case is refused, not coerced") {
+            // Exactly as strict as `DiffValidator`, which matches ids exactly. An exporter that
+            // was more forgiving than the validator would accept strings the validator refused,
+            // which is the whole of DT-069's worry.
+            shouldThrow<ExportIntegrityException> {
+                stylesheet(mapOf("vm-1" to assignment(animationId = "FADE-IN-UP")))
+            }
+        }
+
+        test("the shorthand has a slot for every standard catalog param key, and only those") {
+            // A seventh standard key would otherwise vanish from the export — no slot here, and no
+            // `cssVar` to make it a custom property — while the preview kept writing it.
+            SHORTHAND_SLOTS.map { it.first }.toSet() shouldBe CatalogParam.STANDARD_KEYS
+        }
+
+        test("no catalog param is both standard and cssVar-backed") {
+            // If one ever were, it would be written twice: once as a `--vm-*` declaration and once
+            // inside the shorthand.
+            CATALOG.versions().forEach { version ->
+                CATALOG.catalog(version)?.entries?.forEach { entry ->
+                    entry.params.forEach { param ->
+                        withClue("$version/${entry.id}.${param.key}") {
+                            (param.isStandard && param.cssVar != null) shouldBe false
+                            // And every param is one or the other, or it reaches no CSS at all.
+                            (param.isStandard || param.cssVar != null) shouldBe true
+                        }
+                    }
+                }
+            }
         }
 
         test("an assignment whose pinned catalog version is not published fails the export") {

@@ -37,11 +37,12 @@ class ExportRoutesTest :
 
         suspend fun withExportApi(
             repositories: FakeExportRepositories,
+            html: PageEmitter = HtmlEmitter(),
             block: suspend ApplicationTestBuilder.() -> Unit,
         ) {
             val services =
                 testServices(CATALOG).copy(
-                    exports = ExportService(repositories, repositories, CATALOG, repositories),
+                    exports = ExportService(repositories, repositories, CATALOG, repositories, html),
                 )
             testApplication {
                 application { apiModule(testConfig(), CATALOG, DatabaseHealth { true }, services) }
@@ -274,6 +275,44 @@ class ExportRoutesTest :
                 bundle.css shouldContain "/* Vibe Motion · format 1 · v0 · saved 2026-09-20 (UTC) */"
                 bundle.html.orEmpty() shouldContain """<link rel="stylesheet" href="vibe-motion.css">"""
                 bundle.html.orEmpty() shouldNotContain "data-vm-id"
+            }
+        }
+
+        test("an assignment for an element base_html does not have is dead CSS, not an error") {
+            // A stale `vmId` in the state — a re-clone, a hand-made fixture, a future edit — must
+            // not fail the export. The class lands nowhere and the rules are inert.
+            val repositories = fixture()
+            repositories.addVersion(
+                1,
+                Diff(set = mapOf("vm-1" to assignment(), "vm-99" to assignment(trigger = Trigger.IN_VIEW))),
+            )
+
+            withExportApi(repositories) {
+                val response = client.get("/projects/${repositories.projectId}/export")
+
+                response.status shouldBe HttpStatusCode.OK
+                val bundle = response.bundle()
+                bundle.html.orEmpty() shouldContain """class="vm-a1""""
+                bundle.html.orEmpty() shouldNotContain "vm-a99"
+                // The stylesheet still carries the rules, and the script still ships: the state
+                // says there is an in-view assignment, and the exporter does not second-guess it.
+                bundle.css shouldContain ":where(.vm-js) .vm-a99 {"
+                bundle.files.map { it.name } shouldBe listOf("index.html", "vibe-motion.css", "vibe-motion.js")
+            }
+        }
+
+        test("a failure inside the emitters is a 500, not the 400 an IllegalArgumentException maps to") {
+            val repositories = fixture()
+            repositories.addVersion(1, Diff(set = mapOf("vm-1" to assignment())))
+            val exploding =
+                PageEmitter { _, _, _ -> throw IllegalArgumentException("jsoup: Object must not be null") }
+
+            withExportApi(repositories, html = exploding) {
+                val response = client.get("/projects/${repositories.projectId}/export")
+
+                response.status shouldBe HttpStatusCode.InternalServerError
+                response.error().code shouldBe "internal_error"
+                response.bodyAsText() shouldNotContain "jsoup"
             }
         }
 
