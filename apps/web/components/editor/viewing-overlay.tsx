@@ -23,8 +23,16 @@ export function ViewingOverlay({ history }: { history: VersionHistory }) {
   return (
     <div
       data-testid="viewing-overlay"
-      className="absolute inset-0 z-10 flex justify-center bg-vm-surface/45 pt-4"
+      // `items-start`: the banner is a pill floating at the top, and as the
+      // sole flex item with no height of its own it would otherwise stretch
+      // the full depth of the sheet into a black band.
+      className="absolute inset-0 z-10 flex items-start justify-center bg-vm-surface/45 pt-4"
     >
+      {/* The pill's own text is static, and static text is not announced when
+          it appears. This is, for a reader who never sees the preview dim. */}
+      <span role="status" className="sr-only">
+        Viewing {viewingLabel}, read-only
+      </span>
       <ViewingBanner
         viewingLabel={viewingLabel}
         currentLabel={currentLabel}

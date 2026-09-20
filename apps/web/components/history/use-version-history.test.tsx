@@ -10,7 +10,7 @@ import { defaultAssignmentFor, getCatalogEntry } from "@/lib/catalog";
 import { env } from "@/lib/env";
 import { initialEditorState, selectUnsaved, useEditorStore } from "@/lib/store";
 import { saveVersion } from "@/lib/versions/api";
-import { createProject, listVersions } from "@/mocks/db";
+import { createProject, listVersions, restoreVersion } from "@/mocks/db";
 import { server } from "@/mocks/server";
 
 import { useVersionHistory } from "./use-version-history";
@@ -79,11 +79,44 @@ function renderHistory(projectId: string) {
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
-  const { result } = renderHook(
-    () => useVersionHistory(projectId, { currentVersionLabel: "v3", nextVersionLabel: "v4" }),
-    { wrapper: Wrapper },
+  return renderHook(
+    ({ id }: { id: string }) =>
+      useVersionHistory(id, { currentVersionLabel: "v3", nextVersionLabel: "v4" }),
+    { wrapper: Wrapper, initialProps: { id: projectId } },
   );
-  return result;
+}
+
+/**
+ * A `/state` handler nobody gets an answer from until the test says so, one
+ * gate per version — which is the only way to line up two answers in the
+ * order the reader did *not* ask for.
+ */
+function gateVersionState(states: Record<string, EditorStateMap>) {
+  const gates = new Map<string, { open: () => void; blocked: Promise<void>; ask: () => void; asked: Promise<void> }>();
+  for (const versionId of Object.keys(states)) {
+    let open = () => {};
+    let ask = () => {};
+    const blocked = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const asked = new Promise<void>((resolve) => {
+      ask = resolve;
+    });
+    gates.set(versionId, { open, blocked, ask, asked });
+  }
+  server.use(
+    http.get(api("/projects/:projectId/versions/:versionId/state"), async ({ params }) => {
+      const versionId = String(params.versionId);
+      const gate = gates.get(versionId);
+      gate?.ask();
+      await gate?.blocked;
+      return HttpResponse.json({ versionId, state: states[versionId] ?? {} });
+    }),
+  );
+  return {
+    asked: (versionId: string) => gates.get(versionId)?.asked ?? Promise.resolve(),
+    release: (versionId: string) => gates.get(versionId)?.open(),
+  };
 }
 
 beforeEach(() => {
@@ -94,7 +127,7 @@ beforeEach(() => {
 describe("useVersionHistory · viewing", () => {
   it("puts a past version on screen read-only, leaving the current one where Save can find it", async () => {
     const { project, versions, states } = await projectWithHistory();
-    const result = renderHistory(project.id);
+    const { result } = renderHistory(project.id);
     await waitFor(() => expect(result.current.versions).toHaveLength(4));
 
     await act(async () => {
@@ -118,7 +151,7 @@ describe("useVersionHistory · viewing", () => {
 
   it("moves from one past version to another without going back first", async () => {
     const { project, versions, states } = await projectWithHistory();
-    const result = renderHistory(project.id);
+    const { result } = renderHistory(project.id);
     await waitFor(() => expect(result.current.versions).toHaveLength(4));
 
     await act(async () => {
@@ -137,7 +170,7 @@ describe("useVersionHistory · viewing", () => {
 
   it("treats the current version's own row as the way back", async () => {
     const { project, versions, states } = await projectWithHistory();
-    const result = renderHistory(project.id);
+    const { result } = renderHistory(project.id);
     await waitFor(() => expect(result.current.versions).toHaveLength(4));
     await act(async () => {
       await result.current.view(versions[1].id);
@@ -156,7 +189,7 @@ describe("useVersionHistory · viewing", () => {
 
   it("goes back to the current version", async () => {
     const { project, versions, states } = await projectWithHistory();
-    const result = renderHistory(project.id);
+    const { result } = renderHistory(project.id);
     await waitFor(() => expect(result.current.versions).toHaveLength(4));
     await act(async () => {
       await result.current.view(versions[0].id);
@@ -173,7 +206,7 @@ describe("useVersionHistory · viewing", () => {
 
   it("refuses to view over an unsaved draft, rather than throwing the draft away", async () => {
     const { project, versions } = await projectWithHistory();
-    const result = renderHistory(project.id);
+    const { result } = renderHistory(project.id);
     await waitFor(() => expect(result.current.versions).toHaveLength(4));
     const mine = assignment("spin");
     act(() => {
@@ -191,6 +224,31 @@ describe("useVersionHistory · viewing", () => {
     expect(store.draftState["vm-9"]).toEqual(mine);
   });
 
+  it("clears a failed view once the reader goes back to the current version", async () => {
+    const { project, versions } = await projectWithHistory();
+    server.use(
+      http.get(
+        api("/projects/:projectId/versions/:versionId/state"),
+        () => HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 }),
+        { once: true },
+      ),
+    );
+    const { result } = renderHistory(project.id);
+    await waitFor(() => expect(result.current.versions).toHaveLength(4));
+    await act(async () => {
+      await result.current.view(versions[1].id);
+    });
+    expect(result.current.error).toBe("Could not load that version.");
+
+    // The current version's row is the way back, and it takes the message
+    // with it — nothing is failing any more.
+    await act(async () => {
+      await result.current.view(versions[3].id);
+    });
+
+    expect(result.current.error).toBeNull();
+  });
+
   it("says so and stays put when a version's state cannot be loaded", async () => {
     const { project, versions } = await projectWithHistory();
     server.use(
@@ -198,7 +256,7 @@ describe("useVersionHistory · viewing", () => {
         HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 }),
       ),
     );
-    const result = renderHistory(project.id);
+    const { result } = renderHistory(project.id);
     await waitFor(() => expect(result.current.versions).toHaveLength(4));
 
     await act(async () => {
@@ -210,10 +268,180 @@ describe("useVersionHistory · viewing", () => {
   });
 });
 
+describe("useVersionHistory · answers that arrive too late", () => {
+  it("keeps the version the reader asked for last, however the answers come back", async () => {
+    const { project, versions, states } = await projectWithHistory();
+    const gate = gateVersionState({
+      [versions[1].id]: states[1],
+      [versions[2].id]: states[2],
+    });
+    const { result } = renderHistory(project.id);
+    await waitFor(() => expect(result.current.versions).toHaveLength(4));
+
+    // v1's row, then v2's, before either `/state` has answered.
+    let first: Promise<void> = Promise.resolve();
+    let second: Promise<void> = Promise.resolve();
+    await act(async () => {
+      first = result.current.view(versions[1].id);
+      second = result.current.view(versions[2].id);
+      await Promise.all([gate.asked(versions[1].id), gate.asked(versions[2].id)]);
+    });
+
+    // v2 lands first, then v1's stale answer.
+    await act(async () => {
+      gate.release(versions[2].id);
+      await second;
+      gate.release(versions[1].id);
+      await first;
+    });
+
+    const store = useEditorStore.getState();
+    expect(store.viewingVersionId).toBe(versions[2].id);
+    expect(store.draftState).toEqual(states[2]);
+    expect(result.current.viewingLabel).toBe("v2");
+  });
+
+  it("never enters viewing after the reader has left the History tab", async () => {
+    const { project, versions, states } = await projectWithHistory();
+    const gate = gateVersionState({ [versions[1].id]: states[1] });
+    const { result } = renderHistory(project.id);
+    await waitFor(() => expect(result.current.versions).toHaveLength(4));
+
+    let pending: Promise<void> = Promise.resolve();
+    await act(async () => {
+      pending = result.current.view(versions[1].id);
+      await gate.asked(versions[1].id);
+    });
+    // Leaving the tab: `back()` has nothing to leave yet — viewing has not
+    // started — but it must still cancel what is on its way.
+    act(() => {
+      result.current.back();
+    });
+
+    await act(async () => {
+      gate.release(versions[1].id);
+      await pending;
+    });
+
+    // Behaviour 9: never viewing with the History tab closed.
+    const store = useEditorStore.getState();
+    expect(store.mode).toBe("editing");
+    expect(store.viewingVersionId).toBeNull();
+    expect(store.draftState).toEqual(states[3]);
+  });
+
+  it("never lands one project's version in another project's editor", async () => {
+    const a = await projectWithHistory();
+    const b = await projectWithHistory();
+    const gate = gateVersionState({ [a.versions[1].id]: a.states[1] });
+    const { result, rerender } = renderHistory(a.project.id);
+    await waitFor(() => expect(result.current.versions).toHaveLength(4));
+
+    let pending: Promise<void> = Promise.resolve();
+    await act(async () => {
+      pending = result.current.view(a.versions[1].id);
+      await gate.asked(a.versions[1].id);
+    });
+
+    // What the shell does on a project change: `reset()`, same mount.
+    act(() => {
+      useEditorStore.getState().reset();
+      useEditorStore.getState().loadVersion(b.versions[3].id, b.states[3]);
+    });
+    rerender({ id: b.project.id });
+    await act(async () => {
+      gate.release(a.versions[1].id);
+      await pending;
+    });
+
+    const store = useEditorStore.getState();
+    expect(store.mode).toBe("editing");
+    expect(store.currentVersionId).toBe(b.versions[3].id);
+    expect(store.draftState).toEqual(b.states[3]);
+  });
+
+  it("keeps quiet about a failure the reader has already moved on from", async () => {
+    const { project, versions } = await projectWithHistory();
+    let release = () => {};
+    let ask = () => {};
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const asked = new Promise<void>((resolve) => {
+      ask = resolve;
+    });
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), async () => {
+        ask();
+        await blocked;
+        return HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 });
+      }),
+    );
+    const { result } = renderHistory(project.id);
+    await waitFor(() => expect(result.current.versions).toHaveLength(4));
+
+    let pending: Promise<void> = Promise.resolve();
+    await act(async () => {
+      pending = result.current.view(versions[1].id);
+      await asked;
+    });
+    act(() => {
+      result.current.back();
+    });
+    await act(async () => {
+      release();
+      await pending;
+    });
+
+    // The request the message would be about is one nobody is waiting for.
+    expect(result.current.error).toBeNull();
+  });
+
+  it("keeps a restore that outlives the tab, and says nothing into the void", async () => {
+    const { project, versions } = await projectWithHistory();
+    const { result, unmount } = renderHistory(project.id);
+    await waitFor(() => expect(result.current.versions).toHaveLength(4));
+    let release = () => {};
+    let ask = () => {};
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const asked = new Promise<void>((resolve) => {
+      ask = resolve;
+    });
+    server.use(
+      http.post(api("/projects/:projectId/versions/:versionId/restore"), async ({ params }) => {
+        ask();
+        await blocked;
+        const written = restoreVersion(String(params.projectId), String(params.versionId));
+        return HttpResponse.json(written.body, { status: written.status });
+      }),
+    );
+
+    const restore = result.current.restore;
+    let pending: Promise<void> = Promise.resolve();
+    await act(async () => {
+      pending = restore(versions[1].id);
+      await asked;
+    });
+    unmount();
+    await act(async () => {
+      release();
+      await pending;
+    });
+
+    // The version was written, so the store must follow it — but a toast for a
+    // screen that is gone belongs to nobody.
+    expect(listVersions(project.id)?.versions).toHaveLength(5);
+    expect(useEditorStore.getState().currentVersionId).not.toBe(versions[3].id);
+    expect(useToastStore.getState().current).toBeNull();
+  });
+});
+
 describe("useVersionHistory · restore", () => {
   it("restores a past version as a new one, and lands the editor on it", async () => {
     const { project, versions, states } = await projectWithHistory();
-    const result = renderHistory(project.id);
+    const { result } = renderHistory(project.id);
     await waitFor(() => expect(result.current.versions).toHaveLength(4));
     await act(async () => {
       await result.current.view(versions[1].id);
@@ -240,7 +468,7 @@ describe("useVersionHistory · restore", () => {
 
   it("keeps the version on screen and says why when the restore fails", async () => {
     const { project, versions } = await projectWithHistory();
-    const result = renderHistory(project.id);
+    const { result } = renderHistory(project.id);
     await waitFor(() => expect(result.current.versions).toHaveLength(4));
     await act(async () => {
       await result.current.view(versions[1].id);
@@ -265,7 +493,7 @@ describe("useVersionHistory · restore", () => {
 
   it("retries a busy project once, and restores", async () => {
     const { project, versions } = await projectWithHistory();
-    const result = renderHistory(project.id);
+    const { result } = renderHistory(project.id);
     await waitFor(() => expect(result.current.versions).toHaveLength(4));
     server.use(
       http.post(
@@ -285,7 +513,7 @@ describe("useVersionHistory · restore", () => {
 
   it("writes one version however fast Restore is clicked twice", async () => {
     const { project, versions } = await projectWithHistory();
-    const result = renderHistory(project.id);
+    const { result } = renderHistory(project.id);
     await waitFor(() => expect(result.current.versions).toHaveLength(4));
 
     // Both clicks land before React has re-rendered the disabled button, so
@@ -302,7 +530,7 @@ describe("useVersionHistory · restore", () => {
 
   it("stops after that one retry rather than hammering a busy project", async () => {
     const { project, versions } = await projectWithHistory();
-    const result = renderHistory(project.id);
+    const { result } = renderHistory(project.id);
     await waitFor(() => expect(result.current.versions).toHaveLength(4));
     let attempts = 0;
     server.use(
@@ -325,7 +553,7 @@ describe("useVersionHistory · restore", () => {
 describe("useVersionHistory · the list", () => {
   it("offers the list, the labels and a retry once the versions land", async () => {
     const { project, versions } = await projectWithHistory();
-    const result = renderHistory(project.id);
+    const { result } = renderHistory(project.id);
 
     expect(result.current.pending).toBe(true);
     await waitFor(() => expect(result.current.pending).toBe(false));
@@ -345,7 +573,7 @@ describe("useVersionHistory · the list", () => {
         { once: true },
       ),
     );
-    const result = renderHistory(project.id);
+    const { result } = renderHistory(project.id);
     await waitFor(() => expect(result.current.listError).toBe(true));
 
     act(() => {

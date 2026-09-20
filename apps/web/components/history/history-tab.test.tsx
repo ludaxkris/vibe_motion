@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse, delay, http } from "msw";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Assignment, Project, Version } from "@/lib/api-client";
@@ -13,7 +13,7 @@ import { createProject, listVersions } from "@/mocks/db";
 import { server } from "@/mocks/server";
 
 import { HistoryTab } from "./history-tab";
-import { useVersionHistory } from "./use-version-history";
+import { useVersionHistory, type VersionHistory } from "./use-version-history";
 
 const api = (path: string) => `${env.apiOrigin}${path}`;
 
@@ -58,12 +58,19 @@ async function projectWithHistory(): Promise<{ project: Project; versions: Versi
  * The tab as the Control Panel mounts it: the shell owns the hook, so the
  * harness stands in for the shell.
  */
+let history: VersionHistory | null = null;
+
 function Harness({ projectId }: { projectId: string }) {
-  const history = useVersionHistory(projectId, {
+  const value = useVersionHistory(projectId, {
     currentVersionLabel: "v2",
     nextVersionLabel: "v3",
   });
-  return <HistoryTab history={history} />;
+  // Published from an effect, not during render: the hook's own result is
+  // what the tab renders, and a render must not write to the outside world.
+  useEffect(() => {
+    history = value;
+  }, [value]);
+  return <HistoryTab history={value} />;
 }
 
 function renderTab(projectId: string) {
@@ -75,6 +82,7 @@ function renderTab(projectId: string) {
 }
 
 beforeEach(() => {
+  history = null;
   useEditorStore.setState({ ...initialEditorState });
 });
 
@@ -136,6 +144,31 @@ describe("HistoryTab", () => {
     // The expanded row is where Restore lives, next to Phase 7's Export.
     expect(screen.getByRole("button", { name: "Restore" })).toBeEnabled();
     expect(screen.getByRole("button", { name: /^Export v1/ })).toBeDisabled();
+  });
+
+  it("keeps the rows when a refresh fails on top of a list it already has", async () => {
+    const { project } = await projectWithHistory();
+    renderTab(project.id);
+    await screen.findByText("Pulse on vm-2");
+    server.use(
+      http.get(api("/projects/:projectId/versions"), () =>
+        HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 }),
+      ),
+    );
+
+    // What a restore's list invalidation does — and what must not throw away
+    // three rows that are still perfectly true.
+    await act(async () => {
+      history?.retry();
+    });
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(
+      "Could not load version history.",
+    ));
+    expect(screen.getByText("Pulse on vm-2")).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    // The one action that can fix it is still offered, next to the rows.
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
   it("surfaces a version that could not be loaded without leaving the list", async () => {

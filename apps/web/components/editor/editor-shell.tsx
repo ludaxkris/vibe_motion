@@ -431,6 +431,11 @@ export function EditorShell({ projectId }: { projectId: string }) {
                 // nothing on it to select: the overlay covers it, and this
                 // makes sure nothing reaches it even if that layer moves.
                 style={isDragging || viewing ? { pointerEvents: "none" } : undefined}
+                // The keyboard's half of the same fact — Tab must not walk
+                // into the clone behind the overlay. On the frame itself, not
+                // on the sheet around it: the banner is that sheet's child,
+                // and an inert sheet would take its buttons with it.
+                inert={viewing}
               />
               )}
               {/* The white 45% layer and the "Viewing v3 · read-only" pill,

@@ -19,13 +19,13 @@
  * (CLAUDE.md rule 9), and only ever on a click: nothing here writes on its own.
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { BUSY_MESSAGE, MAX_RETRY_SECONDS } from "@/components/editor/use-save-flow";
 import { useToast } from "@/components/ui/toast";
 import type { Version } from "@/lib/api-client";
 import { selectUnsaved, useEditorStore } from "@/lib/store";
 import { fetchVersionState, type WriteOutcome } from "@/lib/versions/api";
+import { BUSY_MESSAGE, MAX_RETRY_SECONDS } from "@/lib/versions/messages";
 import { useRestoreVersion, useVersions, versionStateKey } from "@/lib/versions/queries";
 
 /** The tab's inline error when `stateAt()` refuses; the mode is left alone. */
@@ -121,6 +121,30 @@ export function useVersionHistory(
    * (CLAUDE.md rule 9). Same shape as the Save flow's `running`.
    */
   const running = useRef(false);
+  /**
+   * Which `view()` may still land. Every `view()`, `back()` and `restore()`
+   * bumps it, so a `/state` answer that arrives after the reader has moved
+   * on — to another version, to the current one, or out of the History tab —
+   * is dropped rather than put on screen behind their back.
+   */
+  const generation = useRef(0);
+  /**
+   * The project this hook is on *now*: the shell `reset()`s on a project
+   * change rather than remounting, so an answer for the project the reader
+   * left would otherwise land in the one they are on (the same guard
+   * `useProjectVersions` keeps as `active`).
+   */
+  const activeProject = useRef(projectId);
+  useEffect(() => {
+    activeProject.current = projectId;
+  }, [projectId]);
+  /** False once this hook is gone; the busy retry's timer can outlive it. */
+  const mounted = useRef(true);
+  useEffect(() => {
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const versions = data?.versions ?? NO_VERSIONS;
   const listVersionId = data?.currentVersionId ?? null;
@@ -136,6 +160,10 @@ export function useVersionHistory(
       // throws on one. Refuse rather than throw.
       if (selectUnsaved(before)) return;
 
+      // This click supersedes whatever was still on its way.
+      const token = (generation.current += 1);
+      setError(null);
+
       if (versionId === (before.currentVersionId ?? listVersionId)) {
         // The current version's row is where "back" lives: it is already what
         // the editor would return to.
@@ -143,7 +171,6 @@ export function useVersionHistory(
         return;
       }
 
-      setError(null);
       try {
         const state = await queryClient.fetchQuery({
           queryKey: versionStateKey(projectId, versionId),
@@ -152,6 +179,13 @@ export function useVersionHistory(
           // parent and none of them is ever rewritten (CLAUDE.md rule 9).
           staleTime: Infinity,
         });
+
+        // Superseded while it was in flight — another row, Back, a restore,
+        // or the reader leaving the History tab. The answer is still cached
+        // for whoever asks next; it just must not reach the screen now.
+        if (generation.current !== token) return;
+        // …nor may it land in the project the reader moved to.
+        if (activeProject.current !== projectId) return;
 
         // Re-read: the answer came over the network, and the draft was the
         // user's the whole time it was in flight.
@@ -166,6 +200,10 @@ export function useVersionHistory(
         }
         enterViewing(versionId, state);
       } catch {
+        // Same two guards: a message about a request the reader has moved on
+        // from is noise, and belongs to a screen that has changed under it.
+        if (generation.current !== token) return;
+        if (activeProject.current !== projectId) return;
         setError(VIEW_FAILED);
       }
     },
@@ -173,6 +211,10 @@ export function useVersionHistory(
   );
 
   const back = useCallback(() => {
+    // Bumped before anything else, and even when there is nothing to leave:
+    // leaving the History tab calls this while a `view()` may still be in
+    // flight, and that answer must not arrive behind the reader.
+    generation.current += 1;
     setError(null);
     // Guarded: `exitViewing` replaces `draftState` wholesale, which outside
     // viewing would mean discarding whatever is in it.
@@ -198,6 +240,9 @@ export function useVersionHistory(
       if (running.current) return;
       const target = versions.find((version) => version.id === versionId);
       running.current = true;
+      // A restore ends viewing, so a `/state` still in flight for some other
+      // version must not put it back on screen afterwards.
+      generation.current += 1;
       setError(null);
       setRestoring(true);
       try {
@@ -210,11 +255,16 @@ export function useVersionHistory(
               // Leaves viewing as it lands: the restored version *is* the
               // current one now, so there is nothing left to go back to.
               loadVersion(created.id, state);
-              toast(
-                target === undefined
-                  ? `Restored as v${created.seq}`
-                  : `Restored v${target.seq} as v${created.seq}`,
-              );
+              // The store write above stands whatever happened to this
+              // screen — the version really was created — but a toast for a
+              // screen that has gone belongs to nobody.
+              if (mounted.current) {
+                toast(
+                  target === undefined
+                    ? `Restored as v${created.seq}`
+                    : `Restored v${target.seq} as v${created.seq}`,
+                );
+              }
             } catch {
               // The version exists — the list refetch will show it — but this
               // tab could not fork the draft from it, which must not read as

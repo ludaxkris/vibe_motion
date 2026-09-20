@@ -616,6 +616,19 @@ describe("ControlPanel · History and viewing", () => {
     expect(screen.queryByText(/read-only/)).not.toBeInTheDocument();
   });
 
+  it("cancels a version still loading when the reader leaves the History tab", () => {
+    const back = vi.fn();
+    render(<ControlPanel history={historyStub({ back })} />);
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    // Nothing is on screen yet — a row was clicked and its `/state` is still
+    // in flight — and `back()` is what cancels it (the hook drops the answer),
+    // so it is called on the way out whether or not viewing has begun.
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+
+    expect(back).toHaveBeenCalledOnce();
+  });
+
   it("comes back to the current version when the reader leaves the History tab", () => {
     const back = vi.fn();
     useEditorStore.setState({ mode: "viewing", viewingVersionId: "viewed-id" });

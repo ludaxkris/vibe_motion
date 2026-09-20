@@ -50,11 +50,16 @@ export function HistoryTab({ history }: { history: VersionHistory }) {
     );
   }
 
-  if (history.listError) {
+  // Nothing to show *and* nothing to show it from: the error is the whole
+  // screen. A refetch that failed over a list we already have is not — the
+  // rows are still true, only the refresh failed (below).
+  if (history.listError && history.versions.length === 0) {
     return (
       <PanelCard data-testid="panel-history">
         <PanelSection>
-          <p className="text-sm leading-body text-vm-danger">{HISTORY_LOAD_FAILED}</p>
+          <p role="alert" className="text-sm leading-body text-vm-danger">
+            {HISTORY_LOAD_FAILED}
+          </p>
           <Button variant="secondary" size="sm" className="self-start" onClick={history.retry}>
             Retry
           </Button>
@@ -63,13 +68,22 @@ export function HistoryTab({ history }: { history: VersionHistory }) {
     );
   }
 
+  const message = history.error ?? (history.listError ? HISTORY_LOAD_FAILED : null);
+
   return (
     <PanelCard data-testid="panel-history">
-      {history.error ? (
+      {message ? (
         <PanelSection>
           <p role="alert" className="text-sm leading-body text-vm-danger">
-            {history.error}
+            {message}
           </p>
+          {/* Only the list's own failure has a retry: a version that would not
+              load is retried by clicking its row again. */}
+          {history.listError ? (
+            <Button variant="secondary" size="sm" className="self-start" onClick={history.retry}>
+              Retry
+            </Button>
+          ) : null}
         </PanelSection>
       ) : null}
       <HistoryList

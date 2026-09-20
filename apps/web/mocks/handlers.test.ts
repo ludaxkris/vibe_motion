@@ -223,6 +223,10 @@ describe("mock API: create -> get -> versions -> state fold -> 409 -> restore", 
     const v2 = restored.data!;
     expect(v2.parentVersionId).toBe(v1.id);
     expect(v2.diff.remove).toContain("vm-heading");
+    // The label the service writes when the caller sends none
+    // (`apps/api/.../VersionService.kt`), so mocked runs and screenshots read
+    // like production.
+    expect(v2.label).toBe("Restored v0");
 
     const stateAtV2 = await apiClient.GET("/projects/{projectId}/versions/{versionId}/state", {
       params: { path: { projectId: project.id, versionId: v2.id } },

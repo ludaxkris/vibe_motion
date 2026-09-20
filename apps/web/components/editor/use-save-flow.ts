@@ -24,6 +24,8 @@ import { summariseDiff, type DiffRow } from "@/lib/diff-summary";
 import { selectUnsaved, useEditorStore, type EditorState } from "@/lib/store";
 import { fetchVersionState, type WriteOutcome } from "@/lib/versions/api";
 import { computeDiff } from "@/lib/versions/diff";
+// Shared with Restore, the other write on this screen: one `503` story, one cap.
+import { BUSY_MESSAGE, MAX_RETRY_SECONDS } from "@/lib/versions/messages";
 import { useSaveVersion } from "@/lib/versions/queries";
 
 import type { SaveFlowDialogsProps } from "./save-flow-dialogs";
@@ -33,17 +35,6 @@ import type { SaveFlowDialogsProps } from "./save-flow-dialogs";
  * it: "the user said no" is not an error to report, it is the answer.
  */
 const CANCELLED = "save cancelled";
-
-/**
- * Two attempts is all a `503` gets; the third answer would be a guess about
- * the fourth. Exported so Restore — the other write on this screen
- * (`components/history/use-version-history.ts`) — retries in the same shape
- * and says the same thing when it gives up.
- */
-export const BUSY_MESSAGE = "The project is busy. Try again in a moment.";
-
-/** A `Retry-After` the service should never send must not wedge the dialog either. */
-export const MAX_RETRY_SECONDS = 5;
 
 /** When the API could not even be asked — `fetchVersionState` throws rather than answering. */
 const LOAD_FAILED = "Could not load this version";

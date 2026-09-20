@@ -43,7 +43,23 @@ describe("ViewingOverlay", () => {
     expect(screen.getByRole("button", { name: "Restore as v6" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to v5" })).toBeInTheDocument();
     // "Preview dims (white 45% overlay)" — the handoff's "History tab".
-    expect(screen.getByTestId("viewing-overlay")).toHaveClass("bg-vm-surface/45");
+    const overlay = screen.getByTestId("viewing-overlay");
+    expect(overlay).toHaveClass("bg-vm-surface/45");
+    // …and the banner is a floating pill, top centre. Without a cross-axis
+    // alignment the sole flex item stretches to the full height of the sheet,
+    // which reads as an opaque black band — and jsdom has no layout to catch
+    // it, so the class is the assertion.
+    expect(overlay).toHaveClass("items-start");
+  });
+
+  it("announces the mode for a reader who never sees the preview", () => {
+    render(<ViewingOverlay history={historyStub()} />);
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Viewing v3, read-only");
+    // The pill says the same thing, but static text is not announced when it
+    // appears; this is, and only this one is hidden from the screen.
+    expect(status).toHaveClass("sr-only");
   });
 
   it("goes back, and restores the version it is showing", () => {

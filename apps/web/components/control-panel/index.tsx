@@ -336,9 +336,11 @@ export function ControlPanel({
             return;
           }
           // Viewing is a read-only detour that belongs to the History tab, so
-          // leaving it returns to the current version first — the editor is
-          // never in viewing mode with History closed (docs/user_flow.md §4).
-          if (viewing && tab === "history") history?.back();
+          // leaving the tab returns to the current version first — the editor
+          // is never in viewing mode with History closed
+          // (docs/user_flow.md §4). Called even when nothing is on screen
+          // yet: `back()` is also what cancels a version still loading.
+          if (tab === "history") history?.back();
           setTab(value);
         }}
         className="flex min-h-0 flex-1 flex-col gap-0"
@@ -361,7 +363,12 @@ export function ControlPanel({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3">
           {/* Above the inert content below, so it stays readable. */}
-          {tab === "animate" ? <ReadOnlyNote history={history} /> : null}
+          {tab === "animate" && viewing && history?.viewingLabel && history.currentLabel ? (
+            <ReadOnlyNote
+              viewingLabel={history.viewingLabel}
+              currentLabel={history.currentLabel}
+            />
+          ) : null}
           <TabsContent
             value="animate"
             // A past version on screen is read-only: the store refuses every

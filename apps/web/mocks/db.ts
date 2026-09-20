@@ -357,7 +357,10 @@ export function restoreVersion(
   return createVersion(projectId, {
     parentVersionId: record.project.currentVersionId,
     catalogVersion: targetVersion.catalogVersion,
-    label: label ?? `Restored to "${targetVersion.label}"`,
+    // Exactly what the service writes when the caller sends no label
+    // (`apps/api/src/main/kotlin/.../versions/VersionService.kt`), so mocked
+    // runs and screenshots read like production.
+    label: label ?? `Restored v${targetVersion.seq}`,
     diff: { set, remove },
   });
 }

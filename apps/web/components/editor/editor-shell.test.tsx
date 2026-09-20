@@ -744,9 +744,11 @@ describe("EditorShell · viewing a past version", () => {
         "viewing-overlay",
       ),
     ).not.toBeInTheDocument();
-    expect(within(preview).getByTitle("Cloned page preview")).toHaveStyle({
-      pointerEvents: "none",
-    });
+    const iframe = within(preview).getByTitle("Cloned page preview");
+    expect(iframe).toHaveStyle({ pointerEvents: "none" });
+    // …and out of the keyboard's reach too: there is nothing to select on a
+    // version being viewed, and Tab must not walk into the clone.
+    expect(iframe).toHaveAttribute("inert");
   });
 
   it("comes back to the current version on Escape", async () => {
