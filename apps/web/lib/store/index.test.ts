@@ -1107,7 +1107,7 @@ describe("agent provenance (Phase 5, D2)", () => {
     it("does nothing while a version is being viewed", () => {
       const store = createEditorStore();
       store.getState().setSelectedVmId("vm-a");
-      store.getState().setMode("viewing");
+      store.setState({ mode: "viewing" });
       const before = store.getState();
 
       store.getState().applyGenerated("vm-a", assignmentFor("pulse"));
@@ -1119,7 +1119,7 @@ describe("agent provenance (Phase 5, D2)", () => {
   describe("applyPageSuggestion while viewing", () => {
     it("does nothing", () => {
       const store = createEditorStore();
-      store.getState().setMode("viewing");
+      store.setState({ mode: "viewing" });
       const before = store.getState();
 
       store.getState().applyPageSuggestion(pageRun({ "vm-a": assignmentFor("fade-in") }));
@@ -1305,7 +1305,7 @@ describe("agent provenance (Phase 5, D2)", () => {
     it("does nothing while a version is being viewed", () => {
       const store = createEditorStore();
       store.getState().applyPageSuggestion(pageRun({ "vm-a": assignmentFor("fade-in") }));
-      store.getState().setMode("viewing");
+      store.setState({ mode: "viewing" });
       const before = store.getState();
 
       store.getState().removeAllGenerated();
