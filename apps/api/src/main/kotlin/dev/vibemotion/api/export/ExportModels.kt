@@ -2,6 +2,7 @@ package dev.vibemotion.api.export
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.time.OffsetDateTime
 import java.util.UUID
 
 /*
@@ -83,6 +84,15 @@ data class ExportRequest(
         }
     }
 }
+
+/**
+ * The part of the version being exported that reaches the output: its position in history and when
+ * it was saved, both of which go in the stylesheet header. Its label never does.
+ */
+data class ExportVersion(
+    val seq: Int,
+    val createdAt: OffsetDateTime,
+)
 
 /**
  * 400 with a code of its own.
