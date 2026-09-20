@@ -205,7 +205,7 @@ describe("AutoResultPanel", () => {
     renderResult({ skippedCount: 4 });
 
     expect(screen.getByTestId("auto-result-caption")).toHaveTextContent(
-      "Skipped 4 elements (too small, hidden or not content).",
+      "Skipped 4 elements (inside an animated block, too large, too small, hidden or not content).",
     );
   });
 
@@ -213,7 +213,7 @@ describe("AutoResultPanel", () => {
     renderResult({ skippedCount: 1 });
 
     expect(screen.getByTestId("auto-result-caption")).toHaveTextContent(
-      "Skipped 1 element (too small, hidden or not content).",
+      "Skipped 1 element (inside an animated block, too large, too small, hidden or not content).",
     );
   });
 
@@ -279,5 +279,51 @@ describe("AutoResultPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
 
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("says why a Regenerate did nothing, and says nothing otherwise", () => {
+    const { rerender } = renderResult();
+    // Mounted before it has anything to say: the text is then a change to a
+    // region assistive tech is already watching.
+    const region = screen.getByRole("status");
+    expect(region).toBeEmptyDOMElement();
+    expect(screen.queryByTestId("agent-run-error")).not.toBeInTheDocument();
+
+    rerender(
+      <AutoResultPanel
+        rows={ROWS}
+        prompt=""
+        skippedCount={0}
+        truncated={false}
+        consideredLimit={200}
+        onSelectRow={() => undefined}
+        onRegenerate={() => undefined}
+        onReplayAll={() => undefined}
+        onRemoveAll={() => undefined}
+        onClose={() => undefined}
+        error="query-failed"
+      />,
+    );
+
+    expect(screen.getByRole("status")).toBe(region);
+    expect(region).toHaveTextContent("Couldn't read the page. Try again.");
+  });
+
+  it("announces a Regenerate in flight", () => {
+    renderResult({ busy: true });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Generating…");
+  });
+
+  it("keeps the live region when no row is left", () => {
+    renderResult({ rows: [] });
+
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("carries the run's seed on its root, so a test can tell one run from the next", () => {
+    renderResult({ runSeed: 1234 });
+
+    expect(screen.getByTestId("panel-auto-result")).toHaveAttribute("data-run-seed", "1234");
   });
 });

@@ -6,7 +6,15 @@
  * The wire types and constants live in the `bridge` workspace package, which
  * the API and the Phase 7 exporter share.
  */
-export { createBridgeClient } from "./client";
-export type { Ack, BridgeClient, BridgeClientOptions, BridgeStatus } from "./client";
+export { createBridgeClient, ELEMENTS_QUERY_MIN_BRIDGE } from "./client";
+export type {
+  Ack,
+  BridgeClient,
+  BridgeClientOptions,
+  BridgeStatus,
+  ElementsList,
+  ElementsQuery,
+} from "./client";
+export { atLeast } from "./semver";
 export { isUnresolved, toApplied } from "./to-applied";
 export type { Unresolved, UnresolvedReason } from "./to-applied";

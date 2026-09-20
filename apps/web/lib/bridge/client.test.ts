@@ -140,8 +140,22 @@ function harness(options: { origin?: string } = {}) {
         deliver("ack", { seq, ms: 0.5, ok: true, ...extra });
       }
     },
-    ready(protocolVersion: number = PROTOCOL_VERSION) {
-      deliver("ready", { elementCount: 12, bridgeVersion: "1.0.0", protocolVersion });
+    ready(protocolVersion: number = PROTOCOL_VERSION, bridgeVersion: string = "1.1.1") {
+      deliver("ready", { elementCount: 12, bridgeVersion, protocolVersion });
+    },
+    /** A `ready` with exactly this payload, for the ones a real bridge would never send. */
+    readyWith(payload: Record<string, unknown>) {
+      deliver("ready", payload);
+    },
+    /** Fire only the armed deadlines of this length (the query's 3 s, not the ack's 5 s). */
+    expireTimersOf(ms: number) {
+      timers.filter((timer) => !timer.cancelled && timer.ms === ms).forEach((timer) => timer.run());
+    },
+    /** The seq of the last message of `type` that went out. */
+    lastSeq(type: string): number {
+      const message = [...posted].reverse().find((p) => p.data.type === type);
+      if (typeof message?.data.seq !== "number") throw new Error(`no ${type} was posted`);
+      return message.data.seq;
     },
     types: () => posted.map((p) => p.data.type),
     clear: () => posted.splice(0),
@@ -718,5 +732,374 @@ describe("createBridgeClient — hardening", () => {
     h.client.clearPreview();
 
     expect(h.types()).toEqual(["preview", "preview:clear"]);
+  });
+});
+
+describe("createBridgeClient — queryElements", () => {
+  const VIEWPORT = { width: 1200, height: 600 };
+  const QUERY = { filter: { tags: ["h1", "p"], minWidth: 40, minHeight: 40 }, limit: 200 };
+
+  /** Handshaken, the handshake's own messages acked and out of the way. */
+  function readyHarness(bridgeVersion = "1.1.1") {
+    const h = harness();
+    h.ready(PROTOCOL_VERSION, bridgeVersion);
+    h.ackAll();
+    h.clear();
+    return h;
+  }
+
+  function list(seq: number, overrides: Record<string, unknown> = {}) {
+    return {
+      seq,
+      elements: [elementInfo("vm-1", "h1"), elementInfo("vm-2", "p")],
+      truncated: false,
+      viewport: VIEWPORT,
+      ...overrides,
+    };
+  }
+
+  it("posts `elements:query` with a fresh seq to the expected origin, never `*`", () => {
+    const h = readyHarness();
+    const before = h.client.replay(null);
+    void before;
+    const replaySeq = h.lastSeq("replay");
+
+    void h.client.queryElements(QUERY);
+
+    const message = h.posted[h.posted.length - 1];
+    expect(message.data.type).toBe("elements:query");
+    expect(message.data.payload).toEqual(QUERY);
+    expect(message.data.seq).toBe(replaySeq + 1);
+    expect(Number.isInteger(message.data.seq)).toBe(true);
+    expect(message.targetOrigin).toBe(FRAME_ORIGIN);
+    expect(h.posted.every((p) => p.targetOrigin !== "*")).toBe(true);
+  });
+
+  it("sends an empty payload when called with no query", () => {
+    const h = readyHarness();
+
+    void h.client.queryElements();
+
+    expect(h.posted[0].data).toMatchObject({ type: "elements:query", payload: {} });
+  });
+
+  it("resolves with the matching `elements:list` and remembers every element", async () => {
+    const h = readyHarness();
+    const query = h.client.queryElements(QUERY);
+    const seq = h.lastSeq("elements:query");
+
+    h.deliver("elements:list", list(seq, { truncated: true }));
+    h.ackAll();
+
+    await expect(query).resolves.toEqual({
+      elements: [elementInfo("vm-1", "h1"), elementInfo("vm-2", "p")],
+      truncated: true,
+      viewport: VIEWPORT,
+    });
+    expect(h.store.getState().elements["vm-1"]).toEqual(elementInfo("vm-1", "h1"));
+    expect(h.store.getState().elements["vm-2"]).toEqual(elementInfo("vm-2", "p"));
+  });
+
+  it("remembers a whole list in one store update", async () => {
+    const h = readyHarness();
+    const query = h.client.queryElements(QUERY);
+    let notifications = 0;
+    h.store.subscribe(() => {
+      notifications += 1;
+    });
+
+    h.deliver("elements:list", list(h.lastSeq("elements:query")));
+    await query;
+
+    expect(notifications).toBe(1);
+  });
+
+  it("ignores a list for another seq, and one nobody asked for", async () => {
+    const h = readyHarness();
+    const query = h.client.queryElements(QUERY);
+    const seq = h.lastSeq("elements:query");
+    let settled = false;
+    void query.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+
+    h.deliver("elements:list", list(seq + 100, { elements: [elementInfo("vm-9")] }));
+    h.deliver("elements:list", { seq: "nope" });
+    h.deliver("elements:list", null);
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    expect(h.store.getState().elements["vm-9"]).toBeUndefined();
+
+    h.deliver("elements:list", list(seq));
+    await expect(query).resolves.toMatchObject({ truncated: false });
+  });
+
+  it("keeps two queries in flight apart", async () => {
+    const h = readyHarness();
+    const first = h.client.queryElements(QUERY);
+    const firstSeq = h.lastSeq("elements:query");
+    const second = h.client.queryElements(QUERY);
+    const secondSeq = h.lastSeq("elements:query");
+
+    h.deliver("elements:list", list(secondSeq, { elements: [elementInfo("vm-2", "p")] }));
+    h.deliver("elements:list", list(firstSeq, { elements: [elementInfo("vm-1", "h1")] }));
+
+    expect((await first).elements.map((element) => element.vmId)).toEqual(["vm-1"]);
+    expect((await second).elements.map((element) => element.vmId)).toEqual(["vm-2"]);
+  });
+
+  it("resolves on a list that arrives before the ack, and whenIdle() still waits for that ack", async () => {
+    const h = readyHarness();
+    const query = h.client.queryElements(QUERY);
+    const seq = h.lastSeq("elements:query");
+
+    h.deliver("elements:list", list(seq));
+    await expect(query).resolves.toMatchObject({ viewport: VIEWPORT });
+
+    let idle = false;
+    const whenIdle = h.client.whenIdle().then(() => {
+      idle = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(idle).toBe(false);
+
+    h.deliver("ack", { seq, ms: 1, ok: true });
+    await whenIdle;
+    expect(idle).toBe(true);
+    // Both deadlines — the query's and the ack's — are disarmed.
+    expect(h.liveTimers()).toHaveLength(0);
+  });
+
+  it("drops elements that are not an ElementInfo", async () => {
+    const h = readyHarness();
+    const query = h.client.queryElements(QUERY);
+
+    h.deliver(
+      "elements:list",
+      list(h.lastSeq("elements:query"), {
+        elements: [elementInfo("vm-1"), { vmId: "vm-bad", tag: 7 }, null, elementInfo("vm-2", "p")],
+      }),
+    );
+
+    expect((await query).elements.map((element) => element.vmId)).toEqual(["vm-1", "vm-2"]);
+    expect(h.store.getState().elements["vm-bad"]).toBeUndefined();
+  });
+
+  it.each([
+    ["a non-array `elements`", { elements: "many" }],
+    ["a non-boolean `truncated`", { truncated: "no" }],
+    ["a missing viewport", { viewport: undefined }],
+    ["a non-numeric viewport", { viewport: { width: "1200", height: 600 } }],
+    ["a non-finite viewport", { viewport: { width: 1200, height: Number.NaN } }],
+  ])("rejects %s as elements-query-invalid", async (_name, overrides) => {
+    const h = readyHarness();
+    const query = h.client.queryElements(QUERY);
+
+    h.deliver("elements:list", list(h.lastSeq("elements:query"), overrides));
+
+    await expect(query).rejects.toThrow("elements-query-invalid");
+    expect(h.store.getState().elements).toEqual({});
+  });
+
+  it("rejects with elements-query-timeout after 3000 ms, on its own timer", async () => {
+    const h = readyHarness();
+    const query = h.client.queryElements(QUERY);
+    const seq = h.lastSeq("elements:query");
+
+    expect(h.liveTimers().map((timer) => timer.ms).sort()).toEqual([3_000, 5_000]);
+
+    h.expireTimersOf(3_000);
+
+    await expect(query).rejects.toThrow("elements-query-timeout");
+    // The seq is still owed an ack: `whenIdle()` stays honest…
+    expect(h.liveTimers().map((timer) => timer.ms)).toEqual([5_000]);
+    // …and a list that turns up late is ignored.
+    h.deliver("elements:list", list(seq));
+    expect(h.store.getState().elements).toEqual({});
+
+    h.deliver("ack", { seq, ms: 1, ok: true });
+    await expect(h.client.whenIdle()).resolves.toBeUndefined();
+  });
+
+  it("rejects at once when the ack says ok but no list ever came (the list always precedes the ack)", async () => {
+    const h = readyHarness();
+    const query = h.client.queryElements(QUERY);
+    const seq = h.lastSeq("elements:query");
+
+    h.deliver("ack", { seq, ms: 1, ok: true });
+
+    await expect(query).rejects.toThrow("elements-query-invalid");
+    expect(h.liveTimers()).toHaveLength(0);
+    expect(h.ackErrors).toEqual([]);
+  });
+
+  it("honours `queryTimeoutMs`", () => {
+    const posted: unknown[] = [];
+    const armed: number[] = [];
+    const frame = { postMessage: (data: unknown) => posted.push(data) } as unknown as Window;
+    let listener: ((event: MessageEvent) => void) | null = null;
+    const client = createBridgeClient({
+      target: () => frame,
+      expectedOrigin: FRAME_ORIGIN,
+      listenOn: {
+        addEventListener: (_type: string, fn: EventListener) => {
+          listener = fn as unknown as (event: MessageEvent) => void;
+        },
+        removeEventListener: () => {},
+      } as unknown as Window,
+      store: createEditorStore(),
+      raf: () => {},
+      setTimer: (_run, ms) => armed.push(ms),
+      clearTimer: () => {},
+      queryTimeoutMs: 750,
+    });
+    (listener as unknown as (event: MessageEvent) => void)({
+      origin: FRAME_ORIGIN,
+      source: frame,
+      data: {
+        source: MESSAGE_SOURCE,
+        type: "ready",
+        payload: { elementCount: 1, bridgeVersion: "1.1.1", protocolVersion: PROTOCOL_VERSION },
+      },
+    } as MessageEvent);
+    armed.length = 0;
+
+    client.queryElements().catch(() => {});
+
+    expect(armed).toContain(750);
+    client.destroy();
+  });
+
+  it("rejects with elements-query-rejected when its ack is `ok: false`, without reporting an ack error", async () => {
+    const h = readyHarness();
+    const query = h.client.queryElements(QUERY);
+    const seq = h.lastSeq("elements:query");
+
+    h.deliver("ack", { seq, ms: 1, ok: false, error: "invalid-payload" });
+
+    await expect(query).rejects.toThrow("elements-query-rejected");
+    expect(h.liveTimers()).toHaveLength(0);
+    // The draft and the frame still agree; the caller has the rejection.
+    expect(h.ackErrors).toEqual([]);
+    await expect(h.client.whenIdle()).resolves.toBeUndefined();
+  });
+
+  it("rejects when a new `ready` arrives", async () => {
+    const h = readyHarness();
+    const query = h.client.queryElements(QUERY);
+
+    h.ready();
+
+    await expect(query).rejects.toThrow(/preview frame reloaded/);
+    expect(h.liveTimers().every((timer) => timer.ms !== 3_000)).toBe(true);
+  });
+
+  it("rejects on destroy", async () => {
+    const h = readyHarness();
+    const query = h.client.queryElements(QUERY);
+
+    h.client.destroy();
+
+    await expect(query).rejects.toThrow(/destroyed/);
+    expect(h.liveTimers()).toHaveLength(0);
+  });
+
+  it("rejects at once, and posts nothing, while the bridge is not ready", async () => {
+    const h = harness();
+
+    await expect(h.client.queryElements(QUERY)).rejects.toThrow(/not ready/i);
+
+    h.ready(PROTOCOL_VERSION + 1);
+    await expect(h.client.queryElements(QUERY)).rejects.toThrow(/version mismatch/i);
+
+    expect(h.posted).toHaveLength(0);
+    expect(h.liveTimers()).toHaveLength(0);
+  });
+
+  it("rejects at once when the frame is gone", async () => {
+    const h = readyHarness();
+    h.setTarget(null);
+
+    await expect(h.client.queryElements(QUERY)).rejects.toThrow(/not available/i);
+  });
+
+  it("accepts bridge 1.1.1 and refuses 1.0.0 as bridge-too-old", async () => {
+    const current = readyHarness("1.1.1");
+    void current.client.queryElements(QUERY).catch(() => {});
+    expect(current.types()).toEqual(["elements:query"]);
+
+    const old = readyHarness("1.0.0");
+    await expect(old.client.queryElements(QUERY)).rejects.toThrow("bridge-too-old");
+    expect(old.posted).toHaveLength(0);
+    expect(old.liveTimers()).toHaveLength(0);
+  });
+
+  it("reports the frame's bridgeVersion: null before `ready`, this frame's after, null when unusable", () => {
+    const h = harness();
+    expect(h.client.bridgeVersion()).toBeNull();
+
+    h.ready(PROTOCOL_VERSION, "1.1.1");
+    expect(h.client.bridgeVersion()).toBe("1.1.1");
+
+    h.ready(PROTOCOL_VERSION, "1.0.0");
+    expect(h.client.bridgeVersion()).toBe("1.0.0");
+
+    h.readyWith({ elementCount: 1, protocolVersion: PROTOCOL_VERSION, bridgeVersion: 1.1 });
+    expect(h.client.bridgeVersion()).toBeNull();
+  });
+
+  it("refuses a `ready` with no usable bridgeVersion as bridge-too-old", async () => {
+    for (const bridgeVersion of [undefined, 1.1, "latest"]) {
+      const h = harness();
+      h.readyWith({ elementCount: 1, protocolVersion: PROTOCOL_VERSION, bridgeVersion });
+      h.clear();
+
+      await expect(h.client.queryElements(QUERY)).rejects.toThrow("bridge-too-old");
+      expect(h.posted).toHaveLength(0);
+    }
+  });
+
+  it("forgets the old frame's version on every `ready`", async () => {
+    const h = readyHarness("1.1.1");
+
+    h.ready(PROTOCOL_VERSION, "1.0.0");
+    await expect(h.client.queryElements(QUERY)).rejects.toThrow("bridge-too-old");
+
+    h.ready(PROTOCOL_VERSION, "1.10.0");
+    h.clear();
+    void h.client.queryElements(QUERY).catch(() => {});
+    expect(h.types()).toEqual(["elements:query"]);
+  });
+
+  it("raises no unhandled rejection: a settled query's ack deferred, a query nobody awaited", async () => {
+    const onUnhandled = vi.fn();
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const h = readyHarness();
+      // Resolved by its list; its ack never comes and the ack deadline fires.
+      const answered = h.client.queryElements(QUERY);
+      h.deliver("elements:list", list(h.lastSeq("elements:query")));
+      await answered;
+      h.expireTimers();
+
+      // Timed out, then the frame reloads under the ack it still owed.
+      const timedOut = h.client.queryElements(QUERY);
+      h.expireTimersOf(3_000);
+      await expect(timedOut).rejects.toThrow("elements-query-timeout");
+      h.ready();
+
+      // Fire-and-forget, then destroyed.
+      void h.client.queryElements(QUERY);
+      void h.client.queryElements(QUERY);
+      h.client.destroy();
+      void h.client.queryElements(QUERY);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(onUnhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 });

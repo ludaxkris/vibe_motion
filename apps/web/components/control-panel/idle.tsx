@@ -5,9 +5,11 @@ import { useId } from "react";
 import { Button } from "@/components/ui/button";
 import { ElementTag } from "@/components/ui/element-tag";
 import { SectionLabel } from "@/components/ui/section-label";
+import type { RunFailure } from "@/lib/agent/run";
 import type { Assignment, EditorStateMap } from "@/lib/api-client";
 import { getCatalogEntryAt } from "@/lib/catalog";
 
+import { AgentRunError } from "./agent-run-error";
 import { PanelCard, PanelSection } from "./panel-card";
 import { rowMeta } from "./row-meta";
 
@@ -30,6 +32,9 @@ function animationName(assignment: Assignment): string {
   );
 }
 
+/** Plan D8: said on the textarea (`title`) and under it, so it is not hover-only. */
+const PROMPT_NOTE = "The v0 agent picks at random and ignores this text.";
+
 /**
  * Nothing selected (`docs/design/README.md` "2. Editor", idle): the invitation
  * to click an element, the whole-page prompt, and — once anything is animated
@@ -42,11 +47,28 @@ function animationName(assignment: Assignment): string {
 export function IdlePanel({
   assignments,
   onSelectElement,
+  prompt,
+  onPromptChange,
+  onAutoGenerate,
+  busy = false,
+  error,
+  onReplayAll,
 }: {
   /** The draft, `vmId -> Assignment`. */
   assignments: EditorStateMap;
   /** Clicking an animated row selects that element. */
   onSelectElement?: (vmId: string) => void;
+  /** The whole-page prompt. Controlled: the store owns it (plan D8). */
+  prompt: string;
+  onPromptChange: (prompt: string) => void;
+  /** Run a page auto-generate. Absent (button disabled) until the bridge is ready. */
+  onAutoGenerate?: () => void;
+  /** An agent run is in flight: the button says so and takes no clicks. */
+  busy?: boolean;
+  /** Why the last run did nothing (plan D10). */
+  error?: RunFailure | null;
+  /** Restart every animation in the preview. Absent until the bridge is ready. */
+  onReplayAll?: () => void;
 }) {
   const promptId = useId();
   const entries = Object.entries(assignments);
@@ -78,16 +100,24 @@ export function IdlePanel({
         <textarea
           id={promptId}
           rows={3}
+          value={prompt}
+          onChange={(event) => onPromptChange(event.target.value)}
+          title={PROMPT_NOTE}
           placeholder="Describe the feel — 'calm, staggered entrances, nothing loops'"
           className="min-h-14 w-full resize-y rounded-md border border-vm-border-strong bg-vm-surface p-2 text-md leading-ui text-vm-ink transition-[border-color,box-shadow] duration-(--dur-fast) ease-standard outline-none placeholder:text-vm-ink-3 focus-visible:border-vm-accent"
         />
-        <Button variant="secondary" size="lg" glyph="✦" disabled>
-          Auto-generate for this page
+        <p className="text-xs leading-body text-vm-ink-3">{PROMPT_NOTE}</p>
+        <Button
+          variant="secondary"
+          size="lg"
+          glyph="✦"
+          disabled={!onAutoGenerate || busy}
+          aria-busy={busy || undefined}
+          onClick={onAutoGenerate}
+        >
+          {busy ? "Generating…" : "Auto-generate for this page"}
         </Button>
-        <p className="text-xs leading-body text-vm-ink-2">
-          Auto-generate arrives with the mock agent. For now, click an element and choose an
-          animation.
-        </p>
+        <AgentRunError error={error} busy={busy} />
       </PanelSection>
 
       {entries.length > 0 ? (
@@ -118,14 +148,15 @@ export function IdlePanel({
               </li>
             ))}
           </ul>
-          {/* Replaying needs the bridge to re-trigger the animation in the
-              iframe (Phase 4); there is nothing honest for it to do yet. */}
+          {/* Replaying goes through the bridge; with none ready there is
+              nothing honest for it to do. */}
           <Button
             variant="secondary"
             size="sm"
             glyph="↻"
             glyphTone="ink"
-            disabled
+            disabled={!onReplayAll}
+            onClick={onReplayAll}
             className="self-start"
           >
             Replay all
