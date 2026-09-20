@@ -7,6 +7,14 @@
  * the API and the Phase 7 exporter share.
  */
 export { createBridgeClient } from "./client";
-export type { Ack, BridgeClient, BridgeClientOptions, BridgeStatus } from "./client";
+export type {
+  Ack,
+  BridgeClient,
+  BridgeClientOptions,
+  BridgeStatus,
+  ElementsList,
+  ElementsQuery,
+} from "./client";
+export { atLeast } from "./semver";
 export { isUnresolved, toApplied } from "./to-applied";
 export type { Unresolved, UnresolvedReason } from "./to-applied";

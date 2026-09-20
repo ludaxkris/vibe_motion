@@ -28,7 +28,11 @@ import type { Assignment, EditorStateMap } from "@/lib/api-client";
 import { getCatalogEntryAt } from "@/lib/catalog";
 import { selectSelectedVmId, type EditorState, type EditorStoreApi } from "@/lib/store";
 
+import { atLeast } from "./semver";
 import { isUnresolved, toApplied, type Unresolved } from "./to-applied";
+
+/** The first bridge that answers `elements:query`; an older one ignores it (protocol.ts). */
+const ELEMENTS_QUERY_MIN_BRIDGE = "1.1.0";
 
 /**
  * `connecting` — no usable `ready` yet; only `hello` goes out.
@@ -64,6 +68,24 @@ export type BridgeClientOptions = {
   clearTimer?: (handle: unknown) => void;
   /** How long a sent message may go unacked before its promise is rejected. */
   ackTimeoutMs?: number;
+  /**
+   * How long `queryElements()` waits for its `elements:list` (plan D10). Its
+   * own deadline, shorter than and independent of the ack's.
+   */
+  queryTimeoutMs?: number;
+};
+
+/** `elements:query`'s payload: what to list, and how many at most. */
+export type ElementsQuery = {
+  filter?: { tags?: string[]; minWidth?: number; minHeight?: number };
+  limit?: number;
+};
+
+/** What `queryElements()` resolves with: a validated `elements:list`, minus its `seq`. */
+export type ElementsList = {
+  elements: ElementInfo[];
+  truncated: boolean;
+  viewport: { width: number; height: number };
 };
 
 export type BridgeClient = {
@@ -75,6 +97,16 @@ export type BridgeClient = {
   clearPreview: () => void;
   /** Restart one element's animation, or every one when `null`. */
   replay: (vmId: string | null) => Promise<Ack>;
+  /**
+   * List the page's elements (`elements:query` → `elements:list`), remembering
+   * each one in the store. Rejects — and nothing is remembered — with
+   * `bridge-too-old` when the frame's bridge predates the message,
+   * `elements-query-timeout` after `queryTimeoutMs`, `elements-query-rejected`
+   * when the bridge refuses the payload, `elements-query-invalid` when the
+   * answer is malformed, and with the usual refusal when the channel is not
+   * ready, reloads or is destroyed (plan D10).
+   */
+  queryElements: (query?: ElementsQuery) => Promise<ElementsList>;
   /** Flush any frame still scheduled, then resolve once every sent `seq` has been acked. */
   whenIdle: () => Promise<void>;
   destroy: () => void;
@@ -115,6 +147,14 @@ function refused(reason: string): Promise<Ack> {
   return promise;
 }
 
+/** A `queryElements()` still waiting for its `elements:list`. */
+type Query = {
+  resolve: (list: ElementsList) => void;
+  reject: (error: Error) => void;
+  /** Handle of the query's own deadline. */
+  timer: unknown;
+};
+
 export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
   const { target, expectedOrigin, listenOn, store } = options;
   const raf =
@@ -133,6 +173,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     });
   /** Generous against a measured p95 of about 2 ms; this is a stuck frame, not a slow one. */
   const ackTimeoutMs = options.ackTimeoutMs ?? 5_000;
+  const queryTimeoutMs = options.queryTimeoutMs ?? 3_000;
 
   let status: BridgeStatus = "connecting";
   let destroyed = false;
@@ -145,11 +186,21 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
    * it started a preview, so it is the right place to end it — see `flush`.
    */
   let previewVmId: string | null = null;
+  /** `bridgeVersion` of the last usable `ready`, or null when it did not carry a string. */
+  let bridgeVersion: string | null = null;
 
   const pending = new Map<number, Deferred>();
   /**
-   * Seqs whose ack must never reach `onAckError`. Only `hello` lands here; see
-   * `send`. Emptied as each ack arrives and by `settleAll`.
+   * `queryElements()` calls waiting for their list, by seq. Beside `pending`,
+   * not instead of it: the same seq is in both, because the query is answered
+   * by `elements:list` while the *message* is still owed an ack — and that ack
+   * is what `whenIdle()` drains.
+   */
+  const queries = new Map<number, Query>();
+  /**
+   * Seqs whose ack must never reach `onAckError`: `hello` (see `send`) and
+   * `elements:query` (see `queryElements`). Emptied as each ack arrives and by
+   * `settleAll`.
    */
   const unreported = new Set<number>();
   /** vmIds whose draft entry changed since the last flush, coalesced per frame (§5). */
@@ -193,12 +244,15 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
   }
 
   /** Post, and report whether the message actually left. */
-  function send(type: string, payload: unknown): { sent: boolean; ack: Promise<Ack> } {
+  function send(
+    type: string,
+    payload: unknown,
+  ): { sent: boolean; ack: Promise<Ack>; seq: number | null } {
     const reason = refusalReason(type);
-    if (reason !== null) return { sent: false, ack: refused(reason) };
+    if (reason !== null) return { sent: false, ack: refused(reason), seq: null };
 
     const frame = target();
-    if (!frame) return { sent: false, ack: refused("preview frame is not available") };
+    if (!frame) return { sent: false, ack: refused("preview frame is not available"), seq: null };
 
     seq += 1;
     const current = seq;
@@ -227,9 +281,9 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     } catch (error) {
       settle(current, deferred);
       deferred.reject(error instanceof Error ? error : new Error(String(error)));
-      return { sent: false, ack: deferred.promise };
+      return { sent: false, ack: deferred.promise, seq: null };
     }
-    return { sent: true, ack: deferred.promise };
+    return { sent: true, ack: deferred.promise, seq: current };
   }
 
   function post(type: string, payload: unknown): Promise<Ack> {
@@ -249,6 +303,102 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     owed.forEach(([, deferred]) => {
       if (deferred.timer !== undefined) clearTimer(deferred.timer);
       deferred.reject(error);
+    });
+    const asked = [...queries.values()];
+    queries.clear();
+    asked.forEach((query) => {
+      clearTimer(query.timer);
+      query.reject(error);
+    });
+  }
+
+  /** Take a query out of flight and disarm its deadline; null when `current` is not one. */
+  function takeQuery(current: number): Query | null {
+    const query = queries.get(current);
+    if (!query) return null;
+    queries.delete(current);
+    clearTimer(query.timer);
+    return query;
+  }
+
+  function queryElements(query: ElementsQuery = {}): Promise<ElementsList> {
+    const promise = new Promise<ElementsList>((resolve, reject) => {
+      const reason = refusalReason("elements:query");
+      if (reason !== null) {
+        reject(new Error(reason));
+        return;
+      }
+      // Deploy skew (new web, old api image): an older bridge ignores the
+      // message outright, so fail now rather than after the timeout (D10).
+      if (!atLeast(bridgeVersion, ELEMENTS_QUERY_MIN_BRIDGE)) {
+        reject(new Error("bridge-too-old"));
+        return;
+      }
+
+      // Only the keys that were given: the bridge refuses a `filter` that is
+      // present but not an object, and `undefined` survives structured clone.
+      const payload: ElementsQuery = {};
+      if (query.filter !== undefined) payload.filter = query.filter;
+      if (query.limit !== undefined) payload.limit = query.limit;
+
+      // Through `send()` like everything else, so the seq is owed an ack in
+      // `pending` and `whenIdle()` stays honest.
+      const { sent, seq: current, ack } = send("elements:query", payload);
+      if (!sent || current === null) {
+        ack.catch(reject);
+        return;
+      }
+      // A refused query changes nothing in the frame, so it is not the "store
+      // and frame now differ" that `onAckError` exists for; the caller gets
+      // the rejection instead.
+      unreported.add(current);
+      const timer = setTimer(() => {
+        if (takeQuery(current)) reject(new Error("elements-query-timeout"));
+      }, queryTimeoutMs);
+      queries.set(current, { resolve, reject, timer });
+    });
+    // Same courtesy as `defer()`: a `ready` or a `destroy()` may reject this
+    // with nobody awaiting it any more (an unmounted panel).
+    promise.catch(() => {});
+    return promise;
+  }
+
+  function onElementsList(payload: unknown): void {
+    const list = payload as {
+      seq?: unknown;
+      elements?: unknown;
+      truncated?: unknown;
+      viewport?: unknown;
+    } | null;
+    if (!list || typeof list !== "object" || typeof list.seq !== "number") return;
+    // Unknown seq: a list for a query that already timed out, or for nobody.
+    const query = takeQuery(list.seq);
+    if (!query) return;
+
+    const viewport = list.viewport as { width?: unknown; height?: unknown } | null | undefined;
+    if (
+      !Array.isArray(list.elements) ||
+      typeof list.truncated !== "boolean" ||
+      !viewport ||
+      typeof viewport !== "object" ||
+      typeof viewport.width !== "number" ||
+      !Number.isFinite(viewport.width) ||
+      typeof viewport.height !== "number" ||
+      !Number.isFinite(viewport.height)
+    ) {
+      query.reject(new Error("elements-query-invalid"));
+      return;
+    }
+
+    const elements = list.elements
+      .map((element) => asElementInfo(element))
+      .filter((element): element is ElementInfo => element !== null);
+    // So the result list's rows can show a tag for elements nobody clicked.
+    store.getState().rememberElements(elements);
+    query.resolve({
+      elements,
+      truncated: list.truncated,
+      viewport: { width: viewport.width, height: viewport.height },
     });
   }
 
@@ -396,6 +546,9 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
   // -------------------------------------------------------------------------
 
   function onReady(payload: unknown): void {
+    // This frame's, never the last one's: a reload can land on an older image.
+    const reported = (payload as { bridgeVersion?: unknown } | null)?.bridgeVersion;
+    bridgeVersion = typeof reported === "string" ? reported : null;
     const version = (payload as { protocolVersion?: unknown } | null)?.protocolVersion;
     if (version !== PROTOCOL_VERSION) {
       settleAll(new Error("bridge protocol version mismatch"));
@@ -430,6 +583,9 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     if (reportable && (ack.ok === false || (ack.unknownVmIds?.length ?? 0) > 0)) {
       options.onAckError?.(ack);
     }
+    // The bridge posts the list *before* this ack, so a query still waiting
+    // at a refusal is never getting one.
+    if (ack.ok === false) takeQuery(ack.seq)?.reject(new Error("elements-query-rejected"));
     const deferred = pending.get(ack.seq);
     if (!deferred) return;
     settle(ack.seq, deferred);
@@ -494,6 +650,9 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       case "element:deselect":
         actions.requestSelect(null);
         return;
+      case "elements:list":
+        onElementsList(data.payload);
+        return;
       default:
         // Unknown types are ignored, so the bridge can grow messages the shell
         // has not learned yet (spec §2).
@@ -534,6 +693,8 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       if (frameScheduled) flush();
       return post("replay", { vmId });
     },
+
+    queryElements,
 
     whenIdle: async () => {
       if (frameScheduled) flush();
