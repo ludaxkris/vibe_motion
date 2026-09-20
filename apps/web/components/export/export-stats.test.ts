@@ -1,6 +1,52 @@
 import { describe, expect, it } from "vitest";
 
-import { formatExportStats } from "./export-stats";
+import type { Assignment, EditorStateMap, Trigger } from "@/lib/api-client";
+
+import { exportStats, formatExportStats } from "./export-stats";
+
+function assignment(animationId: string, trigger: Trigger = "load", catalogVersion = "1.1.0"): Assignment {
+  return { animationId, catalogVersion, trigger, params: {} };
+}
+
+function state(rows: Record<string, Assignment>): EditorStateMap {
+  return rows;
+}
+
+describe("exportStats", () => {
+  it("counts distinct animations and the elements they are on", () => {
+    expect(
+      exportStats(
+        state({
+          "vm-3": assignment("fade-in-up"),
+          "vm-9": assignment("fade-in-up"),
+          "vm-14": assignment("pulse", "hover"),
+        }),
+      ),
+    ).toEqual({ animations: 2, elements: 3, needsJs: false });
+  });
+
+  it("counts one animation pinned to two catalog versions once", () => {
+    expect(
+      exportStats(
+        state({
+          "vm-3": assignment("fade-in-up", "load", "1.0.0"),
+          "vm-9": assignment("fade-in-up", "load", "1.1.0"),
+        }),
+      ).animations,
+    ).toBe(1);
+  });
+
+  it("needs the script exactly when something uses in-view", () => {
+    expect(exportStats(state({ "vm-3": assignment("fade-in-up", "in-view") })).needsJs).toBe(true);
+    expect(exportStats(state({ "vm-3": assignment("pulse", "hover") })).needsJs).toBe(false);
+  });
+
+  it("is zeroes for a version with nothing animated, and for no state at all", () => {
+    const empty = { animations: 0, elements: 0, needsJs: false };
+    expect(exportStats({})).toEqual(empty);
+    expect(exportStats(undefined)).toEqual(empty);
+  });
+});
 
 describe("formatExportStats", () => {
   it("is the handoff's line", () => {
