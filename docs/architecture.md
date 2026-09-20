@@ -181,6 +181,37 @@ sequenceDiagram
   W-->>D: tabs + copy buttons + zip download
 ```
 
+#### Decisions: what makes an exported page inert
+
+An export is served from the designer's own site, with no CSP of ours behind it (DT-073), and
+`base_html` is immutable — a row cloned by last month's rewriter is exported with today's
+protections because `HtmlSanitiser` runs again on the way out. Two decisions hold that up.
+
+**jsoup is not an oracle for how a browser parses.** The exporter re-parses `base_html` with jsoup
+and serialises it again, and for a while the tests then re-parsed that *output* with jsoup and
+called it proof. It is not: jsoup builds the same tree from our output that it built from the
+input, so a **parser differential** — markup jsoup serialises one way and a browser reads another —
+is invisible from there. One got through: a nested `<form>` that jsoup keeps and a browser ignores,
+shifting a `<style>` into MathML where it is not a raw-text element and its contents become live
+elements. So: **any claim that exported or cloned HTML is inert is proven in a real browser**, over
+the hostile corpus in `apps/api/src/test/resources/export/hostile/`, by
+`packages/bridge/e2e/export-hostile.spec.ts`. The Kotlin assertions are the fast half, not the
+proof. A document whose export is not a fixed point of `emit` is treated as a failure, because
+instability is how that differential announced itself.
+
+**Foreign content in cloned pages is reduced to a safe subset.** Inside an `svg` or `math` subtree,
+whether an element's contents are text or markup depends on the exact insertion mode, and
+re-implementing that is writing a second parser. So `HtmlSanitiser` removes every raw-text HTML
+element (`style`, `xmp`, `noembed`, `noframes`, `plaintext`, `noscript`, `iframe`, `script`) found
+anywhere in a foreign subtree, HTML integration points included, and removes `<form>` from foreign
+content except under an integration point (`foreignObject`, `desc`, `title`, `mtext`, `mi`, `mo`,
+`mn`, `ms`), where ordinary HTML rules resume and the form is disarmed like any other.
+`annotation-xml` is deliberately **not** treated as an integration point: it is one only for
+certain `encoding` values. Nested forms are unwrapped, which is what a browser does with the inner
+start tag. The cost is real and accepted: an inline `<svg><style>` loses its own CSS. External
+stylesheets are inlined into HTML `<style>` blocks at clone time, so a page's real styling is
+unaffected; an icon that styles itself from inside its own `<svg>` renders unstyled.
+
 ## 4. Preview bridge (iframe ⇄ shell)
 
 ```mermaid
