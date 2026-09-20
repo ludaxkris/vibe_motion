@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Assignment, EditorStateMap } from "@/lib/api-client";
 
-import { summariseDiff, type CatalogLookup } from "./diff-summary";
+import { MAX_LABEL_LENGTH, summariseDiff, type CatalogLookup } from "./diff-summary";
 
 /**
  * A two-version lookup, so the table can prove a name resolves against the
@@ -225,5 +225,51 @@ describe("summariseDiff", () => {
     );
 
     expect(summary.label).toBe("Fade In Up on vm-3, removed Pulse on vm-9");
+  });
+
+  it("lists up to three set rows verbatim", () => {
+    const draft: EditorStateMap = { "vm-1": fadeInUp(), "vm-2": fadeInUp(), "vm-3": fadeInUp() };
+    const summary = summariseDiff(NOTHING, draft, lookup);
+
+    expect(summary.label).toBe(
+      "Fade In Up on vm-1, Fade In Up on vm-2, Fade In Up on vm-3",
+    );
+  });
+
+  it("folds a fourth-and-beyond set row into +N more", () => {
+    const draft: EditorStateMap = {
+      "vm-1": fadeInUp(),
+      "vm-2": fadeInUp(),
+      "vm-3": fadeInUp(),
+      "vm-4": fadeInUp(),
+      "vm-5": fadeInUp(),
+    };
+    const summary = summariseDiff(NOTHING, draft, lookup);
+
+    expect(summary.label).toBe(
+      "Fade In Up on vm-1, Fade In Up on vm-2, Fade In Up on vm-3, +2 more",
+    );
+  });
+
+  it("never produces a label longer than the contract's 200-character cap", () => {
+    // Phase 5's auto-generate on a page with a dozen elements — the normal
+    // shape of the first Save after it, not a contrived edge case.
+    const draft: EditorStateMap = {};
+    for (let i = 1; i <= 12; i += 1) {
+      draft[`vm-${"x".repeat(20)}-${i}`] = fadeInUp();
+    }
+
+    const summary = summariseDiff(NOTHING, draft, lookup);
+
+    expect(summary.label.length).toBeLessThanOrEqual(MAX_LABEL_LENGTH);
+  });
+
+  it("caps a pathologically long single row at the label limit", () => {
+    const draft: EditorStateMap = { [`vm-${"y".repeat(400)}`]: fadeInUp() };
+
+    const summary = summariseDiff(NOTHING, draft, lookup);
+
+    expect(summary.label.length).toBeLessThanOrEqual(MAX_LABEL_LENGTH);
+    expect(summary.label.endsWith("…")).toBe(true);
   });
 });

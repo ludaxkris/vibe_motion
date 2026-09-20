@@ -27,8 +27,9 @@ export function ElementSwitchGuard({
   /** "v5": the version a discard leaves standing. */
   currentVersionLabel?: string;
   /**
-   * The Save flow. Phase 6 supplies it; until then Save is disabled and says
-   * so, because nothing may fake a save.
+   * The Save flow — `useSaveFlow`'s `requestSave`, from the shell. Absent
+   * (`/dev`) leaves Save disabled and saying so, because nothing may fake a
+   * save.
    */
   onSave?: () => void | Promise<void>;
 }) {
@@ -91,9 +92,9 @@ export function ElementSwitchGuard({
       onDiscard={() => resolveGuard("discard")}
       onKeepEditing={() => resolveGuard("keep")}
       onSave={handleSave}
-      // Not also `|| saving`: `saveDisabled` is what prints the "Saving arrives
-      // with version history" note, which would be a lie mid-save. A second
-      // click is refused by the handler instead.
+      // Not also `|| saving`: `saveDisabled` is what prints the "Saving isn't
+      // available here" note, which would be a lie mid-save. A second click is
+      // refused by the handler instead.
       saveDisabled={handleSave === undefined}
     />
   );

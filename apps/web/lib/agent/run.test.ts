@@ -243,7 +243,7 @@ describe("autoGeneratePage", () => {
   it("does nothing, and asks the bridge nothing, while a version is being viewed", async () => {
     const { store, deps, queryElements } = setup();
     store.getState().rememberElement(PAGE[0]);
-    store.getState().setMode("viewing");
+    store.setState({ mode: "viewing" });
     const before = store.getState();
 
     await expect(autoGeneratePage(deps)).resolves.toEqual({ ok: false, reason: "query-failed" });
