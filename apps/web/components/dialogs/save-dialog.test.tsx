@@ -97,6 +97,31 @@ describe("SaveDialogContent", () => {
     expect(handlers.onSave).toHaveBeenCalledOnce();
   });
 
+  it("shows a failed save in place, as an alert, and keeps the dialog usable", () => {
+    render(<SaveDialogContent {...props({ error: "Unknown param \"wobble\"" })} />);
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent('Unknown param "wobble"');
+    expect(alert).toHaveClass("text-vm-danger");
+    // The whole point of an inline error: the user can fix the label and retry.
+    expect(screen.getByRole("button", { name: "Save version" })).toBeEnabled();
+  });
+
+  it("has no alert line while nothing has failed", () => {
+    render(<SaveDialogContent {...props()} />);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("refuses both Save and Cancel while the round trip is in flight", () => {
+    render(<SaveDialogContent {...props({ saving: true })} />);
+
+    expect(screen.getByRole("button", { name: "Save version" })).toBeDisabled();
+    // Cancel too: the POST is already on its way, so there is nothing left to
+    // cancel — dismissing here would leave the flow's promise unsettled.
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
   it("leaves Save version closed unless the caller opens it", () => {
     const { onLabelChange, onCancel } = props();
     render(

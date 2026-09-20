@@ -44,6 +44,11 @@ function assignmentFor(animationId: string): Assignment {
   };
 }
 
+/** The shell forks the draft from the project's current version when it opens (Phase 6). */
+async function openLoaded() {
+  await waitFor(() => expect(useEditorStore.getState().currentVersionId).not.toBeNull());
+}
+
 /** Puts the store in the state an element with an unsaved animation leaves it in. */
 function selectAndAnimate(vmId: string, animationId = "fade-in") {
   const store = useEditorStore.getState();
@@ -222,6 +227,10 @@ describe("EditorShell", () => {
     const project = await createProject();
     renderShell(project.id);
     await screen.findByText("example.com/pricing");
+    // The shell forks the draft from the project's current version when it
+    // opens; this test stands a *saved* animation in that draft's place, so it
+    // waits for the open load rather than racing it.
+    await openLoaded();
 
     const saved = assignmentFor("pulse");
     useEditorStore.setState({ currentVersionState: { "vm-1": saved }, draftState: { "vm-1": saved } });
@@ -537,6 +546,86 @@ describe("EditorShell bridge readiness", () => {
 
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Replay" })).toBeDisabled();
+  });
+});
+
+describe("EditorShell save flow", () => {
+  async function opened(projectId: string) {
+    renderShell(projectId);
+    await screen.findByText("example.com/pricing");
+    await openLoaded();
+  }
+
+  it("forks the draft from the project's current version when it opens", async () => {
+    const project = await createProject();
+
+    await opened(project.id);
+
+    // v0 of a fresh clone animates nothing, but the *fork* is what matters:
+    // without it the first Save would diff against an empty map.
+    expect(useEditorStore.getState().currentVersionId).toBe(project.currentVersionId);
+    expect(screen.queryByText("Unsaved")).not.toBeInTheDocument();
+  });
+
+  it("opens the Save dialog from the top bar, naming the version it would create", async () => {
+    const project = await createProject();
+    await opened(project.id);
+    selectAndAnimate("vm-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Save as v1" });
+    expect(within(dialog).getByText("from v0")).toBeInTheDocument();
+    expect(within(dialog).getByText("vm-1")).toBeInTheDocument();
+  });
+
+  it("saves, moves the version chip on and clears the unsaved indicator", async () => {
+    const project = await createProject();
+    await opened(project.id);
+    selectAndAnimate("vm-1");
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await screen.findByRole("dialog", { name: "Save as v1" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save version" }));
+
+    expect(await screen.findByText("v1")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Unsaved")).not.toBeInTheDocument());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("offers Save in the element-switch guard, and lets the selection through once it lands", async () => {
+    const project = await createProject();
+    await opened(project.id);
+    act(() => {
+      useEditorStore.getState().rememberElement({
+        vmId: "vm-1",
+        tag: "h1",
+        role: null,
+        textPreview: "",
+        rect: { x: 0, y: 0, width: 10, height: 10 },
+        pageRect: { x: 0, y: 0, width: 10, height: 10 },
+        order: 0,
+        visible: true,
+      });
+    });
+    selectAndAnimate("vm-1");
+    await screen.findByText("Unsaved");
+    act(() => {
+      useEditorStore.getState().requestSelect("vm-2");
+    });
+
+    const guard = await screen.findByRole("dialog", { name: "Save changes to h1?" });
+    const save = within(guard).getByRole("button", { name: "Save" });
+    expect(save).toBeEnabled();
+    expect(screen.queryByText("Saving arrives with version history.")).not.toBeInTheDocument();
+
+    fireEvent.click(save);
+    fireEvent.click(await screen.findByRole("button", { name: "Save version" }));
+
+    // The guard only lets the pending selection through once the version exists.
+    await waitFor(() => expect(selectSelectedVmId(useEditorStore.getState())).toBe("vm-2"));
+    expect(useEditorStore.getState().draftState["vm-1"]).toBeDefined();
   });
 });
 

@@ -70,11 +70,23 @@ export type SaveDialogContentProps = {
   onCancel: () => void;
   onSave?: () => void;
   /**
-   * Defaults closed, like the guard's: there is no `POST /versions` before
-   * Phase 6, and a primary that looks live but does nothing is worse than a
-   * disabled one.
+   * Defaults closed, like the guard's: a caller that has not wired up
+   * `POST /versions` — `/dev`, a showcase frame — gets a primary that says it
+   * cannot save rather than one that looks live and does nothing.
    */
   saveDisabled?: boolean;
+  /**
+   * A save the service refused or could not complete, shown here rather than
+   * as a toast: the dialog stays open on top of the draft it failed to write,
+   * so the label can be fixed and Save tried again.
+   */
+  error?: string;
+  /**
+   * The `POST` is in flight. Save is refused because the write is already on
+   * its way, and Cancel because there is no longer anything to cancel —
+   * dismissing mid-flight would leave the save flow's promise unsettled.
+   */
+  saving?: boolean;
   /** The modal wrapper focuses the label field through this (handoff: it opens focused). */
   inputRef?: Ref<HTMLInputElement>;
   /** Supplied by the modal wrapper so the popup can point `aria-labelledby` here. */
@@ -95,6 +107,8 @@ export function SaveDialogContent({
   onCancel,
   onSave,
   saveDisabled = true,
+  error,
+  saving = false,
   inputRef,
   titleId,
 }: SaveDialogContentProps) {
@@ -137,11 +151,17 @@ export function SaveDialogContent({
         )}
       </div>
 
+      {error ? (
+        <p role="alert" className="text-sm leading-body text-vm-danger">
+          {error}
+        </p>
+      ) : null}
+
       <div className="mt-1.5 flex items-center justify-end gap-2">
-        <Button variant="secondary" onClick={onCancel}>
+        <Button variant="secondary" disabled={saving} onClick={onCancel}>
           Cancel
         </Button>
-        <Button disabled={saveDisabled} onClick={onSave}>
+        <Button disabled={saveDisabled || saving} onClick={onSave}>
           Save version
         </Button>
       </div>

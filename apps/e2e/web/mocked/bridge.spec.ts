@@ -176,7 +176,8 @@ test("switching away from a dirty element asks first, and the ring does not move
   // Still on the heading: ring, label and panel all agree.
   await expect(ring(page)).toHaveAttribute("data-vm-selected", "vm-heading");
   await expect(page.getByTestId("panel-tuning")).toContainText("vm-heading");
-  await expect(page.getByRole("button", { name: "Save" }).last()).toBeDisabled();
+  // Phase 6 gave the guard a save it can actually perform.
+  await expect(page.getByRole("button", { name: "Save" }).last()).toBeEnabled();
 
   await page.getByRole("button", { name: "Keep editing" }).click();
 

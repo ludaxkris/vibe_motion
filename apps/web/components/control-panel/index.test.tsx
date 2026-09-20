@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CURRENT_CATALOG_VERSION, defaultAssignmentFor, getCatalogEntry } from "@/lib/catalog";
@@ -369,6 +369,44 @@ describe("ControlPanel · unsaved guard", () => {
 
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(screen.getByText("Saving arrives with version history.")).toBeInTheDocument();
+  });
+
+  it("makes the switch once the save flow says a version was written", async () => {
+    makeDirty();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<ControlPanel onSave={onSave} />);
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    const save = within(screen.getByRole("dialog")).getByRole("button", { name: "Save" });
+    expect(save).toBeEnabled();
+    expect(screen.queryByText("Saving arrives with version history.")).not.toBeInTheDocument();
+
+    fireEvent.click(save);
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("data-active"),
+    );
+    expect(onSave).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Unlike Discard, the draft is the version now: nothing was reverted.
+    expect(useEditorStore.getState().draftState["vm-1"]).toBeDefined();
+  });
+
+  it("keeps the guard standing when the save does not happen", async () => {
+    makeDirty();
+    // What `requestSave()` rejects with when the Save dialog is cancelled.
+    const onSave = vi.fn().mockRejectedValue(new Error("save cancelled"));
+    render(<ControlPanel onSave={onSave} />);
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(screen.getByRole("dialog", { name: "Save changes to vm-1?" })).toBeInTheDocument();
+    // The switch has not happened: Animate's body is still the one behind the
+    // modal. (By role the tabs are unreachable — the open dialog inerts the
+    // page — so this asks the DOM rather than the accessibility tree.)
+    expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
   });
 
   it("switches straight away once the draft is clean again", () => {

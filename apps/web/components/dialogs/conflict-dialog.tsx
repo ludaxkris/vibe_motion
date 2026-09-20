@@ -16,6 +16,12 @@ export type ConflictDialogContentProps = {
   onDiscard: () => void;
   /** Keep editing: close the dialog, draft untouched. */
   onCancel: () => void;
+  /**
+   * Why the answer could not be carried out — every one of the three needs
+   * `stateAt(theirs)`, and a failed fetch leaves the question standing rather
+   * than closing over a draft whose fate is undecided.
+   */
+  error?: string;
   /** Supplied by the modal wrapper so the popup can point `aria-labelledby` here. */
   titleId?: string;
   /** Supplied by the modal wrapper so the popup can point `aria-describedby` here. */
@@ -32,6 +38,7 @@ export function ConflictDialogContent({
   onRebase,
   onDiscard,
   onCancel,
+  error,
   titleId,
   descriptionId,
 }: ConflictDialogContentProps) {
@@ -57,6 +64,12 @@ export function ConflictDialogContent({
         while you were editing. Discard your changes, keep editing here, or apply your changes on
         top of it.
       </p>
+
+      {error ? (
+        <p role="alert" className="text-sm leading-body text-vm-danger">
+          {error}
+        </p>
+      ) : null}
 
       <div className="mt-1.5 flex items-center gap-2">
         {/* Destructive actions are red text links, on the left (handoff, "Copy rules"). */}

@@ -44,6 +44,28 @@ describe("ConflictDialogContent", () => {
     expect(screen.queryByText(/Someone saved {2}/)).not.toBeInTheDocument();
   });
 
+  it("shows a failed load of their version in place, as an alert", () => {
+    render(
+      <ConflictDialogContent
+        theirs={THEIRS}
+        {...callbacks()}
+        error="Could not load this version"
+      />,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Could not load this version");
+    expect(alert).toHaveClass("text-vm-danger");
+    // Still answerable: the three choices are what the error is asking about.
+    expect(screen.getByRole("button", { name: "Apply my changes on top" })).toBeEnabled();
+  });
+
+  it("has no alert line while nothing has failed", () => {
+    render(<ConflictDialogContent theirs={THEIRS} {...callbacks()} />);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("fires each action's own callback", () => {
     const handlers = callbacks();
     render(<ConflictDialogContent theirs={THEIRS} {...handlers} />);

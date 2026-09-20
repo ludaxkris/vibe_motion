@@ -247,6 +247,7 @@ export function ControlPanel({
   onPreview,
   onClearPreview,
   onReplay,
+  onSave,
 }: {
   currentVersionLabel?: string;
   /** Show an animation transiently on the page (spec D4). Absent until the bridge is mounted. */
@@ -254,6 +255,12 @@ export function ControlPanel({
   onClearPreview?: () => void;
   /** Restart one element's animation in the preview iframe. */
   onReplay?: (vmId: string) => void;
+  /**
+   * The shell's Save flow, for the tab guard's Save. It resolves once a
+   * version exists and rejects on every exit that wrote nothing, so a
+   * cancelled save leaves the guard standing. Absent leaves Save disabled.
+   */
+  onSave?: () => Promise<void>;
 }) {
   const panel = useEditorStore((state) => state.panel);
   const dispatchPanel = useEditorStore((state) => state.dispatchPanel);
@@ -287,6 +294,21 @@ export function ControlPanel({
   const guardedAnimationName = useEditorStore(selectGuardedAnimationName);
   // A stable action, so subscribing to it never re-renders this panel.
   const setSelectedVmId = useEditorStore((state) => state.setSelectedVmId);
+
+  // Discard's success path minus the revert: the draft has just *become* the
+  // saved version, so only the tab still has to move — and only once the
+  // version actually exists, which is what the resolved promise says.
+  const handleGuardSave = onSave
+    ? () =>
+        onSave().then(
+          () => {
+            if (pendingTab !== null) setTab(pendingTab);
+            setPendingTab(null);
+          },
+          // Cancelled or failed: the guard stays open with its question intact.
+          () => {},
+        )
+    : undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -398,6 +420,8 @@ export function ControlPanel({
           setPendingTab(null);
         }}
         onKeepEditing={() => setPendingTab(null)}
+        onSave={handleGuardSave}
+        saveDisabled={onSave === undefined}
       />
     </div>
   );
