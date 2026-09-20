@@ -8,7 +8,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { ElementTag } from "@/components/ui/element-tag";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
-import type { DiffRow, DiffRowKind } from "@/lib/diff-summary";
+import { MAX_LABEL_LENGTH, type DiffRow, type DiffRowKind } from "@/lib/diff-summary";
 
 /** The handoff's width for the Save dialog (`docs/design/README.md` "3. Dialogs & toast"). */
 export const SAVE_DIALOG_WIDTH = "w-[420px]";
@@ -134,6 +134,7 @@ export function SaveDialogContent({
           ref={inputRef}
           aria-labelledby={fieldId}
           value={label}
+          maxLength={MAX_LABEL_LENGTH}
           onChange={(event) => onLabelChange(event.target.value)}
         />
       </div>

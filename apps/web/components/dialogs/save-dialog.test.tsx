@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { DiffRow } from "@/lib/diff-summary";
+import { MAX_LABEL_LENGTH, type DiffRow } from "@/lib/diff-summary";
 
 import { SaveDialog, SaveDialogContent, SAVE_DIALOG_WIDTH } from "./save-dialog";
 
@@ -50,6 +50,15 @@ describe("SaveDialogContent", () => {
 
     fireEvent.change(field, { target: { value: "Hero entrance" } });
     expect(onLabelChange).toHaveBeenCalledWith("Hero entrance");
+  });
+
+  it("caps the label field at the contract's 200-character limit", () => {
+    render(<SaveDialogContent {...props()} />);
+
+    expect(screen.getByRole("textbox", { name: "Label" })).toHaveAttribute(
+      "maxLength",
+      String(MAX_LABEL_LENGTH),
+    );
   });
 
   it("lists every change as sign · tag · name · meta, in the handoff's diff colours", () => {

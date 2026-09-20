@@ -329,6 +329,61 @@ describe("mock API: 422 diff validation on createVersion", () => {
   });
 });
 
+describe("mock API: createVersion label parity with VersionService.kt", () => {
+  async function createProjectAndCatalog() {
+    const created = await apiClient.POST("/projects", { body: { url: "https://example.com" } });
+    const project = created.data!;
+    const catalog = await apiClient.GET("/catalog");
+    return { project, catalog: catalog.data! };
+  }
+
+  it("400s a label over the contract's 200-character cap, mirroring the service", async () => {
+    const { project, catalog } = await createProjectAndCatalog();
+
+    const result = await apiClient.POST("/projects/{projectId}/versions", {
+      params: { path: { projectId: project.id } },
+      body: {
+        parentVersionId: project.currentVersionId,
+        catalogVersion: catalog.version,
+        label: "x".repeat(201),
+        diff: { set: {}, remove: [] },
+      },
+    });
+
+    expect(result.response.status).toBe(400);
+    expect(result.error?.message).toBe("label must be at most 200 characters");
+  });
+
+  it("generates a label when a blank one is sent, rather than keeping it verbatim", async () => {
+    const { project, catalog } = await createProjectAndCatalog();
+    const entry = catalog.entries[0];
+
+    const result = await apiClient.POST("/projects/{projectId}/versions", {
+      params: { path: { projectId: project.id } },
+      body: {
+        parentVersionId: project.currentVersionId,
+        catalogVersion: catalog.version,
+        label: "   ",
+        diff: {
+          set: {
+            "vm-heading": {
+              animationId: entry.id,
+              catalogVersion: catalog.version,
+              trigger: entry.triggers[0],
+              params: {},
+            },
+          },
+          remove: [],
+        },
+      },
+    });
+
+    expect(result.response.status).toBe(201);
+    expect(result.data?.label).not.toBe("   ");
+    expect(result.data?.label).toBeTruthy();
+  });
+});
+
 describe("mock API: catalog", () => {
   it("serves the current catalog and its versions", async () => {
     const current = await apiClient.GET("/catalog");

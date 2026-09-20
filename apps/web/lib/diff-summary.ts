@@ -57,6 +57,21 @@ export type DiffSummary = {
   label: string;
 };
 
+/**
+ * The contract's `label` cap (`apps/api/openapi.yaml`), mirrored here so the
+ * prefilled label a big diff produces can never be the thing that turns a
+ * normal Save into a 400. Same value as the server's `StateMath.kt`.
+ */
+export const MAX_LABEL_LENGTH = 200;
+
+/**
+ * How many rows of each kind (set, then removed) the label lists by name
+ * before folding the rest into "+N more" — same as the server's
+ * `StateMath.kt` `describeDiff`, so a save the client prefilled and one the
+ * server would have generated read alike.
+ */
+export const MAX_LISTED = 3;
+
 /** CSS plumbing rather than a knob a designer reaches for: never in an added row's meta. */
 const PLUMBING: ReadonlySet<string> = new Set(["fillMode", "direction"]);
 
@@ -217,9 +232,37 @@ export function summariseDiff(
     });
   }
 
-  const label = rows
-    .map((row) => (row.kind === "removed" ? `removed ${row.name} on ${row.vmId}` : `${row.name} on ${row.vmId}`))
-    .join(", ");
+  return { rows, label: labelFor(rows) };
+}
 
-  return { rows, label };
+/**
+ * The Save dialog's prefill, capped at {@link MAX_LABEL_LENGTH} the way the
+ * server's `describeDiff` caps the label it generates when a Save omits one:
+ * at most {@link MAX_LISTED} set/changed rows and {@link MAX_LISTED} removed
+ * rows spelled out, the rest folded into "+N more", then a hard truncation —
+ * so a draft with a dozen changes (a common shape right after Phase 5's
+ * auto-generate) never produces a label the contract's 200-character cap
+ * would reject.
+ */
+function labelFor(rows: readonly DiffRow[]): string {
+  const set = rows.filter((row) => row.kind !== "removed");
+  const removed = rows.filter((row) => row.kind === "removed");
+  const parts: string[] = [];
+
+  for (const row of set.slice(0, MAX_LISTED)) {
+    parts.push(`${row.name} on ${row.vmId}`);
+  }
+  if (set.length > MAX_LISTED) {
+    parts.push(`+${set.length - MAX_LISTED} more`);
+  }
+
+  for (const row of removed.slice(0, MAX_LISTED)) {
+    parts.push(`removed ${row.name} on ${row.vmId}`);
+  }
+  if (removed.length > MAX_LISTED) {
+    parts.push(`+${removed.length - MAX_LISTED} more`);
+  }
+
+  const joined = parts.join(", ");
+  return joined.length <= MAX_LABEL_LENGTH ? joined : `${joined.slice(0, MAX_LABEL_LENGTH - 1)}…`;
 }

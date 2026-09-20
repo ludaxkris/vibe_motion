@@ -226,6 +226,48 @@ describe("useSaveFlow", () => {
     expect(listVersions(project.id)?.versions[1].label).toBe("Hero entrance");
   });
 
+  it("saves a draft touching a dozen elements without the prefilled label tripping the contract's cap", async () => {
+    // Phase 5's auto-generate on a page with a dozen elements is the normal
+    // shape of the first Save after it, not a contrived edge case — and
+    // before the cap, "Fade In Up on vm-1xx" joined with no limit for 10+
+    // rows regularly cleared 200 characters and got a 400 back from the
+    // service (the brief's own example: ×10 is already 218 characters).
+    const project = openProject();
+    for (let i = 1; i <= 12; i += 1) {
+      animate(`vm-1${i}`, "fade-in-up");
+    }
+    renderFlow(project.id);
+    const flow = startSave();
+    await screen.findByRole("dialog", { name: "Save as v1" });
+    expect(screen.getByRole("textbox", { name: "Label" }).getAttribute("value")?.length).toBeLessThanOrEqual(
+      200,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save version" }));
+
+    await waitFor(() => expect(flow.status).toBe("resolved"));
+    const posted = listVersions(project.id)?.versions[1];
+    expect(posted?.label.length).toBeLessThanOrEqual(200);
+  });
+
+  it("sends a whitespace-only label as omitted, so the service generates one", async () => {
+    const project = openProject();
+    animate("vm-1");
+    renderFlow(project.id);
+    const flow = startSave();
+    await screen.findByRole("dialog", { name: "Save as v1" });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Label" }), {
+      target: { value: "   " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save version" }));
+
+    await waitFor(() => expect(flow.status).toBe("resolved"));
+    const posted = listVersions(project.id)?.versions[1];
+    expect(posted?.label).not.toBe("   ");
+    expect(posted?.label).toBeTruthy();
+  });
+
   it("writes nothing on Cancel, and leaves the draft exactly as it was", async () => {
     const project = openProject();
     animate("vm-1");

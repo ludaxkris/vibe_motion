@@ -20,7 +20,7 @@ import { useCallback, useRef, useState } from "react";
 import { useToast } from "@/components/ui/toast";
 import type { CreateVersionRequest, Version } from "@/lib/api-client";
 import { CURRENT_CATALOG_VERSION, getCatalogEntryAt } from "@/lib/catalog";
-import { summariseDiff, type DiffRow } from "@/lib/diff-summary";
+import { MAX_LABEL_LENGTH, summariseDiff, type DiffRow } from "@/lib/diff-summary";
 import { selectUnsaved, useEditorStore, type EditorState } from "@/lib/store";
 import { fetchVersionState, type WriteOutcome } from "@/lib/versions/api";
 import { computeDiff } from "@/lib/versions/diff";
@@ -185,7 +185,12 @@ export function useSaveFlow(
       const outcome = await post({
         parentVersionId,
         catalogVersion: CURRENT_CATALOG_VERSION,
-        label,
+        // Trimmed and capped rather than sent verbatim: the field allows
+        // typing past the visual cap is not possible (`maxLength` on the
+        // `<Input>`), but a prefilled label already at the limit plus a
+        // paste could still exceed it, and a whitespace-only edit should
+        // read as "no label" the way the server treats an empty one.
+        label: label.trim().slice(0, MAX_LABEL_LENGTH) || undefined,
         diff: computeDiff(state.currentVersionState, posted),
       });
 
