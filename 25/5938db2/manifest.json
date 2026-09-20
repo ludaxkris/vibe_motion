@@ -1,0 +1,30 @@
+{
+  "pr": 25,
+  "sha": "5938db2dd17483f3f5fda65bcbbf51a109fc00fe",
+  "branch": "feat/7-export-tab",
+  "viewport": "1440x900",
+  "timestamp": "2026-09-20T00:00:00Z",
+  "names": [
+    "01-full-page",
+    "02-export-full-js",
+    "03-export-full-no-js",
+    "04-export-snippet",
+    "05-export-pending",
+    "06-export-error",
+    "07-copy-toast",
+    "08-index-html-tab",
+    "09-download-zip"
+  ],
+  "diffs": {
+    "01-full-page": "N/A",
+    "02-export-full-js": "N/A",
+    "03-export-full-no-js": "N/A",
+    "04-export-snippet": "N/A",
+    "05-export-pending": "N/A",
+    "06-export-error": "N/A",
+    "07-copy-toast": "N/A",
+    "08-index-html-tab": "N/A",
+    "09-download-zip": "N/A"
+  },
+  "notes": "Export tab dev page at /dev/export. All captures at 1440x900. No baseline images available for comparison."
+}
