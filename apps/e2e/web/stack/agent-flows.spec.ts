@@ -142,6 +142,17 @@ async function regenerate(page: Page) {
   const panel = page.getByTestId("panel-auto-result");
   const seed = await panel.getAttribute("data-run-seed");
   expect(seed).toMatch(/^\d+$/);
+  // The bridge measures transformed boxes (DT-150): a one-line `p` inside a
+  // card caught at `scale(0.8)` is under the 16 px floor and is not listed at
+  // all, which moves the skipped count. Let the entrances finish first; a held
+  // `in-view` one is paused, not running.
+  await expect
+    .poll(() =>
+      preview(page)
+        .locator("html")
+        .evaluate(() => document.getAnimations().filter((a) => a.playState === "running").length),
+    )
+    .toBe(0);
   await page.getByRole("button", { name: "Regenerate" }).click();
   await expect(panel).not.toHaveAttribute("data-run-seed", seed as string);
   await bridgeSettled(page);
