@@ -98,11 +98,15 @@ test.beforeAll(async ({ browser }) => {
         diff: {
           set: {
             // Long durations so "running" and "paused at 0" are stable assertions, not races.
+            // Every standard param is moved off its catalog default, so the computed-style
+            // assertion below can tell a duration/delay slot swap from a correct shorthand — the
+            // one thing the parity fixture structurally cannot see, because its expansion is
+            // positional in exactly the same order the emitter writes.
             [loadId]: {
               animationId: "fade-in-up",
               catalogVersion: version,
               trigger: "load",
-              params: { duration: "3000ms", distance: "24px" },
+              params: { duration: "3000ms", delay: "1500ms", easing: "linear", fillMode: "forwards", distance: "24px" },
             },
             [hoverId]: {
               // `hover-grow`'s duration is capped at 1000ms by the catalog, unlike the two above.
@@ -219,6 +223,38 @@ test("a load assignment runs as soon as the page opens", async ({ browser }) => 
   const running = await animationOf(page, "#headline");
   expect(running?.name).toMatch(LOAD_KEYFRAMES);
   expect(running?.state).toBe("running");
+
+  await page.context().close();
+});
+
+test("the shorthand arrives as the longhands the designer chose, in the right slots", async ({ browser }) => {
+  // The exporter writes one `animation` shorthand; the browser expands it. Duration and delay are
+  // both `<time>` and positional, so a swap would round-trip cleanly through the parity fixture,
+  // whose own expansion is positional too. Only a real cascade can tell them apart.
+  const page = await openExport(browser);
+
+  const computed = await page.locator("#headline").evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      name: style.animationName,
+      duration: style.animationDuration,
+      delay: style.animationDelay,
+      timing: style.animationTimingFunction,
+      iteration: style.animationIterationCount,
+      direction: style.animationDirection,
+      fill: style.animationFillMode,
+    };
+  });
+
+  expect(computed.name).toMatch(LOAD_KEYFRAMES);
+  expect(computed.duration).toBe("3s");
+  expect(computed.delay).toBe("1.5s");
+  expect(computed.timing).toBe("linear");
+  expect(computed.fill).toBe("forwards");
+  // Not declared by the entry, so the shorthand resets them to their CSS initial values and a
+  // host rule cannot leak its own in.
+  expect(computed.iteration).toBe("1");
+  expect(computed.direction).toBe("normal");
 
   await page.context().close();
 });
