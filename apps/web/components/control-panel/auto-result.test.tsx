@@ -205,7 +205,7 @@ describe("AutoResultPanel", () => {
     renderResult({ skippedCount: 4 });
 
     expect(screen.getByTestId("auto-result-caption")).toHaveTextContent(
-      "Skipped 4 elements (too small, hidden or not content).",
+      "Skipped 4 elements (inside an animated block, too small, hidden or not content).",
     );
   });
 
@@ -213,7 +213,7 @@ describe("AutoResultPanel", () => {
     renderResult({ skippedCount: 1 });
 
     expect(screen.getByTestId("auto-result-caption")).toHaveTextContent(
-      "Skipped 1 element (too small, hidden or not content).",
+      "Skipped 1 element (inside an animated block, too small, hidden or not content).",
     );
   });
 

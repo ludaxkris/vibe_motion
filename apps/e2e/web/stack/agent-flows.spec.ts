@@ -174,7 +174,8 @@ test("choose custom, pick and tune: the new duration reaches the element", async
   const versionPosts = watchVersionPosts(page);
   await cloneFixture(page);
 
-  const logo = preview(page).locator("img");
+  // The top-level logo; the fixture has a second img inside a <figure>.
+  const logo = preview(page).locator("main > img");
   await logo.click();
   await expect(page.getByTestId("panel-selected")).toBeVisible();
 
@@ -228,6 +229,40 @@ test("auto-generate fills the page by the heuristics and sends it to the frame a
   expect(headlineHeight).toBeLessThan(40);
   expect(rows.some((r) => r.tag === "h2")).toBe(true);
   expect(rows.some((r) => r.tag === "p")).toBe(true);
+
+  // A block animates as one unit (D6): each card, the testimonial and the
+  // figure get ONE row, and the entrance targets inside them get none. The
+  // bridge pre-filter cannot know about nesting, so these are the agent's own
+  // skips and the caption counts them.
+  // h1, .lede, .cta, 3 cards, the logo, the proof h2 + p, the blockquote, the
+  // figure, #below-fold + its p. Exact on purpose: a fixture edit should have
+  // to look at this list.
+  expect(rows).toHaveLength(13);
+  const rowIds = new Set(rows.map((r) => r.vmId));
+  const idsOf = (selector: string) =>
+    preview(page)
+      .locator(selector)
+      .evaluateAll((els) => els.map((el) => el.getAttribute("data-vm-id") ?? ""));
+  const cardIds = await idsOf("article.card");
+  expect(cardIds).toHaveLength(3);
+  for (const vmId of cardIds) expect(rows.filter((r) => r.vmId === vmId)).toHaveLength(1);
+  const nestedSelector = "article.card h2, article.card p, blockquote p, figure img";
+  const nestedIds = await idsOf(nestedSelector);
+  expect(nestedIds).toHaveLength(9);
+  for (const vmId of nestedIds) expect(rowIds.has(vmId), `nested ${vmId}`).toBe(false);
+  for (const selector of [".lede", "main > img", "#proof-heading", "blockquote", "figure"]) {
+    expect(rowIds.has(await vmIdOf(page, selector)), selector).toBe(true);
+  }
+  const caption = page.getByTestId("auto-result-caption");
+  await expect(caption).toContainText("inside an animated block");
+  const skippedCount = Number(/Skipped (\d+) elements?/.exec((await caption.textContent()) ?? "")?.[1]);
+  expect(skippedCount).toBeGreaterThanOrEqual(6);
+  expect(skippedCount).toBe(nestedIds.length);
+  const nestedStyles = await preview(page)
+    .locator(nestedSelector)
+    .evaluateAll((els) => els.map((el) => el.getAttribute("style") ?? ""));
+  for (const style of nestedStyles) expect(style).not.toContain("vm-");
+  test.info().annotations.push({ type: "auto-generate skipped", description: String(skippedCount) });
   test.info().annotations.push({ type: "auto-generate rows", description: String(rows.length) });
 
   // Categories and triggers (D6): links and buttons hover, everything else

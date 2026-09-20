@@ -20,7 +20,7 @@ type Shared = {
 export type ElementContext = Shared & { element: ElementInfo };
 export type PageContext = Shared & { elements: ElementInfo[] };
 
-export type SkipReason = "not-semantic" | "too-small" | "hidden";
+export type SkipReason = "not-semantic" | "too-small" | "hidden" | "nested";
 
 export type PageSuggestion = {
   /** Keyed by vmId. */

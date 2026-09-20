@@ -160,6 +160,24 @@ describe("MockAnimationAgent stagger", () => {
     expect(at(assignments, "second").params.delay).toBe("60ms");
   });
 
+  it("counts only surviving load targets: a card's nested heading takes no stagger slot", async () => {
+    const card = { x: 0, y: 200, width: 300, height: 200 };
+    const inner = { x: 16, y: 216, width: 268, height: 28 };
+    const { assignments, skipped } = await new MockAnimationAgent(5).suggestForPage(
+      pageCtx([
+        el("first", "h1", 100, 0),
+        el("card", "article", 200, 1, { rect: card, pageRect: card }),
+        el("inner", "h2", 216, 2, { rect: inner, pageRect: inner }),
+        el("after", "h2", 500, 3),
+      ]),
+    );
+    expect(skipped).toEqual([{ vmId: "inner", reason: "nested" }]);
+    expect(assignments).not.toHaveProperty("inner");
+    expect(at(assignments, "first").params.delay).toBe("0ms");
+    expect(at(assignments, "card").params.delay).toBe("60ms");
+    expect(at(assignments, "after").params.delay).toBe("120ms");
+  });
+
   it("caps the stagger at 600ms", async () => {
     const headings = Array.from({ length: 15 }, (_, i) => el(`h-${i}`, "h2", 10 + i * 50, i));
     const { assignments } = await new MockAnimationAgent(9).suggestForPage(pageCtx(headings));

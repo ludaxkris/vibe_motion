@@ -46,20 +46,77 @@ function byDocumentOrder(a: ElementInfo, b: ElementInfo): number {
 }
 
 /**
+ * Tags that make a block: the block animates as one unit, so an entrance
+ * target that sits inside one is left alone. Animating a card AND its heading
+ * AND its paragraph is three entrances for one thing, and the card's
+ * `fillMode: both` holds `opacity: 0` over its children's entrances (DT-133).
+ */
+export const CONTAINER_TAGS: readonly string[] = ["article", "figure", "li", "blockquote"];
+
+/** Sub-pixel layout: a child's edge may round to just outside its parent's. */
+const NESTED_TOLERANCE_PX = 0.5;
+
+type Rect = ElementInfo["pageRect"];
+
+function area(rect: Rect): number {
+  return rect.width * rect.height;
+}
+
+function contains(outer: Rect, inner: Rect): boolean {
+  const t = NESTED_TOLERANCE_PX;
+  return (
+    inner.x >= outer.x - t &&
+    inner.y >= outer.y - t &&
+    inner.x + inner.width <= outer.x + outer.width + t &&
+    inner.y + inner.height <= outer.y + outer.height + t
+  );
+}
+
+/**
  * The agent-side re-check of the bridge filter. Targets come back in document
  * order whatever the input order (elements the bridge could not place, `order`
- * below 0, go last); nested targets are all kept.
+ * below 0, go last).
+ *
+ * A block animates as one unit: an entrance target whose `pageRect` lies fully
+ * inside a container target's (`CONTAINER_TAGS`) is skipped as `"nested"`.
+ * `ElementInfo` has no parent pointer, so this is geometry: all four edges
+ * within the container's (0.5 px tolerance), and the container strictly
+ * larger, or the same size and earlier in document order, so two identical
+ * boxes never eliminate each other. A container inside a container is nested
+ * too, which leaves the outermost. Hover targets are never nested: a link
+ * inside an animated card keeps its hover. O(targets × containers).
  */
 export function selectTargets(elements: readonly ElementInfo[]): {
   targets: ElementInfo[];
   skipped: { vmId: string; reason: SkipReason }[];
 } {
+  const sorted = [...elements].sort(byDocumentOrder);
+  const reasons: (SkipReason | null)[] = sorted.map(skipReason);
+
+  const containers: number[] = [];
+  sorted.forEach((el, index) => {
+    if (reasons[index] === null && CONTAINER_TAGS.includes(el.tag) && !isHoverTarget(el)) {
+      containers.push(index);
+    }
+  });
+
   const targets: ElementInfo[] = [];
   const skipped: { vmId: string; reason: SkipReason }[] = [];
-  for (const el of [...elements].sort(byDocumentOrder)) {
-    const reason = skipReason(el);
+  sorted.forEach((el, index) => {
+    let reason = reasons[index] ?? null;
+    if (reason === null && !isHoverTarget(el)) {
+      const size = area(el.pageRect);
+      const nested = containers.some((at) => {
+        const container = sorted[at];
+        if (at === index || !container || container.vmId === el.vmId) return false;
+        const containerSize = area(container.pageRect);
+        if (containerSize < size || (containerSize === size && at > index)) return false;
+        return contains(container.pageRect, el.pageRect);
+      });
+      if (nested) reason = "nested";
+    }
     if (reason) skipped.push({ vmId: el.vmId, reason });
     else targets.push(el);
-  }
+  });
   return { targets, skipped };
 }

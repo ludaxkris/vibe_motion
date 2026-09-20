@@ -2,6 +2,7 @@ import type { ElementInfo } from "bridge";
 import { describe, expect, it } from "vitest";
 
 import {
+  CONTAINER_TAGS,
   isHoverTarget,
   MIN_TARGET_HEIGHT,
   MIN_TARGET_WIDTH,
@@ -107,7 +108,9 @@ describe("selectTargets", () => {
     const first = el({ tag: "h2", order: 0 });
     const lostB = el({ tag: "h3", order: -1 });
     const tieA = el({ tag: "p", order: 4 });
-    const tieB = el({ tag: "li", order: 4 });
+    // Not a container tag: every `el()` here shares one rect, and a container
+    // would (rightly) nest the identical boxes sorted after it.
+    const tieB = el({ tag: "img", order: 4 });
     expect(selectTargets([lostA, tieA, lostB, first, tieB]).targets).toEqual([first, tieA, tieB, lostA, lostB]);
   });
 
@@ -116,10 +119,112 @@ describe("selectTargets", () => {
     expect(skipReason(el({ tag: "picture" }))).toBe("not-semantic");
   });
 
-  it("keeps nested targets (a link inside an article)", () => {
+  it("keeps a link inside an article: hover targets are never nested", () => {
     const article = el({ tag: "article", order: 1 });
     const link = el({ tag: "a", order: 2 });
     expect(selectTargets([article, link]).targets).toEqual([article, link]);
+  });
+});
+
+/** A box on the page; `el()`'s default rect is shared, so nesting tests always pass their own. */
+function box(x: number, y: number, width: number, height: number) {
+  const rect = { x, y, width, height };
+  return { rect, pageRect: rect };
+}
+
+describe("selectTargets: a container block animates as one unit", () => {
+  it("names the container tags", () => {
+    expect(CONTAINER_TAGS).toEqual(["article", "figure", "li", "blockquote"]);
+  });
+
+  it("skips entrance targets inside an article as nested, and keeps its link", () => {
+    const article = el({ tag: "article", order: 1, ...box(0, 100, 300, 200) });
+    const h2 = el({ tag: "h2", order: 2, ...box(16, 116, 268, 28) });
+    const p = el({ tag: "p", order: 3, ...box(16, 160, 268, 24) });
+    const link = el({ tag: "a", order: 4, ...box(16, 200, 120, 40) });
+    const button = el({ tag: "div", role: "button", order: 5, ...box(150, 200, 120, 40) });
+    const { targets, skipped } = selectTargets([article, h2, p, link, button]);
+    expect(targets).toEqual([article, link, button]);
+    expect(skipped).toEqual([
+      { vmId: h2.vmId, reason: "nested" },
+      { vmId: p.vmId, reason: "nested" },
+    ]);
+  });
+
+  it("keeps a heading that merely overlaps a container's edge", () => {
+    const article = el({ tag: "article", order: 1, ...box(0, 100, 300, 200) });
+    const h2 = el({ tag: "h2", order: 2, ...box(16, 90, 268, 28) });
+    expect(selectTargets([article, h2]).targets).toEqual([article, h2]);
+  });
+
+  it("allows half a pixel of rounding on every edge, and no more", () => {
+    const article = el({ tag: "article", order: 1, ...box(0, 100, 300, 200) });
+    const within = el({ tag: "p", order: 2, ...box(-0.5, 99.5, 301, 201) });
+    const beyond = el({ tag: "p", order: 3, ...box(-0.6, 100, 100, 50) });
+    // `within` is larger than the article, so the area rule keeps it; `beyond`
+    // pokes out by more than the tolerance; `snug` pokes out by exactly 0.5 px.
+    const snug = el({ tag: "p", order: 4, ...box(-0.5, 100, 200, 50) });
+    const { targets } = selectTargets([article, within, beyond, snug]);
+    expect(targets).toEqual([article, within, beyond]);
+  });
+
+  it("figure > img: the figure stays, the img is nested", () => {
+    const figure = el({ tag: "figure", order: 1, ...box(0, 0, 400, 300) });
+    const img = el({ tag: "img", order: 2, ...box(0, 0, 400, 260) });
+    const { targets, skipped } = selectTargets([figure, img]);
+    expect(targets).toEqual([figure]);
+    expect(skipped).toEqual([{ vmId: img.vmId, reason: "nested" }]);
+  });
+
+  it("identical rects: the earlier order is kept, and they never eliminate each other", () => {
+    const li = el({ tag: "li", order: 1, ...box(0, 0, 300, 24) });
+    const p = el({ tag: "p", order: 2, ...box(0, 0, 300, 24) });
+    expect(selectTargets([p, li]).targets).toEqual([li]);
+
+    const first = el({ tag: "li", order: 1, ...box(0, 0, 300, 24) });
+    const second = el({ tag: "li", order: 2, ...box(0, 0, 300, 24) });
+    expect(selectTargets([second, first]).targets).toEqual([first]);
+
+    const heading = el({ tag: "h2", order: 1, ...box(0, 0, 300, 24) });
+    const wrapper = el({ tag: "article", order: 2, ...box(0, 0, 300, 24) });
+    expect(selectTargets([heading, wrapper]).targets).toEqual([heading, wrapper]);
+  });
+
+  it("a container inside a container: only the outermost stays", () => {
+    const article = el({ tag: "article", order: 1, ...box(0, 0, 600, 400) });
+    const li = el({ tag: "li", order: 2, ...box(20, 20, 560, 100) });
+    const p = el({ tag: "p", order: 3, ...box(30, 30, 500, 24) });
+    const { targets, skipped } = selectTargets([article, li, p]);
+    expect(targets).toEqual([article]);
+    expect(skipped.map((s) => s.reason)).toEqual(["nested", "nested"]);
+  });
+
+  it("leaves an h1 outside any container alone", () => {
+    const h1 = el({ tag: "h1", order: 1, ...box(0, 0, 600, 37) });
+    const article = el({ tag: "article", order: 2, ...box(0, 100, 300, 200) });
+    expect(selectTargets([h1, article]).targets).toEqual([h1, article]);
+  });
+
+  it("a non-container never nests anything (h2 inside a big p)", () => {
+    const p = el({ tag: "p", order: 1, ...box(0, 0, 600, 400) });
+    const h2 = el({ tag: "h2", order: 2, ...box(10, 10, 100, 28) });
+    expect(selectTargets([p, h2]).targets).toEqual([p, h2]);
+  });
+
+  it("a container that is itself skipped (too small, hidden) nests nothing", () => {
+    const hidden = el({ tag: "article", order: 1, visible: false, ...box(0, 0, 600, 400) });
+    const h2 = el({ tag: "h2", order: 2, ...box(10, 10, 100, 28) });
+    expect(selectTargets([hidden, h2]).targets).toEqual([h2]);
+  });
+
+  it("does not depend on input order", () => {
+    const article = el({ tag: "article", order: 1, ...box(0, 100, 300, 200) });
+    const h2 = el({ tag: "h2", order: 2, ...box(16, 116, 268, 28) });
+    const link = el({ tag: "a", order: 3, ...box(16, 200, 120, 40) });
+    const outside = el({ tag: "h1", order: 0, ...box(0, 0, 600, 37) });
+    const expected = selectTargets([outside, article, h2, link]);
+    expect(expected.targets).toEqual([outside, article, link]);
+    expect(selectTargets([link, h2, outside, article])).toEqual(expected);
   });
 });
 

@@ -160,7 +160,7 @@ export function AutoResultPanel({
             >
               Click a row to tune it, or click the element on the page.
               {skippedCount > 0
-                ? ` Skipped ${plural(skippedCount, "element")} (too small, hidden or not content).`
+                ? ` Skipped ${plural(skippedCount, "element")} (inside an animated block, too small, hidden or not content).`
                 : null}
               {truncated ? ` Only the first ${consideredLimit} elements were considered.` : null}
             </p>
