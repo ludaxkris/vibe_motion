@@ -15,6 +15,19 @@ describe("version transitions", () => {
     const dirty = { ...clean, draftState: { h1: a("800ms") } };
     expect(markSaved(dirty, version("v2"))).toMatchObject({ currentVersionState: { h1: a("800ms") }, currentVersionId: "v2" });
   });
+  it("markSaved promotes what was posted, not a draft that moved since", () => {
+    const posted = { h1: a("800ms") };
+    // The draft gained a late edit while the 201 was in flight. Promoting it
+    // would call that edit saved; promoting the *posted* state leaves it as
+    // the only unsaved change there is.
+    const moved = { ...clean, draftState: { h1: a("800ms"), cta: a("1s") } };
+    const after = markSaved(moved, version("v2"), posted);
+    expect(after).toMatchObject({ currentVersionState: posted, currentVersionId: "v2" });
+    expect(after.draftState).toEqual(moved.draftState);
+    expect(isDirty(after)).toBe(true);
+    // A copy, not the caller's object: the draft goes on being replaced.
+    expect(after.currentVersionState).not.toBe(posted);
+  });
   it("enterViewing shows the old state but keeps current", () => {
     const viewing = enterViewing(clean, "v0", {});
     expect(viewing).toMatchObject({ mode: "viewing", viewingVersionId: "v0", draftState: {}, currentVersionState: { h1: a("600ms") }, currentVersionId: "v1" });

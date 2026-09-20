@@ -118,8 +118,12 @@ export type EditorActions = {
   revertDraft: () => void;
   /** Project open, Back-to-current after a restore, or the 409 Discard: replace both maps with a materialised version's state. */
   loadVersion: (versionId: string, state: EditorStateMap) => void;
-  /** After a 201: the draft it just saved becomes the current version. */
-  markSaved: (version: Version) => void;
+  /**
+   * After a 201: the draft it just saved becomes the current version.
+   * `posted` is that draft as the request carried it, for the case where the
+   * draft has moved on since (`lib/versions/transitions.ts`).
+   */
+  markSaved: (version: Version, posted?: EditorStateMap) => void;
   /** History row click: show a past version's state read-only. Throws if the draft is dirty (run the guard first). */
   enterViewing: (versionId: string, state: EditorStateMap) => void;
   /** Back to the live draft from a viewed version. */

@@ -96,6 +96,25 @@ describe("markSaved", () => {
     expect(after.panel).toBe(panelBefore);
   });
 
+  it("promotes the state that was posted when the draft has moved on since", () => {
+    const store = createEditorStore();
+    store.getState().loadVersion("version-1", {});
+    const posted = { "vm-1": assignmentFor("fade-in") };
+    store.getState().setDraftAssignment("vm-1", posted["vm-1"]);
+    // What a write that lands while the draft is being edited leaves behind:
+    // `vm-2` was never in the version, so it is still unsaved work.
+    store.getState().setDraftAssignment("vm-2", assignmentFor("pulse"));
+
+    store.getState().markSaved(version({ id: "version-9" }), posted);
+
+    const after = store.getState();
+    expect(after.currentVersionId).toBe("version-9");
+    expect(after.currentVersionState).toEqual(posted);
+    expect(after.draftState).toEqual({ ...posted, "vm-2": assignmentFor("pulse") });
+    expect(selectUnsaved(after)).toBe(true);
+    expect(selectDirtyVmIdCount(after)).toBe(1);
+  });
+
   it("throws while viewing", () => {
     const store = createEditorStore();
     store.getState().loadVersion("version-1", {});
@@ -244,6 +263,29 @@ describe("rebaseDraft", () => {
     expect(state.draftState["vm-1"].params.duration).toBe("900ms");
     expect(state.draftState["vm-2"]).toEqual(newerFromServer["vm-2"]);
     expect(selectUnsaved(state)).toBe(true);
+  });
+
+  it("keeps an open element-switch guard, whose own Save is what asked for the rebase", () => {
+    const store = createEditorStore();
+    store.getState().loadVersion("version-1", {});
+    store.getState().setSelectedVmId("vm-1");
+    store.getState().dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    store.getState().dispatchPanel({ type: "PICK", animationId: "fade-in" });
+    store.getState().requestSelect("vm-2");
+    expect(store.getState().pendingSelectVmId).toBe("vm-2");
+
+    // The guard's Save came back 409 and the user answered "Apply my changes
+    // on top": the work is still in the draft and the save is still going.
+    // Unlike a load or a view, this replacement takes nothing away.
+    store.getState().rebaseDraft("version-2", { "vm-3": assignmentFor("pulse") });
+
+    expect(store.getState().pendingSelectVmId).toBe("vm-2");
+    expect(store.getState().guardedVmId).toBe("vm-1");
+
+    // …so the second write's `resolveGuard("saved")` still has the selection
+    // the guard was holding, instead of finding nothing pending.
+    store.getState().resolveGuard("saved");
+    expect(selectSelectedVmId(store.getState())).toBe("vm-2");
   });
 });
 

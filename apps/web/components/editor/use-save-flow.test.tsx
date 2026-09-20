@@ -8,9 +8,9 @@ import { Toaster, useToastStore } from "@/components/ui/toast";
 import type { Assignment, Project } from "@/lib/api-client";
 import { CURRENT_CATALOG_VERSION, defaultAssignmentFor, getCatalogEntry } from "@/lib/catalog";
 import { env } from "@/lib/env";
-import { initialEditorState, selectUnsaved, useEditorStore } from "@/lib/store";
+import { initialEditorState, selectDirtyVmIds, selectUnsaved, useEditorStore } from "@/lib/store";
 import { saveVersion } from "@/lib/versions/api";
-import { createProject, getVersionState, listVersions } from "@/mocks/db";
+import { createProject, createVersion, getVersionState, listVersions, type CreateVersionInput } from "@/mocks/db";
 import { server } from "@/mocks/server";
 
 import { SaveFlowDialogs } from "./save-flow-dialogs";
@@ -152,6 +152,62 @@ describe("useSaveFlow", () => {
     expect(selectUnsaved(state)).toBe(false);
     expect(await screen.findByText("Saved v1")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("promotes what it posted when the draft moves while the 201 is in flight", async () => {
+    // Nothing in the editor can do this behind the modal today; Phase 5's
+    // async agent writes can. Skipping the promotion left the chip, the parent
+    // pointer and "unsaved" all describing a version that had been written.
+    const project = openProject();
+    animate("vm-1");
+    let release = () => {};
+    let asked = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inFlight = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    server.use(
+      http.post(api("/projects/:projectId/versions"), async ({ request, params }) => {
+        asked();
+        await gate;
+        const written = createVersion(
+          String(params.projectId),
+          (await request.json()) as CreateVersionInput,
+        );
+        return HttpResponse.json(written.body, { status: written.status });
+      }),
+    );
+    renderFlow(project.id);
+    const flow = startSave();
+    await screen.findByRole("dialog", { name: "Save as v1" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save version" }));
+    await act(async () => {
+      await inFlight;
+    });
+    // The write is out; this edit is not in it.
+    const late = assignment("pulse");
+    act(() => {
+      useEditorStore.getState().setDraftAssignment("vm-2", late);
+    });
+    await act(async () => {
+      release();
+      await gate;
+    });
+
+    await waitFor(() => expect(flow.status).toBe("resolved"));
+    const listed = listVersions(project.id);
+    const state = useEditorStore.getState();
+    expect(state.currentVersionId).toBe(listed?.versions[1].id);
+    // The version that was written, not the draft as it stands: "unsaved" then
+    // means exactly the late edit.
+    expect(state.currentVersionState).toEqual({ "vm-1": assignment("fade-in") });
+    expect(state.draftState).toEqual({ "vm-1": assignment("fade-in"), "vm-2": late });
+    expect(selectUnsaved(state)).toBe(true);
+    expect(selectDirtyVmIds(state)).toEqual(["vm-2"]);
+    expect(await screen.findByText("Saved v1")).toBeInTheDocument();
   });
 
   it("posts the label the user typed, not the prefill", async () => {

@@ -191,7 +191,11 @@ export function useSaveFlow(
 
       switch (outcome.kind) {
         case "saved":
-          if (useEditorStore.getState().draftState === posted) markSaved(outcome.version);
+          // Against what was posted, not against the draft as it stands: an
+          // edit that landed while the 201 was in flight is not in this
+          // version, and must stay unsaved work rather than either being
+          // called saved or leaving the store behind a version that exists.
+          markSaved(outcome.version, posted);
           toast(`Saved v${outcome.version.seq}`);
           finish(true);
           return;

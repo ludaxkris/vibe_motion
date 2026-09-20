@@ -34,11 +34,21 @@ export function isDirty(slice: VersionSlice): boolean {
   return !isEmptyDiff(computeDiff(slice.currentVersionState, slice.draftState));
 }
 
-export function markSaved(slice: VersionSlice, version: Version): VersionSlice {
+/**
+ * The draft that was written becomes the current version.
+ *
+ * `posted` is that draft as it was when the request went out, which is not
+ * always `draftState` by the time the 201 lands — anything that edits the draft
+ * mid-flight (an async write, another tab's agent) moves it. Promoting the
+ * draft then would call an edit saved that no version contains; promoting
+ * `posted` leaves it as the only unsaved change there is. Omitted, the draft
+ * stands in, which is the same thing whenever nothing moved.
+ */
+export function markSaved(slice: VersionSlice, version: Version, posted?: EditorStateMap): VersionSlice {
   if (slice.mode === "viewing") {
     throw new Error("markSaved while viewing: exit viewing first");
   }
-  return { ...slice, currentVersionState: { ...slice.draftState }, currentVersionId: version.id };
+  return { ...slice, currentVersionState: { ...(posted ?? slice.draftState) }, currentVersionId: version.id };
 }
 
 export function enterViewing(slice: VersionSlice, versionId: string, state: EditorStateMap): VersionSlice {
