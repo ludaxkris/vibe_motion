@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<title>control-unsanitised</title>
+</head>
+<body>
+<!--
+  POSITIVE CONTROL for export-hostile.spec.ts. This file is NOT an export and has NOT been through
+  `HtmlSanitiser`; it lives here, next to the spec, rather than under
+  `apps/api/src/test/resources/export/hostile/` so that it can never be mistaken for one or picked
+  up by the per-document loop.
+
+  Its job is to fail. Without it, a spec that served the wrong body — an empty response, a 404 page,
+  the same document every time — would report every export as inert and prove nothing. The spec
+  asserts that this document DOES trip the detector: the marker is set and a live handler is found
+  in the browser's own DOM.
+
+  One shape per check the sweep makes, so none of them can quietly become dead code. Inert by
+  construction all the same: the only payload sets `window.__vmExecuted`, the refresh is 60 seconds
+  away so it cannot navigate mid-test, and every URL resolves to the test's own routed origin.
+-->
+<img src="x" onerror="window.__vmExecuted = true">
+<a id="scheme" href="javascript:void 0">scheme in an attribute value</a>
+<iframe title="an element that has no business in an export"></iframe>
+<meta http-equiv="refresh" content="60;url=/somewhere-else">
+</body>
+</html>

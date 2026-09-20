@@ -26,7 +26,11 @@ test("adds vm-js to <html> before the first paint", async ({ page }) => {
 
   // The script tag is in `<head>` and not deferred for exactly this reason: with `defer` the
   // element would paint at rest, snap to its first keyframe when the class landed, and then play.
-  expect(await page.evaluate(() => window.__firstFrameClass)).toContain("vm-js");
+  //
+  // Polled, not read once: a headless page under parallel workers may not have produced its first
+  // frame by the time `goto` resolves, and reading `null` then says nothing. What is asserted is
+  // unchanged — the class recorded *at* the first frame, whenever that frame happens.
+  await expect.poll(async () => await page.evaluate(() => window.__firstFrameClass)).toContain("vm-js");
   expect(await harness.frame.evaluate(() => document.documentElement.className)).toContain("vm-js");
 });
 
@@ -96,6 +100,21 @@ test("an element both wider and taller than the viewport fires on first intersec
   // neither axis alone.
   const harness = await mountExport(page, {
     body: `<div class="spacer"></div><div id="target" class="vm-a1 vm-in-view" style="width:1280px;height:1200px;background:#ddd"></div>`,
+    css: CSS,
+  });
+
+  expect(await harness.animation("#target")).toMatchObject({ state: "paused", time: 0 });
+
+  await harness.frame.evaluate(() => document.querySelector("#target")!.scrollIntoView());
+  await expect.poll(async () => (await harness.animation("#target"))?.state).toBe("running");
+});
+
+test("an element exactly five viewports tall is on the boundary, and fires", async ({ page }) => {
+  // `min(1, 640/640) * min(1, 400/2000)` is exactly 0.2. With a strict `<` this element would be
+  // left to reach the threshold by perfect alignment, which is float rounding deciding whether an
+  // animation ever plays.
+  const harness = await mountExport(page, {
+    body: `<div class="spacer"></div><div id="target" class="vm-a1 vm-in-view" style="height:2000px;background:#ddd"></div>`,
     css: CSS,
   });
 

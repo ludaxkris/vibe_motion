@@ -71,7 +71,7 @@ describe("vibe-motion-export.js", () => {
     expect(SOURCE).toContain(
       "reachableFraction(box.width, rootWidth) * reachableFraction(box.height, rootHeight)",
     );
-    expect(SOURCE).toContain("reachable < IN_VIEW_THRESHOLD");
+    expect(SOURCE).toContain("reachable <= IN_VIEW_THRESHOLD");
   });
 
   it("watches for marked elements that arrive after DOMContentLoaded", () => {
