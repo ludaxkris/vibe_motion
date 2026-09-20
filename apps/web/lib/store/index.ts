@@ -11,9 +11,9 @@
  * emptiness of) a deep comparison of `draftState` against
  * `currentVersionState`. Mirroring them as their own state fields
  * would require every action that can change either input to remember to
- * recompute them — `currentVersionState` will get its own writers in Phase 6
- * (save/load/restore) that have no reason to know about `unsaved` — so
- * instead they're plain selectors (`selectSelectedVmId`, `selectUnsaved`) —
+ * recompute them — `currentVersionState`'s writers (save/load/restore, see
+ * `version-slice.ts`) have no reason to know about `unsaved` — so instead
+ * they're plain selectors (`selectSelectedVmId`, `selectUnsaved`) —
  * read through `useEditorStore(selector)`, or through the `useUnsaved` hook
  * wrapper — that can never drift out of sync with the state they're computed
  * from. `guardOpen` (`selectGuardOpen`) is the Phase 4 addition to that list.
@@ -30,7 +30,7 @@
 import type { ElementInfo } from "bridge";
 import { create, type StateCreator, type StoreApi, type UseBoundStore } from "zustand";
 
-import type { Assignment, EditorStateMap } from "@/lib/api-client";
+import type { Assignment, EditorStateMap, Version } from "@/lib/api-client";
 import { assignmentsEqual } from "@/lib/assignment";
 import { defaultAssignmentFor, getCatalogEntry } from "@/lib/catalog";
 
@@ -40,6 +40,7 @@ import {
   type PanelEvent,
   type PanelState,
 } from "./panel-machine";
+import { createVersionActions } from "./version-slice";
 
 /**
  * `editing` — the draft is live and the user can change it.
@@ -58,6 +59,10 @@ export type EditorState = {
   /** Materialised state of the version the draft was forked from. */
   currentVersionState: EditorStateMap;
   mode: EditorMode;
+  /** The version `currentVersionState` was materialised from, or null before the first load. */
+  currentVersionId: string | null;
+  /** The version `draftState` is viewing read-only, or null while `mode` is `editing`. */
+  viewingVersionId: string | null;
   /** Element the pointer is over inside the preview iframe (`element:hover`), or null. */
   hoverVmId: string | null;
   /**
@@ -111,7 +116,16 @@ export type EditorActions = {
    * when the revert took it away (docs/design/README.md, "Interactions").
    */
   revertDraft: () => void;
-  setMode: (mode: EditorMode) => void;
+  /** Project open, Back-to-current after a restore, or the 409 Discard: replace both maps with a materialised version's state. */
+  loadVersion: (versionId: string, state: EditorStateMap) => void;
+  /** After a 201: the draft it just saved becomes the current version. */
+  markSaved: (version: Version) => void;
+  /** History row click: show a past version's state read-only. Throws if the draft is dirty (run the guard first). */
+  enterViewing: (versionId: string, state: EditorStateMap) => void;
+  /** Back to the live draft from a viewed version. */
+  exitViewing: () => void;
+  /** 409 "apply my changes on top": replay the draft's diff onto the newer current state. */
+  rebaseDraft: (newCurrentId: string, newCurrentState: EditorStateMap) => void;
   /** `element:hover` from the bridge; `null` when the pointer left every tagged element. */
   setHoverVmId: (vmId: string | null) => void;
   /** Record what the bridge reported about an element (`element:select`). */
@@ -149,6 +163,8 @@ export const initialEditorState: EditorState = {
   draftState: {},
   currentVersionState: {},
   mode: "editing",
+  currentVersionId: null,
+  viewingVersionId: null,
   hoverVmId: null,
   elements: {},
   pendingSelectVmId: null,
@@ -188,6 +204,8 @@ let dirtyCache: { draft: EditorStateMap; saved: EditorStateMap; vmIds: string[] 
  * every render would be a fresh snapshot every render).
  */
 export function selectDirtyVmIds(state: EditorState): string[] {
+  // While viewing, `draftState` is a viewer buffer, not the draft — see `lib/versions/transitions.ts`.
+  if (state.mode === "viewing") return [];
   const { draftState, currentVersionState } = state;
   if (dirtyCache && dirtyCache.draft === draftState && dirtyCache.saved === currentVersionState) {
     return dirtyCache.vmIds;
@@ -279,9 +297,13 @@ function closeGuard(
 
 const createEditorState: StateCreator<EditorStore> = (set, get) => ({
   ...initialEditorState,
+  ...createVersionActions(set, get),
 
   dispatchPanel: (event) =>
     set((state) => {
+      // Viewing is read-only: PICK would write a draft assignment. Other
+      // panel events are pure navigation and still work while viewing.
+      if (state.mode === "viewing" && event.type === "PICK") return state;
       const panel = transition(state.panel, withDraftAnimationId(state, event));
       if (panel === state.panel) return state;
 
@@ -323,10 +345,14 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
   },
 
   setDraftAssignment: (vmId, assignment) =>
-    set((state) => ({ draftState: { ...state.draftState, [vmId]: assignment } })),
+    set((state) => {
+      if (state.mode === "viewing") return state;
+      return { draftState: { ...state.draftState, [vmId]: assignment } };
+    }),
 
   updateDraftParam: (vmId, key, value) =>
     set((state) => {
+      if (state.mode === "viewing") return state;
       const existing = state.draftState[vmId];
       if (!existing) return state;
       return {
@@ -339,6 +365,7 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
 
   removeDraftAssignment: (vmId) =>
     set((state) => {
+      if (state.mode === "viewing") return state;
       if (!(vmId in state.draftState)) return state;
       const draftState = { ...state.draftState };
       delete draftState[vmId];
@@ -346,6 +373,7 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
     }),
 
   revertDraft: () => {
+    if (get().mode === "viewing") return;
     closeGuard(set, get);
     set((state) => {
       const draftState = { ...state.currentVersionState };
@@ -363,8 +391,6 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
     });
   },
 
-  setMode: (mode) => set({ mode }),
-
   setHoverVmId: (vmId) =>
     // Identity matters: the bridge only reports a *change* of hovered element,
     // but the same vmId can arrive again after a re-`ready`, and a fresh
@@ -376,6 +402,7 @@ const createEditorState: StateCreator<EditorStore> = (set, get) => ({
 
   requestSelect: (vmId) => {
     const state = get();
+    if (state.mode === "viewing") return;
     const current = selectSelectedVmId(state);
     if (vmId === current) return;
 
