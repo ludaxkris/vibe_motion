@@ -134,6 +134,21 @@ async function autoGenerate(page: Page): Promise<{ rows: Row[]; received: () => 
 }
 
 /**
+ * No entrance is mid-flight in the frame. The bridge measures transformed
+ * boxes (DT-150), so what a query lists depends on when it is asked; at rest
+ * it is at least stable. A held `in-view` entrance is paused, not running.
+ */
+async function animationsAtRest(page: Page) {
+  await expect
+    .poll(() =>
+      preview(page)
+        .locator("html")
+        .evaluate(() => document.getAnimations().filter((a) => a.playState === "running").length),
+    )
+    .toBe(0);
+}
+
+/**
  * Clicks Regenerate and waits for the new run to land. The panel's
  * `data-run-seed` changes exactly then; what the frame hears does not say so,
  * because a new seed may reproduce every pick and send nothing at all.
@@ -142,17 +157,7 @@ async function regenerate(page: Page) {
   const panel = page.getByTestId("panel-auto-result");
   const seed = await panel.getAttribute("data-run-seed");
   expect(seed).toMatch(/^\d+$/);
-  // The bridge measures transformed boxes (DT-150): a one-line `p` inside a
-  // card caught at `scale(0.8)` is under the 16 px floor and is not listed at
-  // all, which moves the skipped count. Let the entrances finish first; a held
-  // `in-view` one is paused, not running.
-  await expect
-    .poll(() =>
-      preview(page)
-        .locator("html")
-        .evaluate(() => document.getAnimations().filter((a) => a.playState === "running").length),
-    )
-    .toBe(0);
+  await animationsAtRest(page);
   await page.getByRole("button", { name: "Regenerate" }).click();
   await expect(panel).not.toHaveAttribute("data-run-seed", seed as string);
   await bridgeSettled(page);
@@ -486,6 +491,24 @@ test("a card the designer animated by hand is still a block: a page run leaves i
   await expect(page.getByTestId("panel-auto-result")).toBeVisible();
   await expect(row(page, cardId)).toContainText("edited");
 
+  // What the bridge will list of the nested elements. Not simply all nine: it
+  // filters on the box as transformed right now (DT-150), and a one-line `p`
+  // inside a block held below the fold on a shrinking first keyframe is under
+  // the 16 px floor, so it is never listed and never counted. The card is
+  // above the fold and at rest, so its two always are.
+  await animationsAtRest(page);
+  const listedNested = await preview(page)
+    .locator("article.card h2, article.card p, blockquote p, figure img")
+    .evaluateAll((els) =>
+      els
+        .filter((el) => {
+          const box = el.getBoundingClientRect();
+          return box.width >= 40 && box.height >= 16;
+        })
+        .map((el) => el.getAttribute("data-vm-id") ?? ""),
+    );
+  for (const vmId of insideIds) expect(listedNested, vmId).toContain(vmId);
+
   await regenerate(page);
 
   await expect(page.getByTestId("agent-run-error")).toHaveCount(0);
@@ -501,11 +524,8 @@ test("a card the designer animated by hand is still a block: a page run leaves i
   expect(await inline(card, "animation-name")).toBe(pickedName);
 
   // Still counted as skipped, the card's two included.
-  const nestedCount = await preview(page)
-    .locator("article.card h2, article.card p, blockquote p, figure img")
-    .count();
   const caption = (await page.getByTestId("auto-result-caption").textContent()) ?? "";
-  expect(Number(/Skipped (\d+) elements?/.exec(caption)?.[1])).toBe(nestedCount);
+  expect(Number(/Skipped (\d+) elements?/.exec(caption)?.[1])).toBe(listedNested.length);
 
   expect(versionPosts()).toBe(0);
   await expect(page.getByTestId("unsaved-indicator")).toBeVisible();
