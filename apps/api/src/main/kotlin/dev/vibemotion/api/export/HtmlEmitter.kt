@@ -23,11 +23,17 @@ import java.nio.charset.StandardCharsets
  *
  * The document is re-parsed **unconditionally** rather than string-patched. jsoup is not
  * idempotent on its own output in general — `<plaintext>` re-escapes, `<pre>` loses a leading
- * newline, a nested `<form>` is dropped on a second parse, and
- * `<math><mtext><mglyph><style><img …>` is text on the first parse and an element on the second
- * (the mXSS class of bug). That is precisely the argument *for* re-parsing: a string pass would
- * hand those bytes to a browser with nothing in front of them. Byte identity with `base_html` is
- * therefore not a requirement; `HtmlRoundTripTest` characterises what actually changes.
+ * newline, and `<math><mtext><mglyph><style><img …>` is text on the first parse and an element on
+ * the second (the mXSS class of bug). That is precisely the argument *for* re-parsing: a string
+ * pass would hand those bytes to a browser with nothing in front of them. Byte identity with
+ * `base_html` is therefore not a requirement; `HtmlRoundTripTest` characterises what changes.
+ *
+ * **Re-parsing with jsoup is not proof of inertness.** jsoup builds the same tree from our output
+ * that it built from the input, so a *parser differential* — markup jsoup serialises one way and a
+ * browser reads another — is invisible to it. [HtmlSanitiser.reduceParserDifferentials] removes
+ * the shapes where the two disagree, and `packages/bridge/e2e/export-hostile.spec.ts` is what
+ * actually proves an exported page is inert, in Chromium, over the corpus in
+ * `apps/api/src/test/resources/export/hostile/`.
  */
 class HtmlEmitter(
     private val sanitiser: HtmlSanitiser = HtmlSanitiser(),

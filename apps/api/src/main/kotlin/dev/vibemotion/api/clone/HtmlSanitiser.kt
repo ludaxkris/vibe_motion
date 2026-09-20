@@ -49,6 +49,8 @@ class HtmlSanitiser {
         deadline.check()
         removeUnsafeElements(document)
         deadline.check()
+        reduceParserDifferentials(document)
+        deadline.check()
         cleanAttributes(document, deadline)
         deadline.check()
         defuseStyleBlocks(document, deadline)
@@ -135,6 +137,48 @@ class HtmlSanitiser {
     }
 
     /**
+     * Makes the tree jsoup built the tree a **browser** will build from our own serialised output.
+     *
+     * This is the fix for the one document that got through the first round of this work: a nested
+     * `<form>` combined with a `<style>` in MathML. jsoup keeps an inner `<form>` and serialises
+     * it; a browser ignores that start tag while a form is already open, which shifts the following
+     * content one level, so a `<style>` ends up in the MathML namespace — where it is *not* a
+     * raw-text element and its contents become live elements. jsoup re-parsing its own output
+     * cannot see that, because jsoup builds the same tree both times.
+     *
+     * So neither shape is allowed to reach the output:
+     *
+     * - **Nested forms are unwrapped**, which is what a browser does with the start tag, so the two
+     *   parsers agree from here on.
+     * - **Foreign content is reduced to a safe subset.** A raw-text HTML element inside an `svg` or
+     *   `math` subtree is removed outright, integration points included: whether its contents are
+     *   text or markup depends on the exact insertion mode, and that is not a thing to re-implement.
+     *   `<form>` is removed from foreign content too, except under an HTML integration point
+     *   ([HTML_INTEGRATION_POINTS]) where ordinary HTML rules resume and [normaliseForms] disarms
+     *   it like any other.
+     *
+     * `annotation-xml` is deliberately **not** treated as an integration point: whether it is one
+     * depends on its `encoding` attribute, and a sanitiser that replicates that conditional is a
+     * sanitiser with a parser in it.
+     *
+     * The cost is real and accepted: an inline `<svg><style>` loses its own CSS. Nothing the clone
+     * needs depends on it — external stylesheets are inlined into HTML `<style>` blocks — and the
+     * alternative is keeping a shape whose meaning differs between two parsers.
+     *
+     * `packages/bridge/e2e/export-hostile.spec.ts` is what proves this works, in Chromium, over
+     * every document in `apps/api/src/test/resources/export/hostile/`.
+     */
+    private fun reduceParserDifferentials(document: Document) {
+        document.select(FOREIGN_FORBIDDEN.joinToString(",")).forEach { element ->
+            val context = element.foreignContext() ?: return@forEach
+            val isRawText = element.normalName() in FOREIGN_FORBIDDEN_RAW_TEXT
+            if (isRawText || !context.throughIntegrationPoint) element.remove()
+        }
+        // Deepest first, so unwrapping an outer form cannot re-parent one that is still to be seen.
+        document.select("form form").reversed().forEach { it.unwrap() }
+    }
+
+    /**
      * One pass over every element: drop the attributes we must not keep and defuse dangerous URLs.
      *
      * Nothing here resolves a URL. The clone's absolutising pass runs after this one, per element,
@@ -152,6 +196,11 @@ class HtmlSanitiser {
             // `ping` fires a POST to a third party on every click. Harmless under our CSP
             // (`connect-src 'none'`), live again the moment the export is on the designer's site.
             if (element.normalName() in PING_TAGS) element.removeAttr("ping")
+            // `formaction` on a submit control overrides the `action` [normaliseForms] neutralises,
+            // so disarming the form alone left the page able to post to a third party. Removed
+            // document-wide rather than per form, because a submit control can be associated with
+            // a form by id from anywhere in the document.
+            FORM_SUBMIT_OVERRIDES.forEach(element::removeAttr)
             NAVIGATION_ATTRIBUTES.forEach { attribute ->
                 if (element.hasAttr(attribute) && isDangerousUrl(element.attr(attribute))) {
                     element.attr(attribute, "#")
@@ -197,6 +246,29 @@ class HtmlSanitiser {
         private val NAVIGATION_ATTRIBUTES = listOf("href", "src", "action", "formaction", "xlink:href")
         private val DANGEROUS_URL_PREFIXES = listOf("javascript:", "vbscript:", "data:text/html")
         private val PING_TAGS = setOf("a", "area")
+
+        /** Attributes on a submit control that override the form's own, `action` included. */
+        private val FORM_SUBMIT_OVERRIDES = listOf("formaction", "formmethod", "formtarget", "formenctype")
+
+        /**
+         * HTML elements whose contents a browser parses as raw text in HTML but as ordinary markup
+         * inside `svg`/`math`. None of them is removed for what it is — `script` and `iframe` are
+         * already gone — but for the ambiguity of what is *inside* it once it is foreign.
+         */
+        private val FOREIGN_FORBIDDEN_RAW_TEXT =
+            setOf("style", "xmp", "noembed", "noframes", "plaintext", "noscript", "iframe", "script")
+
+        /** The raw-text set plus `form`, which is only allowed under an HTML integration point. */
+        private val FOREIGN_FORBIDDEN = FOREIGN_FORBIDDEN_RAW_TEXT + "form"
+
+        /**
+         * Elements inside which a browser resumes ordinary HTML parsing. `annotation-xml` is left
+         * out on purpose: it is one only for certain `encoding` values.
+         */
+        private val HTML_INTEGRATION_POINTS =
+            setOf("foreignobject", "desc", "title", "mtext", "mi", "mo", "mn", "ms")
+
+        private val FOREIGN_ROOTS = setOf("svg", "math")
 
         private val SMIL_TAGS = listOf("animate", "set", "animatetransform", "animatemotion")
         private val SMIL_URL_TARGETS = setOf("href", "xlink:href")
@@ -252,6 +324,19 @@ class HtmlSanitiser {
         private fun normaliseUrlValue(value: String): String =
             value.filterNot { it.isWhitespace() || it.code < 0x20 }.lowercase(Locale.ROOT)
 
+        /** Where this element sits relative to the nearest `svg`/`math` ancestor, if any. */
+        private fun Element.foreignContext(): ForeignContext? {
+            var ancestor = parent()
+            var throughIntegrationPoint = false
+            while (ancestor != null) {
+                val name = ancestor.normalName()
+                if (name in FOREIGN_ROOTS) return ForeignContext(throughIntegrationPoint)
+                if (name in HTML_INTEGRATION_POINTS) throughIntegrationPoint = true
+                ancestor = ancestor.parent()
+            }
+            return null
+        }
+
         internal fun Element.relTokens(): Set<String> {
             val tokens = attr("rel").lowercase(Locale.ROOT).split(WHITESPACE)
             return tokens.filterTo(mutableSetOf()) { it.isNotEmpty() }
@@ -263,26 +348,46 @@ class HtmlSanitiser {
          *
          * An HTML `<style>` holds a [DataNode]; a `<style>` inside `<svg>` is foreign content and
          * holds a [TextNode], for which `data()` is empty. Reading only `data()` and writing back
-         * unconditionally therefore *deleted* an SVG stylesheet outright. The node is mutated in
-         * place rather than replaced, so jsoup keeps serialising it exactly as it parsed it, and
-         * the no-change path touches nothing at all.
+         * unconditionally therefore *deleted* an SVG stylesheet outright.
+         *
+         * **Every** text or data child is read, and they are transformed as one string: after
+         * [stripComments] a stylesheet that contained a comment arrives as two adjacent text
+         * nodes, and a rewrite that only looked at a single child skipped such a block entirely —
+         * leaving its `url(javascript:…)` in place and, on the clone path, its URLs relative. A
+         * `url(` split across the seam is only visible once they are joined, which is exactly the
+         * shape a comment in the middle of one produces.
+         *
+         * Unchanged CSS is not written back at all, so jsoup keeps serialising the block exactly
+         * as it parsed it.
          */
         internal fun Element.rewriteStyleText(transform: (String) -> String) {
-            when (val child = childNodes().singleOrNull()) {
-                is DataNode -> {
-                    val css = child.wholeData
-                    if (css.isNotEmpty()) transform(css).takeIf { it != css }?.let(child::setWholeData)
-                }
+            val parts = childNodes().filter { it is DataNode || it is TextNode }
+            if (parts.isEmpty()) return
 
-                is TextNode -> {
-                    val css = child.wholeText
-                    if (css.isNotEmpty()) transform(css).takeIf { it != css }?.let(child::text)
+            val css =
+                parts.joinToString("") { node ->
+                    if (node is DataNode) node.wholeData else (node as TextNode).wholeText
                 }
+            if (css.isEmpty()) return
 
-                else -> {
-                    // No single text or data child: nothing to rewrite, and nothing to lose.
-                }
+            val rewritten = transform(css)
+            if (rewritten == css) return
+
+            when (val first = parts.first()) {
+                is DataNode -> first.setWholeData(rewritten)
+                is TextNode -> first.text(rewritten)
+                else -> return
             }
+            // The whole stylesheet now lives in the first node.
+            parts.drop(1).forEach(Node::remove)
         }
     }
 }
+
+/**
+ * An element's position inside foreign content: whether an HTML integration point
+ * (`foreignObject`, `mtext`, …) sits between it and the nearest `svg`/`math` ancestor.
+ */
+private data class ForeignContext(
+    val throughIntegrationPoint: Boolean,
+)

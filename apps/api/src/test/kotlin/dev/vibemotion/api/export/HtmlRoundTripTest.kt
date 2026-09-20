@@ -29,6 +29,9 @@ private val CLONE_GOLDENS = listOf("marketing.html", "docs.html", "hostile.html"
  * These are characterisations, not promises. Byte identity with `base_html` is not a requirement;
  * what is required is that nothing executable survives and that every `data-vm-id` becomes exactly
  * one class.
+ *
+ * **jsoup is not an oracle for browser parsing**, so nothing here can establish inertness on its
+ * own: `HostileCorpusTest` and `packages/bridge/e2e/export-hostile.spec.ts` do that, in Chromium.
  */
 class HtmlRoundTripTest :
     FunSpec({
@@ -113,7 +116,10 @@ class HtmlRoundTripTest :
                     exported shouldNotContain "<iframe"
                     exported shouldNotContain "<base"
 
-                    // And re-parsing it, as a browser would, still finds nothing to run.
+                    // And re-parsing it with jsoup finds nothing to run either — which proves
+                    // only what jsoup sees. A browser can read our own output differently; that
+                    // class of bug is what `HtmlSanitiser.reduceParserDifferentials` removes and
+                    // what `packages/bridge/e2e/export-hostile.spec.ts` proves in Chromium.
                     val reparsed = Jsoup.parse(exported)
                     reparsed.select("script, iframe, object, embed, base").size shouldBe 0
                     reparsed.getAllElements().forEach { element ->
@@ -172,30 +178,18 @@ class HtmlRoundTripTest :
             emitter.emit(pre, emptyMap(), needsScript = false) shouldContain "<pre>keep me</pre>"
         }
 
-        test("a scripting url inside an svg style block is defused, and the rest of the sheet survives") {
-            // `<style>` inside `<svg>` is foreign content: its CSS is a text node, not a data
-            // node. Reading only `data()` used to leave it empty and wipe the stylesheet.
+        test("a style block inside svg does not reach the export at all") {
+            // A `<style>` in foreign content is the shape jsoup and a browser can read
+            // differently, so it is removed rather than cleaned. The drawing survives.
             val svg =
-                """<html><body><svg><style>a{background:url(javascript:alert(1))} circle{fill:red}</style></svg></body></html>"""
+                """<html><body><svg><style>a{background:url(javascript:alert(1))} circle{fill:red}</style><circle/></svg></body></html>"""
 
             val exported = emitter.emit(svg, emptyMap(), needsScript = false)
 
             exported shouldNotContain "javascript:"
-            exported shouldContain """url("#")"""
-            exported shouldContain "circle{fill:red}"
-        }
-
-        test("an svg style block keeps its CSS, which jsoup escapes the same way with or without a rewrite") {
-            // Characterisation: foreign content is text, so `>` serialises as `&gt;` — which a
-            // browser decodes straight back, because character references *are* processed inside
-            // an svg `<style>`. What matters is that this is jsoup's round trip, not ours: an
-            // untouched block comes out identical to one we never looked at.
-            val svg = "<html><body><svg><style>a > b { fill: red }</style></svg></body></html>"
-
-            val exported = emitter.emit(svg, emptyMap(), needsScript = false)
-
-            exported shouldBe reserialise(svg).replace("</head>", """<link rel="stylesheet" href="vibe-motion.css"></head>""")
-            exported shouldContain "a &gt; b { fill: red }"
+            exported shouldNotContain "circle{fill:red}"
+            exported shouldNotContain "<style"
+            exported shouldContain "<svg>"
         }
 
         test("the document keeps its doctype, language and charset") {

