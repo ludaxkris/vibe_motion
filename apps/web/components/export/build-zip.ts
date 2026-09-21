@@ -1,0 +1,216 @@
+import type { ExportBundle } from "@/lib/api-client";
+
+type ExportFile = ExportBundle["files"][number];
+
+/** Which of the bundle's three text fields a listed file carries. */
+export type ExportFileKind = "html" | "css" | "js";
+
+/** Every kind, in the order the plan lists them (§1.1). */
+export const EXPORT_FILE_KINDS = ["html", "css", "js"] as const;
+
+/**
+ * The plan's own names (§1.1), used only when the bundle carries text the API
+ * did not list a file for. Normally every name comes from `bundle.files`.
+ */
+export const CANONICAL_FILE_NAME: Record<ExportFileKind, string> = {
+  html: "index.html",
+  css: "vibe-motion.css",
+  js: "vibe-motion.js",
+};
+
+/** The one file the client adds to the zip; the API's bundle never lists it. */
+export const README_FILE_NAME = "README.txt";
+
+/** A slug longer than this only makes the download harder to read. */
+const MAX_SLUG_LENGTH = 48;
+
+/** Long enough for any name the exporter gives, short enough to stay readable. */
+const MAX_ENTRY_NAME_LENGTH = 100;
+
+/**
+ * Which of the bundle's three text fields a listed file carries, or `null`
+ * when the bundle carries none for it.
+ *
+ * Keyed on `contentType` rather than on the name: the names are the plan's
+ * (`index.html` / `vibe-motion.css` / `vibe-motion.js`) but they are data, not
+ * a contract this component may assume — the MSW mock still answers with the
+ * Phase 0 names until Track C aligns it. The extension is the fallback for a
+ * content type this build has not seen.
+ */
+export function bundleFileKind(file: ExportFile): ExportFileKind | null {
+  const type = (file.contentType.split(";")[0] ?? "").trim().toLowerCase();
+  if (type === "text/html") return "html";
+  if (type === "text/css") return "css";
+  if (type === "text/javascript" || type === "application/javascript") return "js";
+
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".html") || name.endsWith(".htm")) return "html";
+  if (name.endsWith(".css")) return "css";
+  if (name.endsWith(".js") || name.endsWith(".mjs")) return "js";
+  return null;
+}
+
+/** The bundle's text for one kind, straight off the bundle. */
+export function bundlePartText(bundle: ExportBundle, kind: ExportFileKind): string | null {
+  switch (kind) {
+    case "html":
+      return bundle.html;
+    case "css":
+      return bundle.css;
+    case "js":
+      return bundle.js;
+  }
+}
+
+/** The text of one listed file, or `null` when the bundle carries none for it. */
+export function bundleFileText(bundle: ExportBundle, file: ExportFile): string | null {
+  const kind = bundleFileKind(file);
+  return kind === null ? null : bundlePartText(bundle, kind);
+}
+
+/**
+ * A name that can only ever be a file *in* the archive, never a path.
+ *
+ * The names are our own API's, so this is defence in depth — but a zip is
+ * unpacked by someone else's extractor, and `../../etc/passwd` is honoured by
+ * more of them than one would like. Basename only, no leading dots, no control
+ * characters.
+ */
+export function safeZipEntryName(name: string): string {
+  const base = name.split(/[\\/]/).pop() ?? "";
+  const cleaned = [...base]
+    // No control characters, written by code point rather than as an escape
+    // range so nothing in the toolchain can turn them into literal bytes.
+    .filter((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code > 31 && code !== 127;
+    })
+    .join("")
+    .trim()
+    // "..", ".hidden": a leading dot is either traversal or a file the reader
+    // will not see in their extractor.
+    .replace(/^\.+/, "")
+    .trim();
+  return cleaned === "" ? "file" : cleaned.slice(0, MAX_ENTRY_NAME_LENGTH);
+}
+
+/** `name`, or `name-2` / `name-3` … when something already took it. */
+function uniqueEntryName(name: string, taken: Set<string>): string {
+  if (!taken.has(name)) {
+    taken.add(name);
+    return name;
+  }
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const extension = dot > 0 ? name.slice(dot) : "";
+  for (let n = 2; ; n += 1) {
+    const candidate = `${stem}-${n}${extension}`;
+    if (!taken.has(candidate)) {
+      taken.add(candidate);
+      return candidate;
+    }
+  }
+}
+
+export type ZipEntry = { name: string; kind: ExportFileKind | null; text: string };
+
+/**
+ * The bundle's own files, in the order the API listed them, under names that
+ * are safe and distinct.
+ *
+ * Any text the bundle carries that `files` does not cover is appended under
+ * the plan's canonical name rather than dropped: a full export whose CSS holds
+ * `.vm-in-view:not(.vm-play) { animation-play-state: paused }` with no script
+ * to add `vm-play` is a page frozen on its first keyframe. Contract-impossible
+ * if the exporter is right, and cheap to be right about anyway.
+ */
+export function bundleEntries(bundle: ExportBundle): ZipEntry[] {
+  const taken = new Set<string>();
+  const entries: ZipEntry[] = [];
+
+  for (const file of bundle.files) {
+    const text = bundleFileText(bundle, file);
+    if (text === null) continue;
+    entries.push({
+      name: uniqueEntryName(safeZipEntryName(file.name), taken),
+      kind: bundleFileKind(file),
+      text,
+    });
+  }
+
+  for (const kind of EXPORT_FILE_KINDS) {
+    const text = bundlePartText(bundle, kind);
+    if (text === null || entries.some((entry) => entry.kind === kind)) continue;
+    entries.push({ name: uniqueEntryName(CANONICAL_FILE_NAME[kind], taken), kind, text });
+  }
+
+  return entries;
+}
+
+/** What goes into the zip: `bundleEntries`, then `README.txt`. */
+export function zipEntries(
+  bundle: ExportBundle,
+  readme: string,
+): Array<readonly [string, string]> {
+  const entries = bundleEntries(bundle);
+  const taken = new Set(entries.map((entry) => entry.name));
+  return [
+    ...entries.map((entry) => [entry.name, entry.text] as const),
+    [uniqueEntryName(README_FILE_NAME, taken), readme] as const,
+  ];
+}
+
+/**
+ * The zip, built in the browser — the API returns text only (plan, owner
+ * decision 1).
+ *
+ * `await import("fflate")` rather than a static import: the DEFLATE encoder is
+ * dead weight in the editor chunk for every reader who never opens Export, and
+ * it is only ever needed behind this one button.
+ *
+ * fflate's async `zip` does the compression off the main thread, which matters
+ * because a full export is budgeted at 10 MB (DT-175) and DEFLATE-6 over that
+ * would freeze the editor — the preview iframe included — for a second or
+ * more. It gets its worker from a blob URL, which a strict `worker-src` can
+ * refuse, so a failure there falls back to the synchronous encoder rather than
+ * leaving the reader with no download at all.
+ */
+export async function buildZip(bundle: ExportBundle, readme: string): Promise<Uint8Array> {
+  const { strToU8, zip, zipSync } = await import("fflate");
+  const files: Record<string, Uint8Array> = {};
+  for (const [name, text] of zipEntries(bundle, readme)) {
+    // `strToU8` is UTF-8, which is what the CSS header's "·" needs.
+    files[name] = strToU8(text);
+  }
+  try {
+    return await new Promise<Uint8Array>((resolve, reject) => {
+      zip(files, { level: 6 }, (error, data) => (error ? reject(error) : resolve(data)));
+    });
+  } catch {
+    return zipSync(files, { level: 6 });
+  }
+}
+
+/**
+ * The project's part of the download name, limited to `[a-z0-9-]` so a title
+ * can never put a path separator, a quote or a control character into a file
+ * name. Empty after that (an emoji-only title, say) falls back to `project`.
+ */
+export function slugifyProjectName(value: string | undefined): string {
+  const slug = (value ?? "")
+    // A project identified by its URL would otherwise download as
+    // `vibe-motion-https-nimbus-app-pricing-v5.zip`; the scheme says nothing.
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, MAX_SLUG_LENGTH)
+    // Truncation can land on the separator; a trailing "-" reads like a typo.
+    .replace(/-+$/g, "");
+  return slug === "" ? "project" : slug;
+}
+
+/** `vibe-motion-<slug>-v<seq>.zip` (plan §1.1). */
+export function zipFileName({ slug, versionSeq }: { slug?: string; versionSeq: number }): string {
+  return `vibe-motion-${slugifyProjectName(slug)}-v${versionSeq}.zip`;
+}

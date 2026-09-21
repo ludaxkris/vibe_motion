@@ -120,6 +120,57 @@ describe("Segmented", () => {
     expect(screen.getByRole("radio", { name: "Infinite" })).toHaveAttribute("title", "Infinite");
   });
 
+  it("puts one segment out of action while the rest stay live (DT-173)", () => {
+    const onValueChange = vi.fn();
+    render(
+      <Segmented
+        aria-label="Export mode"
+        options={[
+          { value: "full", label: "Full page" },
+          { value: "snippet", label: "Snippet", disabled: true },
+        ]}
+        value="full"
+        onValueChange={onValueChange}
+      />,
+    );
+
+    const snippet = screen.getByRole("radio", { name: "Snippet" });
+    expect(snippet).toHaveAttribute("data-disabled");
+    fireEvent.click(snippet);
+    expect(onValueChange).not.toHaveBeenCalled();
+
+    const full = screen.getByRole("radio", { name: "Full page" });
+    expect(full).not.toHaveAttribute("data-disabled");
+    expect(screen.getByRole("radiogroup", { name: "Export mode" })).not.toHaveAttribute(
+      "data-disabled",
+    );
+  });
+
+  it("dims a disabled control once, not once per segment", () => {
+    // Base UI marks the group *and* every segment disabled, so two 40% rules
+    // would multiply to 16%; the handoff says 40% (docs/design/README.md).
+    render(
+      <Segmented
+        aria-label="Trigger"
+        disabled
+        options={[...TRIGGERS, { value: "x", label: "X", disabled: true }]}
+        value="load"
+      />,
+    );
+
+    const group = screen.getByRole("radiogroup", { name: "Trigger" });
+    expect(group).toHaveAttribute("data-disabled");
+    expect(group.className).toContain("data-disabled:opacity-40");
+
+    for (const radio of screen.getAllByRole("radio")) {
+      expect(radio).toHaveAttribute("data-disabled");
+      // Higher specificity than the segment's own rule, so within a disabled
+      // group the segment contributes no second 40%.
+      expect(radio.className).toContain("group-data-disabled/segmented:data-disabled:opacity-100");
+    }
+    expect(group.className).toContain("group/segmented");
+  });
+
   it("does not respond when disabled", () => {
     const onValueChange = vi.fn();
     render(
