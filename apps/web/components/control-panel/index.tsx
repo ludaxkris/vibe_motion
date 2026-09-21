@@ -641,7 +641,19 @@ export function ControlPanel({
 
           <TabsContent value="history">
             {history ? (
-              <HistoryTab history={history} />
+              <HistoryTab
+                history={history}
+                // DT-160. Export vN pins vN and opens the Export tab; the
+                // switch itself leaves viewing, so the canvas goes back to the
+                // current version while the panel exports the one asked for
+                // (plan §5.2). Only offered with a project behind the panel,
+                // because there is nothing to export without one.
+                onExport={
+                  projectId
+                    ? (versionId) => openTab({ tab: "export", exportVersionId: versionId })
+                    : undefined
+                }
+              />
             ) : (
               <PlaceholderTab>
                 Saved versions appear here. A version is only created when you click Save.

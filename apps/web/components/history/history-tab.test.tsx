@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse, delay, http } from "msw";
 import { useEffect, type ReactNode } from "react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Assignment, Project, Version } from "@/lib/api-client";
 import { defaultAssignmentFor, getCatalogEntry } from "@/lib/catalog";
@@ -60,7 +60,7 @@ async function projectWithHistory(): Promise<{ project: Project; versions: Versi
  */
 let history: VersionHistory | null = null;
 
-function Harness({ projectId }: { projectId: string }) {
+function Harness({ projectId, onExport }: { projectId: string; onExport?: (versionId: string) => void }) {
   const value = useVersionHistory(projectId, {
     currentVersionLabel: "v2",
     nextVersionLabel: "v3",
@@ -70,15 +70,15 @@ function Harness({ projectId }: { projectId: string }) {
   useEffect(() => {
     history = value;
   }, [value]);
-  return <HistoryTab history={value} />;
+  return <HistoryTab history={value} onExport={onExport} />;
 }
 
-function renderTab(projectId: string) {
+function renderTab(projectId: string, onExport?: (versionId: string) => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
-  return render(<Harness projectId={projectId} />, { wrapper: Wrapper });
+  return render(<Harness projectId={projectId} onExport={onExport} />, { wrapper: Wrapper });
 }
 
 beforeEach(() => {
@@ -141,9 +141,26 @@ describe("HistoryTab", () => {
     expect(useEditorStore.getState().viewingVersionId).toBe(versions[1].id);
     const row = screen.getByRole("button", { name: /Fade In on vm-1/ });
     expect(row).toHaveAttribute("aria-expanded", "true");
-    // The expanded row is where Restore lives, next to Phase 7's Export.
+    // The expanded row is where Restore lives, next to Export.
     expect(screen.getByRole("button", { name: "Restore" })).toBeEnabled();
+    // No `onExport` from this harness, so Export has nowhere to go (DT-160:
+    // the Control Panel is what supplies it).
     expect(screen.getByRole("button", { name: /^Export v1/ })).toBeDisabled();
+  });
+
+  it("hands the expanded row's Export the version it is on", async () => {
+    const { project, versions } = await projectWithHistory();
+    const onExport = vi.fn();
+    renderTab(project.id, onExport);
+    await screen.findByText("Pulse on vm-2");
+    fireEvent.click(screen.getByRole("button", { name: /Fade In on vm-1/ }));
+    await waitFor(() => expect(useEditorStore.getState().mode).toBe("viewing"));
+
+    const exportButton = screen.getByRole("button", { name: /^Export v1/ });
+    expect(exportButton).toBeEnabled();
+    fireEvent.click(exportButton);
+
+    expect(onExport).toHaveBeenCalledExactlyOnceWith(versions[1].id);
   });
 
   it("keeps the rows when a refresh fails on top of a list it already has", async () => {

@@ -1124,6 +1124,38 @@ describe("ControlPanel · Export tab (Phase 7)", () => {
     expect(await screen.findByText("v3")).toBeInTheDocument();
   });
 
+  it("opens Export on the version a History row asked for (DT-160)", async () => {
+    const { calls } = mockExport();
+    const back = vi.fn();
+    // What the History tab looks like with v3 on screen: only the expanded
+    // (= viewed) row shows an Export button at all.
+    useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });
+    renderPanel({
+      projectId: PROJECT_ID,
+      history: exportHistory({ viewing: true, viewingVersionId: V3, viewingLabel: "v3", back }),
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Export v3" }));
+
+    expect(screen.getByRole("tab", { name: "Export" })).toHaveAttribute("data-active");
+    await waitFor(() => expect(calls.map((query) => query.get("versionId"))).toEqual([V3]));
+    expect(await screen.findByText("v3")).toBeInTheDocument();
+    expect(screen.queryByText("· current")).not.toBeInTheDocument();
+    // Leaving History ends the viewing, exactly as any other tab switch does.
+    expect(back).toHaveBeenCalledOnce();
+  });
+
+  it("leaves Export vN disabled when there is no project behind the panel", () => {
+    useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });
+    renderPanel({
+      history: exportHistory({ viewing: true, viewingVersionId: V3, viewingLabel: "v3" }),
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    expect(screen.getByRole("button", { name: "Export v3" })).toBeDisabled();
+  });
+
   it("drops the pin when the reader leaves the Export tab and comes back", async () => {
     const { calls } = mockExport();
     useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });

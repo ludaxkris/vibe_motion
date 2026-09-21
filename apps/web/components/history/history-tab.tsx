@@ -35,7 +35,18 @@ function useNow(): Date {
   return now;
 }
 
-export function HistoryTab({ history }: { history: VersionHistory }) {
+export function HistoryTab({
+  history,
+  onExport,
+}: {
+  history: VersionHistory;
+  /**
+   * Open the Export tab on a version (DT-160). Supplied by the Control Panel,
+   * which owns the tabs; absent, the row's Export button stays disabled rather
+   * than looking live and doing nothing.
+   */
+  onExport?: (versionId: string) => void;
+}) {
   const now = useNow();
 
   if (history.pending) {
@@ -101,7 +112,7 @@ export function HistoryTab({ history }: { history: VersionHistory }) {
         // bridge plumbing for one caption is not worth its weight here.
         onView={history.view}
         onRestore={history.restore}
-        // `onExport` stays absent, which is what disables Export: Phase 7.
+        onExport={onExport}
         restoring={history.restoring}
       />
     </PanelCard>
