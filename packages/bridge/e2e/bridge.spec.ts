@@ -753,6 +753,62 @@ test.describe("elements:query", () => {
     expect(after.rect.y).toBe(before.rect.y - 1500);
   });
 
+  test("measures a held or running element where it RESTS, itself and its children (DT-150)", async ({
+    page,
+  }) => {
+    // The size floor, `visible`, and the shell's geometric nesting test all read these boxes, so a
+    // box that depends on which frame of an animation the query happened to land in makes all
+    // three non-deterministic. An `in-view` element below the fold is *held* on its first
+    // keyframe for as long as it is off screen, which for a shrinking or flipping entrance is a
+    // box that is smaller than the element — or, for `rotateX(90deg)`, has no height at all, so
+    // the element vanishes from the list and its children stop being "inside a block".
+    const h = await mountBridge(
+      page,
+      `<div class="spacer"></div>
+       <figure class="box" data-vm-id="vm-fig" style="width:400px;height:200px;margin:0">
+         <img data-vm-id="vm-img" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+              style="width:120px;height:120px" alt="">
+       </figure>`,
+    );
+
+    const flip = {
+      ...assignment("vm-fig", {
+        trigger: "in-view",
+        keyframesName: "vm-flip-v1-0-0",
+        keyframesCss: "@keyframes vm-flip-v1-0-0 { from { transform: rotateX(90deg) } to { transform: none } }",
+        style: { "animation-duration": "5s", "animation-fill-mode": "both" },
+      }),
+    };
+    expect((await h.send("state:load", { assignments: [flip] })).ok).toBe(true);
+
+    // Held on its first keyframe: `rotateX(90deg)` is a zero-height box, and the child goes with
+    // it because a transform applies to the whole subtree.
+    await expect
+      .poll(async () => Math.round((await h.rect('[data-vm-id="vm-fig"]')).height))
+      .toBe(0);
+    expect(Math.round((await h.rect('[data-vm-id="vm-img"]')).height)).toBe(0);
+
+    await h.send("elements:query", { filter: { minWidth: 40, minHeight: 40 } });
+    const list = (await h.messages("elements:list")).at(-1)?.payload as unknown as ElementsList;
+    const listed = new Map(list.elements.map((e) => [e.vmId, e]));
+
+    // Both are reported at the size they rest at, so both clear the floor and the child is still
+    // geometrically inside its container.
+    const figure = listed.get("vm-fig");
+    expect(figure, "the held figure is listed").toBeDefined();
+    expect(Math.round(figure!.pageRect.height)).toBe(200);
+    expect(Math.round(figure!.pageRect.width)).toBe(400);
+    expect(figure!.visible).toBe(true);
+    const image = listed.get("vm-img");
+    expect(image, "its child is listed").toBeDefined();
+    expect(Math.round(image!.pageRect.height)).toBe(120);
+    // Containment, which is how the shell decides a child animates as part of its block.
+    expect(image!.pageRect.y).toBeGreaterThanOrEqual(figure!.pageRect.y);
+    expect(image!.pageRect.y + image!.pageRect.height).toBeLessThanOrEqual(
+      figure!.pageRect.y + figure!.pageRect.height,
+    );
+  });
+
   test("answers the Phase 5 query on a 2,000-element page inside the 50 ms budget (p95), with no writes", async ({ page }) => {
     // What a clone looks like: every element under <body> tagged, targets buried in wrappers.
     // The copy sits inside <article> wrappers, one around the whole page and one per section:
