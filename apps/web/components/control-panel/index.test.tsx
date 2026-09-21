@@ -1156,6 +1156,45 @@ describe("ControlPanel · Export tab (Phase 7)", () => {
     expect(screen.getByRole("button", { name: "Export v3" })).toBeDisabled();
   });
 
+  it("does not carry a pin from one project into the next", async () => {
+    const { calls } = mockExport();
+    const OTHER_PROJECT = "44444444-4444-4444-8444-444444444444";
+    const OTHER_V9 = "99999999-9999-4999-8999-999999999999";
+    useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    const { rerender } = render(
+      <ControlPanel
+        projectId={PROJECT_ID}
+        history={exportHistory({ viewing: true, viewingVersionId: V3, viewingLabel: "v3" })}
+      />,
+      { wrapper: Wrapper },
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+
+    // The shell `reset()`s the store on a project change rather than
+    // remounting this component, so v3 of project A would otherwise still be
+    // pinned — and asked for from project B, which has never heard of it.
+    useEditorStore.setState({ ...initialEditorState, currentVersionId: OTHER_V9 });
+    rerender(
+      <ControlPanel
+        projectId={OTHER_PROJECT}
+        history={exportHistory({
+          versions: [version(OTHER_V9, 9)],
+          currentVersionId: OTHER_V9,
+          currentLabel: "v9",
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
+    expect(calls.map((query) => query.get("versionId"))).toEqual([V3]);
+  });
+
   it("drops the pin when the reader leaves the Export tab and comes back", async () => {
     const { calls } = mockExport();
     useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });
@@ -1230,7 +1269,13 @@ describe("ControlPanel · save first, then Export (DT-099)", () => {
    * version, so the list, the store and the panel move together — which is how
    * "Save first" can land on a version that did not exist when it was clicked.
    */
-  function Harness({ save }: { save: () => Promise<void> }) {
+  function Harness({
+    save,
+    history = {},
+  }: {
+    save: () => Promise<void>;
+    history?: Partial<VersionHistory>;
+  }) {
     // `useVersionHistory` reads the store's id first and falls back to the
     // list's, so a save moves the current version in one store write rather
     // than in two renders — which is what keeps the released guard from
@@ -1261,18 +1306,19 @@ describe("ControlPanel · save first, then Export (DT-099)", () => {
           view: async () => undefined,
           back: () => undefined,
           restore: async () => undefined,
+          ...history,
         }}
         onSave={onSave}
       />
     );
   }
 
-  function renderShell(save: () => Promise<void>) {
+  function renderShell(save: () => Promise<void>, history?: Partial<VersionHistory>) {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     function Wrapper({ children }: { children: ReactNode }) {
       return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
     }
-    return render(<Harness save={save} />, { wrapper: Wrapper });
+    return render(<Harness save={save} history={history} />, { wrapper: Wrapper });
   }
 
   beforeEach(() => {
@@ -1324,6 +1370,28 @@ describe("ControlPanel · save first, then Export (DT-099)", () => {
     expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
     expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
     expect(calls).toEqual([]);
+  });
+
+  it("releases the guard through the same exit as an ordinary switch, viewing included", async () => {
+    // DT-154's shape: the reader is on History with a clean draft when
+    // something dirties it (an agent write landing), so the guard can stand
+    // over a History tab that is showing a past version. Whichever way the
+    // guard is released, leaving History has to return the canvas to the
+    // current version — that is `history.back()`, and it must not be a
+    // property of one exit out of three.
+    const back = vi.fn();
+    const { calls } = mockExport();
+    renderShell(() => Promise.resolve(), { back, viewing: true, viewingVersionId: V5 });
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    expect(back).not.toHaveBeenCalled();
+    act(() => makeDirty());
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(back).toHaveBeenCalledOnce();
+    await waitFor(() => expect(calls).toHaveLength(1));
   });
 
   it("leaves the reader on their draft when the save is cancelled", async () => {

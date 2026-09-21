@@ -380,6 +380,16 @@ type TabRequest = {
    * and dropped again on the way out of the tab.
    */
   exportVersionId: string | null;
+  /**
+   * The project this request was made for.
+   *
+   * The shell `reset()`s the store on a project change rather than remounting
+   * the panel, so without this a pin — or a request parked behind the guard —
+   * outlives the project it belongs to, and the Export tab asks project B for
+   * a version of project A's. Compared rather than cleared in an effect, so
+   * there is no render in which the stale request is the one on screen.
+   */
+  projectId?: string;
 };
 
 const ANIMATE: TabRequest = { tab: TABS[0].value, exportVersionId: null };
@@ -458,14 +468,19 @@ export function ControlPanel({
   // "unsaved → History/Export → guard").
   const [committedTab, setCommittedTab] = useState<TabRequest>(ANIMATE);
   const [pendingTab, setPendingTab] = useState<TabRequest | null>(null);
+  /** A request made for a project the reader has left says nothing about this one. */
+  const ofThisProject = (request: TabRequest | null): TabRequest | null =>
+    request !== null && request.projectId === projectId ? request : null;
+  const committed = ofThisProject(committedTab) ?? ANIMATE;
+  const parked = ofThisProject(pendingTab);
   // A guard with nothing left to lose is no longer a question. The draft can
   // go clean without this component's promise resolving — the 409's "Discard
   // my changes" loads their version, so `requestSave()` rightly rejects — and
   // the guard used to stay open over a clean draft, claiming unsaved changes,
   // with a Save that could do nothing at all. Derived rather than reconciled
   // in an effect, so there is no render in which that is true.
-  const guardHeld = unsaved && pendingTab !== null;
-  const open = guardHeld ? committedTab : (pendingTab ?? committedTab);
+  const guardHeld = unsaved && parked !== null;
+  const open = guardHeld ? committed : (parked ?? committed);
   const tab = open.tab;
 
   // The tab switch, which is also how Export is guarded (DT-099): the Export
@@ -497,6 +512,26 @@ export function ControlPanel({
   // Discard's success path minus the revert: the draft has just *become* the
   // saved version, so only the tab still has to move — and only once the
   // version actually exists, which is what the resolved promise says.
+  /**
+   * Make a request the tab that is open. The one way in: every release of the
+   * guard goes through here too, so what leaving a tab *means* is a property
+   * of the switch rather than of one of its three callers.
+   */
+  const commit = (next: TabRequest) => {
+    // Viewing is a read-only detour that belongs to the History tab, so
+    // leaving the tab returns to the current version — the editor is never in
+    // viewing mode with History closed (docs/user_flow.md §4). Called even
+    // when nothing is on screen yet: `back()` is also what cancels a version
+    // still loading. The version being left is already pinned in `next` when
+    // the reader asked for its export.
+    if (open.tab === "history") history?.back();
+    // Any tab the user lands on is the whole answer: a parked request left
+    // over from a guard that went away with the unsaved work has nothing left
+    // to say.
+    setPendingTab(null);
+    setCommittedTab(next);
+  };
+
   const handleGuardSave = onSave
     ? () =>
         onSave().then(
@@ -505,8 +540,8 @@ export function ControlPanel({
             // null (the only way to reach the guard is with a draft, which
             // means not viewing), the Export tab opens on the version this
             // very save has just created.
-            if (pendingTab !== null) setCommittedTab(pendingTab);
-            setPendingTab(null);
+            if (parked !== null) commit(parked);
+            else setPendingTab(null);
           },
           // Cancelled or failed: the guard stays open with its question intact.
           () => {},
@@ -521,23 +556,13 @@ export function ControlPanel({
    * version on screen at the moment of the switch (plan §5.2).
    */
   const openTab = (next: TabRequest) => {
-    if (next.tab === open.tab && next.exportVersionId === open.exportVersionId) return;
+    const request = { ...next, projectId };
+    if (request.tab === open.tab && request.exportVersionId === open.exportVersionId) return;
     if (unsaved) {
-      setPendingTab(next);
+      setPendingTab(request);
       return;
     }
-    // Viewing is a read-only detour that belongs to the History tab, so
-    // leaving the tab returns to the current version — the editor is never in
-    // viewing mode with History closed (docs/user_flow.md §4). Called even
-    // when nothing is on screen yet: `back()` is also what cancels a version
-    // still loading. The version being left is already pinned in `next` when
-    // the reader asked for its export.
-    if (open.tab === "history") history?.back();
-    // Any tab the user picks with a clean draft is the whole answer:
-    // a `pendingTab` left over from a guard that went away with the
-    // unsaved work has nothing left to say.
-    setPendingTab(null);
-    setCommittedTab(next);
+    commit(request);
   };
 
   return (
@@ -705,8 +730,8 @@ export function ControlPanel({
         currentVersionLabel={currentVersionLabel}
         onDiscard={() => {
           revertDraft();
-          if (pendingTab !== null) setCommittedTab(pendingTab);
-          setPendingTab(null);
+          if (parked !== null) commit(parked);
+          else setPendingTab(null);
         }}
         onKeepEditing={() => setPendingTab(null)}
         onSave={handleGuardSave}
