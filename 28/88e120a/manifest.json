@@ -1,0 +1,15 @@
+{
+  "branch": "feat/7-export-wiring",
+  "sha": "88e120a90f1ee3af46b024dd634ac0825975a82a",
+  "viewport": "1440x900 (+ 1280x640 for scrolling test)",
+  "names": [
+    "export-full-page",
+    "export-scrolling",
+    "export-snippet-selected",
+    "export-from-history",
+    "export-unsaved-dialog",
+    "animate-tab",
+    "history-tab"
+  ],
+  "diffs": {}
+}
