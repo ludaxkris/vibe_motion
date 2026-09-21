@@ -267,6 +267,40 @@ test("inside a cross-origin iframe, where rootBounds is null, it still plays", a
   await expect.poll(async () => (await harness.animation("#target"))?.state).toBe("running");
 });
 
+test("a collapsed root does not count as 'seen': the element waits for a viewport", async ({
+  page,
+}) => {
+  // The reachability escape hatch asks "could this element ever reach the threshold in a root
+  // this size?". With a root of height 0 — an exported page inside a collapsed iframe, a closed
+  // accordion, a transient zero-height layout — the honest answer is "there is no viewport yet".
+  // `min(1, 0 / h)` is 0, which is under the threshold, so an element the browser reports as
+  // edge-adjacent would fire unseen; the export unobserves what it plays, so it would then never
+  // play for the reader at all. `reachableFraction` guards `rootSize` for that reason, and
+  // `test/export-script.test.ts` is where that arithmetic is pinned.
+  //
+  // What this spec holds is the behaviour: in a root with no size nothing is released, and the
+  // element still plays once a viewport appears. (Chromium reports no intersection at all in a
+  // collapsed frame — `isIntersecting: false`, `rootBounds: null`, `innerHeight: 0` — so the
+  // guard is defence against the browsers that do report the edge-adjacent case, and this spec
+  // is the characterisation that would catch Chromium starting to.)
+  const harness = await mountExport(page, {
+    body: `<div id="target" class="box vm-a1 vm-in-view">target</div><div class="spacer"></div>`,
+    css: CSS,
+    embed: true,
+    embedHeight: 0,
+  });
+
+  await page.waitForTimeout(250);
+  expect(await harness.classes("#target")).not.toContain("vm-play");
+  expect(await harness.animation("#target")).toMatchObject({ state: "paused", time: 0 });
+
+  // Given a viewport, it plays like any other in-view element.
+  await harness.resizeEmbed(600);
+
+  await expect.poll(async () => await harness.classes("#target")).toContain("vm-play");
+  expect(await harness.starts(KEYFRAMES)).toBe(1);
+});
+
 test("with no IntersectionObserver at all, everything plays", async ({ page }) => {
   await page.addInitScript(() => {
     // @ts-expect-error removing a browser global on purpose

@@ -68,13 +68,20 @@
   /**
    * The largest fraction of `size` that can ever be inside a root of `rootSize`, per axis.
    *
+   * A root with no size is "there is no viewport yet", not "nothing can ever be seen here": a
+   * collapsed iframe, a closed accordion, a transient zero-height layout, or a `window.innerHeight`
+   * of 0 standing in for a null `rootBounds`. Answering 0 there would put every element under the
+   * threshold, and an element the browser reports as edge-adjacent would fire unseen — once, and
+   * then never again for the reader, because the export unobserves what it has played. So a
+   * sizeless root reports 1 (fully reachable) and the element waits for a real viewport.
+   *
    * @param {number} size
    * @param {number} rootSize
    * @returns {number}
    */
   function reachableFraction(size, rootSize) {
     // A zero box never intersects, so it never gets here; the guard is against dividing by it.
-    if (!(size > 0)) return 1;
+    if (!(size > 0) || !(rootSize > 0)) return 1;
     return Math.min(1, rootSize / size);
   }
 

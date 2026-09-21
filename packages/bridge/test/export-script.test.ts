@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { IN_VIEW_THRESHOLD } from "../src/protocol";
+import { callable } from "./source";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = path.join(here, "..", "src", "vibe-motion-export.js");
@@ -61,6 +62,23 @@ describe("vibe-motion-export.js", () => {
     // real, including a mutant check that the callback's own guard is load-bearing.
     const releases = SOURCE.match(/playEverything\(\);/g) ?? [];
     expect(releases.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("treats a root with no size as 'no viewport yet', not as 'unreachable'", () => {
+    // The escape hatch asks "could this element ever reach the threshold in a root this size?".
+    // With a root of zero width or height — an exported page in a collapsed iframe, a closed
+    // accordion, a transient zero-height layout, or `window.innerHeight === 0` standing in for a
+    // null `rootBounds` — `min(1, 0 / size)` is 0, which is under the threshold, so an element
+    // the browser reports as edge-adjacent would fire unseen. The export plays once and
+    // unobserves, so it would then never play for the reader at all.
+    const reachableFraction = callable(SOURCE, "reachableFraction", IN_VIEW_THRESHOLD);
+
+    expect(reachableFraction(60, 0)).toBe(1);
+    expect(reachableFraction(0, 400)).toBe(1);
+    // Unchanged for every root that has a size.
+    expect(reachableFraction(200, 400)).toBe(1);
+    expect(reachableFraction(2000, 400)).toBe(0.2);
+    expect(reachableFraction(4000, 640)).toBe(0.16);
   });
 
   it("decides reachability by area, with a viewport fallback on both axes", () => {

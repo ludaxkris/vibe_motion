@@ -241,6 +241,8 @@ export type ExportHarness = {
   /** How many `animationstart` events fired for this keyframes name. */
   starts(name: string): Promise<number>;
   classes(selector: string): Promise<string>;
+  /** Resize the embedding iframe (`embed` only), so the observer's root changes size. */
+  resizeEmbed(height: number): Promise<void>;
 };
 
 /** The stylesheet an `in-view` export produces, for the classes given. */
@@ -284,10 +286,13 @@ export function exportedPage(body: string, css: string): string {
  *
  * @param embed when true the page is opened inside an iframe on a third origin, which is the one
  *   case where an implicit-root `IntersectionObserver` reports `rootBounds: null`.
+ * @param embedHeight the embedding iframe's height in px (default 400). `0` is the collapsed
+ *   root a host can produce with a closed accordion or a transient layout, where every ratio is
+ *   0 and nothing is really visible.
  */
 export async function mountExport(
   page: Page,
-  options: { body: string; css: string; embed?: boolean },
+  options: { body: string; css: string; embed?: boolean; embedHeight?: number },
 ): Promise<ExportHarness> {
   await page.route(`${EXPORT_ORIGIN}/index.html`, (route) =>
     route.fulfill({ contentType: "text/html", body: exportedPage(options.body, options.css) }),
@@ -298,12 +303,14 @@ export async function mountExport(
   await page.route(`${EXPORT_ORIGIN}/vibe-motion.js`, (route) =>
     route.fulfill({ contentType: "text/javascript", body: EXPORT_SCRIPT_SOURCE }),
   );
+  const embedHeight = options.embedHeight ?? 400;
   await page.route(`${EMBEDDER_ORIGIN}/`, (route) =>
     route.fulfill({
       contentType: "text/html",
       body:
         `<!doctype html><html><body style="margin:0">` +
-        `<iframe id="f" src="${EXPORT_ORIGIN}/index.html" style="width:640px;height:400px;border:0"></iframe>` +
+        `<iframe id="f" src="${EXPORT_ORIGIN}/index.html" ` +
+        `style="width:640px;height:${embedHeight}px;border:0"></iframe>` +
         `</body></html>`,
     }),
   );
@@ -349,6 +356,13 @@ export async function mountExport(
       }, selector),
     starts: (name) => frame.evaluate((n) => window.__starts[n] ?? 0, name),
     classes: (selector) => frame.evaluate((sel) => document.querySelector(sel)?.className ?? "", selector),
+    /** Resize the embedding iframe — only meaningful with `embed`. */
+    resizeEmbed: (height) =>
+      page.evaluate((px) => {
+        const embedded = document.getElementById("f");
+        if (!embedded) throw new Error("no embedding iframe on this page");
+        embedded.style.height = `${px}px`;
+      }, height),
   };
 }
 
