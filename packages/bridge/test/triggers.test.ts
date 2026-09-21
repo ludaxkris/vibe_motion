@@ -379,20 +379,44 @@ describe("in-view reachability", () => {
     expect(playState(h, "vm-heading")).toBe("running");
   });
 
-  it("does not treat a zero-size element, or a zero-size root, as unreachable", () => {
+  it("does not treat a zero-size element as unreachable", () => {
     const h = loadBridge(hostPage);
     applyInView(h, "vm-heading", 1);
-    applyInView(h, "vm-para", 2);
     const zero = { width: 0, height: 0 };
 
     // A zero box never really intersects, but an element in a collapsed or hidden container can
     // still be reported. `rootSize / 0` is Infinity and `0 / 0` is NaN; neither may come out as
     // "it can never reach the threshold, so play it".
     h.intersect("vm-heading", { isIntersecting: true, intersectionRatio: 0, boundingClientRect: zero });
-    h.intersect("vm-para", { isIntersecting: true, intersectionRatio: 0, boundingClientRect: zero, rootBounds: zero });
+
+    expect(playState(h, "vm-heading")).toBe("paused");
+  });
+
+  it("does not treat a zero-size root as unreachable: a collapsed frame holds, it does not play", () => {
+    const h = loadBridge(hostPage);
+    applyInView(h, "vm-heading", 1);
+    applyInView(h, "vm-para", 2);
+    applyInView(h, "vm-button", 3);
+    // A real element, not a degenerate one: 200x60 can reach ratio 1 the moment there is a root
+    // to show it in.
+    const box = { width: 200, height: 60 };
+
+    // A root with no area shows nothing, so nothing is unreachable in it — the opposite of what
+    // `min(1, 0/60) = 0` says. Chromium reports anything touching y=0 as `isIntersecting: true,
+    // ratio: 0` against a collapsed frame, so without the guard the element arms and plays to
+    // `finished` while the designer cannot see it, and is already armed when the frame comes
+    // back: it never plays for them at all.
+    h.intersect("vm-heading", { isIntersecting: true, intersectionRatio: 0, boundingClientRect: box, rootBounds: { width: 800, height: 0 } });
+    h.intersect("vm-para", { isIntersecting: true, intersectionRatio: 0, boundingClientRect: box, rootBounds: { width: 0, height: 0 } });
+
+    // And the same through the path the bridge really takes: `rootBounds` null, the frame's own
+    // `innerHeight` collapsed to nothing.
+    Object.defineProperty(h.window, "innerHeight", { value: 0, configurable: true });
+    h.intersect("vm-button", { isIntersecting: true, intersectionRatio: 0, boundingClientRect: box, rootBounds: null });
 
     expect(playState(h, "vm-heading")).toBe("paused");
     expect(playState(h, "vm-para")).toBe("paused");
+    expect(playState(h, "vm-button")).toBe("paused");
   });
 });
 

@@ -699,8 +699,13 @@
    * @returns {number}
    */
   function reachableFraction(size, rootSize) {
-    // A zero box never intersects, so it never gets here; the guard is against dividing by it.
-    if (!(size > 0)) return 1;
+    // A zero box never really intersects, so it never gets here; that half of the guard is against
+    // dividing by it. A zero *root* does get here: a frame collapsed to no height still reports
+    // anything touching its edge as intersecting at ratio 0, and `min(1, 0/60)` would read as "it
+    // can never reach the threshold, so play it" — playing the element where nobody can see it and
+    // leaving it armed, so it never plays when the frame comes back. Nothing is unreachable in a
+    // root that shows nothing: `1` holds it until there is something to be in view of.
+    if (!(size > 0) || !(rootSize > 0)) return 1;
     return Math.min(1, rootSize / size);
   }
 

@@ -167,6 +167,41 @@ test.describe("in-view reachability", () => {
     await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
   });
 
+  test("holds, rather than plays unseen, while the frame is collapsed to no height", async ({ page }) => {
+    // A root with no area shows nothing, so nothing in it is unreachable — but `min(1, 0/60)` is
+    // 0, which reads as "it can never reach the threshold, play it". Chromium reports anything
+    // touching y=0 as `isIntersecting: true, ratio: 0` against a collapsed frame, so without a
+    // guard on the *root* size the element plays to `finished` where nobody can see it, and is
+    // already armed when the pane comes back: it never plays for the designer at all. The editor
+    // frames the clone at `size-full` inside a draggable split pane, so this is a pane dragged to
+    // nothing, or a transient zero-height layout at `state:load`.
+    const h = await mountBridge(page, `<div data-vm-id="vm-hero" style="width:200px;height:60px;background:#ddd">hero</div>`);
+    const collapse = async (height: number) => {
+      await page.evaluate((px) => {
+        document.getElementById("f")!.style.height = `${px}px`;
+      }, height);
+      await expect.poll(() => h.frame.evaluate(() => window.innerHeight)).toBe(height);
+    };
+
+    await collapse(0);
+    await h.send("apply", assignment("vm-hero", inViewOver));
+    // Long enough for a wrong fire to have run the whole 200 ms animation out.
+    await page.waitForTimeout(400);
+
+    // Held. The inline group is the bridge's own writing and owes nothing to whether a zero-area
+    // frame is rendered at all, which is also why `starts` is bounded rather than pinned here.
+    expect(await h.inline("vm-hero", "animation-play-state")).toBe("paused");
+    expect(await h.animations("vm-hero")).toMatchObject([{ time: 0, state: "paused" }]);
+    expect(await h.starts("vm-iv-v1-0-0")).toBeLessThanOrEqual(1);
+
+    await collapse(600);
+
+    // And now that there is something to see it in, it plays.
+    await expect.poll(() => h.computed("vm-hero", "opacity")).toBe("1");
+    expect(await h.inline("vm-hero", "animation-play-state")).toBe("running");
+    expect((await h.animations("vm-hero"))[0]).toMatchObject({ state: "finished" });
+  });
+
   test("re-arms an unreachable element on every entry, the way the preview does for any other", async ({
     page,
   }) => {

@@ -44,9 +44,15 @@ The element is **armed exactly while that holds**, so it is held on its first ke
   there is, so `window.innerWidth` / `innerHeight` is the normal path here, not the fallback of last
   resort it is in an export. Reading `.width` off null would throw inside the callback and leave
   every in-view element held at `opacity: 0`.
+- A **zero-size root** is not an unreachable one, and both sizes are guarded: a frame collapsed to
+  no height reports anything touching its edge as intersecting at ratio 0, and `min(1, 0/h)` would
+  read as "it can never reach `T`" and play the element unseen — then leave it armed, so it never
+  plays when the pane comes back. `1` holds it until there is something to be in view of.
 - `src/vibe-motion-export.js` fires on the same condition; the copies are separate because neither
   file can import the other, and spec §6a is the contract between them. What the preview does *not*
   copy is playing once: it re-arms on every entry so the designer can scroll back and watch again.
+  The zero-root guard lands in that copy with the Phase 7 Track C PR, which owns the file and its
+  exporter golden; until it does, the two agree on everything except that one `||`.
 - Still uncovered on both sides, and logged as DT-184: a clip container narrower than the root
   bounds the intersection without appearing in `rootBounds`.
 
