@@ -665,8 +665,18 @@ export function ControlPanel({
           {/* Base UI renders a `TabsContent` only while its tab is open
               (`keepMounted: false`), which is what keeps the export request
               from being issued behind the Animate tab — and keeps the
-              section's store reads off the slider's path (DT-126). */}
-          <TabsContent value="export" className="flex min-h-0 flex-col">
+              section's store reads off the slider's path (DT-126).
+              
+              `h-full`, unlike the two tabs above, and it is load-bearing: the
+              scroll container around these panels is a block box, so a
+              content-driven `flex-1` chain resolves to the *length of the
+              exported file* — 14,000px for a page of 800 elements — leaving
+              the code block unscrollable and Copy all / Download .zip that
+              far below the fold. Animate and History are lists that should
+              scroll the column; the Export panel is a fixed frame whose code
+              block scrolls inside itself
+              (`apps/e2e/web/mocked/export.spec.ts` measures all three). */}
+          <TabsContent value="export" className="flex h-full min-h-0 flex-col">
             {projectId && history ? (
               <ExportSection
                 projectId={projectId}

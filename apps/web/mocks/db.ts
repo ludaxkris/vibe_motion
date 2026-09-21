@@ -402,6 +402,46 @@ export type ExportResult =
   | { status: 400; body: ApiError }
   | { status: 404; body: ApiError };
 
+/**
+ * How many filler elements a cloned URL asked the mock to stand in for:
+ * `?vmExtraElements=N`, the same dev-only knob the mock page route has
+ * (`app/mock-api/projects/[projectId]/page/route.ts`), capped the same way.
+ *
+ * A real clone is whatever size the page was, and both the bridge's
+ * performance budget and the Export tab's layout have to hold for a page of
+ * thousands of lines — not just for the twelve-element fixture. Keeping the
+ * knob on the *URL* rather than on the export request means the exported
+ * document matches the page the editor is showing, as it would in production.
+ */
+function extraElementCount(sourceUrl: string): number {
+  let requested: number;
+  try {
+    requested = Number(new URL(sourceUrl).searchParams.get("vmExtraElements") ?? 0);
+  } catch {
+    return 0;
+  }
+  if (!Number.isFinite(requested)) return 0;
+  return Math.min(Math.max(Math.trunc(requested), 0), MAX_EXTRA_ELEMENTS);
+}
+
+/** The fixture, plus whatever filler {@link extraElementCount} asked for, before `</body>`. */
+function exportedFixtureHtml(sourceUrl: string): string {
+  const count = extraElementCount(sourceUrl);
+  if (count === 0) return pageFixtureHtml;
+
+  let filler = "";
+  for (let index = 1; index <= count; index += 1) {
+    filler += `    <p data-vm-id="vm-extra-${index}">Filler element ${index}.</p>\n`;
+  }
+  const bodyEnd = pageFixtureHtml.lastIndexOf("</body");
+  return bodyEnd < 0
+    ? pageFixtureHtml + filler
+    : pageFixtureHtml.slice(0, bodyEnd) + filler + pageFixtureHtml.slice(bodyEnd);
+}
+
+/** Matches the mock page route's cap: a stray value must not build a megabyte of markup. */
+const MAX_EXTRA_ELEMENTS = 1000;
+
 export function exportProject(projectId: string, options: ExportOptions): ExportResult {
   const record = projects.get(projectId);
   if (!record) return { status: 404, body: err("not_found", `No project ${projectId}`) };
@@ -490,7 +530,7 @@ export function exportProject(projectId: string, options: ExportOptions): Export
     body: {
       versionId,
       mode,
-      html: mode === "full" ? pageFixtureHtml : null,
+      html: mode === "full" ? exportedFixtureHtml(record.project.sourceUrl) : null,
       css,
       js,
       files,

@@ -531,6 +531,24 @@ describe("mock API: export", () => {
     expect(exported.error?.code).toBe("missing_vm_id");
   });
 
+  it("exports as many elements as the cloned URL asked the mock to stand in for", async () => {
+    // The same dev-only knob the mock page route has
+    // (`app/mock-api/projects/[projectId]/page/route.ts`): a real clone is
+    // whatever size the page was, and the Export tab has to be usable for a
+    // page of thousands of lines, not just for the twelve-element fixture.
+    const created = await apiClient.POST("/projects", {
+      body: { url: "https://example.com/?vmExtraElements=50" },
+    });
+
+    const exported = await exportOf(created.data!.id);
+
+    expect(exported.response.status).toBe(200);
+    expect(exported.data?.html).toContain('data-vm-id="vm-extra-50"');
+    expect(exported.data?.html?.split("\n").length).toBeGreaterThan(50);
+    // The fixture is still all there; the filler is an addition to it.
+    expect(exported.data?.html).toContain('data-vm-id="vm-heading"');
+  });
+
   it("404s for a version that is not this project's", async () => {
     const { projectId } = await projectWithAnimation();
 

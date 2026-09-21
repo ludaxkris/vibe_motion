@@ -24,9 +24,9 @@ function panel(page: Page) {
   return page.getByTestId("panel-export");
 }
 
-async function openEditor(page: Page): Promise<void> {
+async function openEditor(page: Page, url = "https://example.com"): Promise<void> {
   await page.goto("/");
-  await page.getByLabel("Page URL").fill("https://example.com");
+  await page.getByLabel("Page URL").fill(url);
   await page.getByRole("button", { name: "Clone" }).click();
   await page.waitForURL(/\/p\/.+/);
   // A click in the frame means nothing until the bridge has handshaked.
@@ -145,6 +145,58 @@ test("Keep editing leaves the draft and the tab exactly where they were", async 
   await expect(page.getByTestId("panel-tuning")).toBeVisible();
   await expect(page.getByTestId("unsaved-indicator")).toBeVisible();
 });
+
+/**
+ * A real clone is a whole web page, so `index.html` in the Export tab is
+ * thousands of lines — the mock stands in for one with `?vmExtraElements=N`,
+ * the same knob the preview route has.
+ */
+const BIG_PAGE = "https://example.com/?vmExtraElements=800";
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  // A short window is where an unbounded panel hides the buttons first.
+  { width: 1280, height: 640 },
+]) {
+  test(`the panel fits the column and the code scrolls inside it (${viewport.width}x${viewport.height})`, async ({
+    page,
+  }) => {
+    // jsdom cannot measure layout, so this is the only place the Export
+    // panel's height chain is actually checked. Without a bounded height the
+    // panel grows to the length of the file — tens of thousands of pixels —
+    // the `<pre>` never scrolls, and Copy all / Download .zip sit far below
+    // the fold on a tab whose whole point is downloading.
+    await page.setViewportSize(viewport);
+    await openEditor(page, BIG_PAGE);
+    await animate(page, HEADING);
+    await saveVersion(page, 1);
+    await page.getByRole("tab", { name: "Export" }).click();
+    await expect(panel(page)).toBeVisible();
+
+    // The long file, not the short stylesheet the tab opens on.
+    await panel(page).getByRole("tab", { name: "index.html" }).click();
+    const code = page.getByRole("region", { name: "index.html" });
+    await expect(code).toBeVisible();
+
+    const box = await panel(page).boundingBox();
+    expect(box, "the export panel has a box").not.toBeNull();
+    expect(box!.height).toBeLessThanOrEqual(viewport.height);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
+
+    // The code block is what scrolls, and it really does have more to show.
+    const overflow = await code.evaluate((element) => ({
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+    }));
+    expect(overflow.clientHeight).toBeGreaterThan(0);
+    expect(overflow.scrollHeight).toBeGreaterThan(overflow.clientHeight);
+
+    // …so the actions are reachable without scrolling the column at all.
+    await expect(panel(page).getByRole("button", { name: "Download .zip" })).toBeInViewport();
+    await expect(panel(page).getByRole("button", { name: "Copy all" })).toBeInViewport();
+    await expect(panel(page).getByTestId("export-stats")).toBeInViewport();
+  });
+}
 
 test("Export vN in the History tab opens that version (DT-160)", async ({ page }) => {
   await openEditor(page);

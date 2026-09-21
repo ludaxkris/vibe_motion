@@ -66,7 +66,20 @@ function EditorFrame({
   actions?: ReactNode;
 }) {
   return (
-    <>
+    // One screen, exactly the viewport tall — the editor is an app shell, not a
+    // document: the preview sheet and the Control Panel scroll inside
+    // themselves, and the page behind them never does.
+    //
+    // This is what makes every `flex-1`/`min-h-0`/`h-full` below it resolve
+    // against a real number. `app/layout.tsx`'s body is `min-h-full` (so short
+    // *documents* fill the window), which leaves it content-driven — and with
+    // that, a tall panel simply grew the whole page: an Export tab showing a
+    // cloned page's `index.html` reached 14,000px, its code block never
+    // scrolled, and Copy all / Download .zip sat that far below the fold
+    // (`apps/e2e/web/mocked/export.spec.ts` measures it). `dvh`, not `%`, so it
+    // does not depend on an ancestor being definite, and it follows a mobile
+    // browser's collapsing toolbar.
+    <div className="flex h-dvh min-h-0 flex-col">
       <TopBar title={title} chip={chip} actions={actions}>
         {status}
       </TopBar>
@@ -77,7 +90,7 @@ function EditorFrame({
         <h1 className="sr-only">{heading ?? "Editor"}</h1>
         {children}
       </main>
-    </>
+    </div>
   );
 }
 
