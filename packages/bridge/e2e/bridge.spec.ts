@@ -172,7 +172,7 @@ test.describe("in-view reachability", () => {
 
   /**
    * Collapse the frame to `width x height` and put it back, asserting the frame's own root box
-   * each way — emptiness, not exact pixels, because a page tall enough to scroll takes a
+   * each way, read the way the bridge reads it in either compat mode — emptiness, not exact pixels, because a page tall enough to scroll takes a
    * scrollbar gutter out of `clientWidth` and that is precisely the difference between
    * `clientWidth` and `innerWidth` the bridge now measures with.
    */
@@ -186,8 +186,13 @@ test.describe("in-view reachability", () => {
       await expect
         .poll(() =>
           h.frame.evaluate(() => {
+            // The bridge's own reading (`fallbackRootBox()`): in a quirks-mode clone the root's
+            // `clientHeight` is the document box, not the frame's.
+            const standards = document.compatMode === "CSS1Compat";
             const root = document.documentElement;
-            return root.clientWidth > 0 && root.clientHeight > 0;
+            const width = standards ? root.clientWidth : window.innerWidth;
+            const height = standards ? root.clientHeight : window.innerHeight;
+            return width > 0 && height > 0;
           }),
         )
         .toBe(!empty);
