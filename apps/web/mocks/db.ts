@@ -409,11 +409,22 @@ export type ExportResult =
  *
  * A real clone is whatever size the page was, and both the bridge's
  * performance budget and the Export tab's layout have to hold for a page of
- * thousands of lines — not just for the twelve-element fixture. Keeping the
- * knob on the *URL* rather than on the export request means the exported
- * document matches the page the editor is showing, as it would in production.
+ * thousands of lines — not just for the twelve-element fixture.
+ *
+ * It is read off the *cloned URL* rather than off the export request so that
+ * nothing has to be passed through the tab to reach it. Note that this does
+ * **not** make the preview match: `previewPageUrl()` builds
+ * `/mock-api/projects/{id}/page` and carries no query, and the preview route
+ * reads its own `?vmExtraElements` (which is how `bridge-perf.spec.ts` drives
+ * it). So in mock mode the editor can frame the twelve-element fixture while
+ * the export holds hundreds — two plumbings for one knob name, which is fine
+ * for what either is used to measure.
  */
 function extraElementCount(sourceUrl: string): number {
+  // Declared beside its use rather than after it. The same cap as the mock page
+  // route's (`app/mock-api/projects/[projectId]/page/route.ts`), kept in step by
+  // hand: a stray value must not build a megabyte of markup.
+  const MAX_EXTRA_ELEMENTS = 1000;
   let requested: number;
   try {
     requested = Number(new URL(sourceUrl).searchParams.get("vmExtraElements") ?? 0);
@@ -438,9 +449,6 @@ function exportedFixtureHtml(sourceUrl: string): string {
     ? pageFixtureHtml + filler
     : pageFixtureHtml.slice(0, bodyEnd) + filler + pageFixtureHtml.slice(bodyEnd);
 }
-
-/** Matches the mock page route's cap: a stray value must not build a megabyte of markup. */
-const MAX_EXTRA_ELEMENTS = 1000;
 
 export function exportProject(projectId: string, options: ExportOptions): ExportResult {
   const record = projects.get(projectId);

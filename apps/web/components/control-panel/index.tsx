@@ -468,7 +468,13 @@ export function ControlPanel({
   // "unsaved → History/Export → guard").
   const [committedTab, setCommittedTab] = useState<TabRequest>(ANIMATE);
   const [pendingTab, setPendingTab] = useState<TabRequest | null>(null);
-  /** A request made for a project the reader has left says nothing about this one. */
+  /**
+   * A request made for a project the reader has left says nothing about this
+   * one. This hides it; what *clears* it is the panel being keyed by project
+   * in `components/editor/editor-shell.tsx`, so a return to the first project
+   * cannot resurrect its pin. Both, because a caller that forgets the key
+   * should still never export another project's version.
+   */
   const ofThisProject = (request: TabRequest | null): TabRequest | null =>
     request !== null && request.projectId === projectId ? request : null;
   const committed = ofThisProject(committedTab) ?? ANIMATE;

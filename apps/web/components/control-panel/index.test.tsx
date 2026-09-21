@@ -1195,6 +1195,58 @@ describe("ControlPanel · Export tab (Phase 7)", () => {
     expect(calls.map((query) => query.get("versionId"))).toEqual([V3]);
   });
 
+  it("does not resurrect a pin when the reader returns to the first project", async () => {
+    // A -> B -> A inside one mount is the premise the project filter was built
+    // for, and filtering alone does not clear the state: A's pin was still
+    // sitting there when A came back. The shell keys the panel by project, so
+    // the return is a fresh mount and there is nothing left to resurrect.
+    const { calls } = mockExport();
+    const OTHER = "44444444-4444-4444-8444-444444444444";
+    const OTHER_V9 = "99999999-9999-4999-8999-999999999999";
+    useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    const panelFor = (id: string, history: VersionHistory) => (
+      // `key`, as `EditorShell` renders it.
+      <ControlPanel key={id} projectId={id} history={history} />
+    );
+    const { rerender } = render(
+      panelFor(
+        PROJECT_ID,
+        exportHistory({ viewing: true, viewingVersionId: V3, viewingLabel: "v3" }),
+      ),
+      { wrapper: Wrapper },
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    await waitFor(() => expect(calls.map((query) => query.get("versionId"))).toEqual([V3]));
+
+    // …to another project…
+    useEditorStore.setState({ ...initialEditorState, currentVersionId: OTHER_V9 });
+    rerender(
+      panelFor(
+        OTHER,
+        exportHistory({
+          versions: [version(OTHER_V9, 9)],
+          currentVersionId: OTHER_V9,
+          currentLabel: "v9",
+        }),
+      ),
+    );
+    expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
+
+    // …and back to the first one.
+    useEditorStore.setState({ ...initialEditorState, currentVersionId: V5 });
+    rerender(panelFor(PROJECT_ID, exportHistory()));
+
+    expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    // The current version, not the v3 that was pinned on the first visit.
+    await waitFor(() => expect(calls.map((query) => query.get("versionId"))).toEqual([V3, V5]));
+  });
+
   it("drops the pin when the reader leaves the Export tab and comes back", async () => {
     const { calls } = mockExport();
     useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });

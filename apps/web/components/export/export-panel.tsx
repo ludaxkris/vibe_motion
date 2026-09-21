@@ -184,14 +184,22 @@ export function ExportPanel({
           onValueChange={(next) => onModeChange(next as ExportMode)}
         />
 
-        {snippetAvailable ? null : stateError ? (
-          <p id={hintId} className="flex flex-wrap items-baseline gap-1.5 text-xs text-vm-ink-3">
-            <span className="text-vm-danger">{STATE_FAILED}</span>
+        {/* The counts failure is its own line, not a branch of the snippet
+            hint: a *refetch* that fails keeps the last `data`, so this state
+            arrives just as often with an animated element selected and Snippet
+            still live — and then nothing said the numbers had gone stale. The
+            Retry sits beside the sentence rather than inside it, so the
+            disabled segment's description is the reason alone. */}
+        {stateError ? (
+          <p className="flex flex-wrap items-baseline gap-1.5 text-xs">
+            <span id={hintId} className="text-vm-danger">
+              {STATE_FAILED}
+            </span>
             <Button variant="link" size="xs" onClick={stateError.onRetry}>
               Retry counts
             </Button>
           </p>
-        ) : (
+        ) : snippetAvailable ? null : (
           <p id={hintId} className="text-xs text-vm-ink-3">
             {SNIPPET_HINT}
           </p>
@@ -235,7 +243,10 @@ export function ExportPanel({
               onCopy={(file) => void copyOne(file)}
             />
             <p data-testid="export-stats" className="text-xs text-vm-ink-2">
-              {formatExportStats(counts, bundle.js !== null)}
+              {/* Counts this panel could not read are not printed as if they
+                  were current: the line falls back to the one thing it still
+                  knows for certain, which is what the download contains. */}
+              {formatExportStats(stateError ? undefined : counts, bundle.js !== null)}
             </p>
           </>
         ) : null}

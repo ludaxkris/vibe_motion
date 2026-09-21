@@ -197,9 +197,15 @@ for (const viewport of [
     expect(overflow.scrollHeight).toBeGreaterThan(overflow.clientHeight);
 
     // …so the actions are reachable without scrolling the column at all.
-    await expect(panel(page).getByRole("button", { name: "Download .zip" })).toBeInViewport();
-    await expect(panel(page).getByRole("button", { name: "Copy all" })).toBeInViewport();
-    await expect(panel(page).getByTestId("export-stats")).toBeInViewport();
+    // `ratio: 1`, not the default "any part of it": a button whose top edge
+    // peeks into the viewport is not a button the reader can use.
+    await expect(panel(page).getByRole("button", { name: "Download .zip" })).toBeInViewport({
+      ratio: 1,
+    });
+    await expect(panel(page).getByRole("button", { name: "Copy all" })).toBeInViewport({
+      ratio: 1,
+    });
+    await expect(panel(page).getByTestId("export-stats")).toBeInViewport({ ratio: 1 });
   });
 }
 

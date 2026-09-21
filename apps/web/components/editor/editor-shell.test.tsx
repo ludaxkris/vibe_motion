@@ -376,6 +376,41 @@ describe("EditorShell", () => {
     rerender(<EditorShell projectId={projectB.id} />);
     await waitFor(() => expect(selectSelectedVmId(useEditorStore.getState())).toBeNull());
   });
+
+  it("gives each project a fresh Control Panel, even coming back to the first", async () => {
+    // The store is `reset()` on a project change but the route does not
+    // remount the panel, so its own state — the open tab, and with it the
+    // version the Export tab is pinned to — outlives the project it belongs
+    // to. Filtering by project hides it; only a fresh panel is rid of it, and
+    // A -> B -> A is where the difference shows.
+    //
+    // Both projects are seeded into the cache first: with an uncached project
+    // the shell renders its spinner instead of the panel, which unmounts it
+    // incidentally. That is not something to rely on — a reader moving
+    // between two projects they have already opened never sees it.
+    const projectA = await createProject();
+    const projectB = await createProject();
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(["project", projectA.id], projectA);
+    queryClient.setQueryData(["project", projectB.id], projectB);
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    const { rerender } = render(<EditorShell projectId={projectA.id} />, { wrapper: Wrapper });
+    await screen.findByText("example.com/pricing");
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("data-active");
+
+    rerender(<EditorShell projectId={projectB.id} />);
+    expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
+
+    rerender(<EditorShell projectId={projectA.id} />);
+
+    expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
+    expect(screen.getByRole("tab", { name: "History" })).not.toHaveAttribute("data-active");
+  });
 });
 
 describe("EditorShell bridge", () => {

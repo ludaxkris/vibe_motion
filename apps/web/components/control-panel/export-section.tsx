@@ -61,10 +61,13 @@ export function ExportSection({
 
   const versionId = exportVersionId ?? history.currentVersionId;
   const fromStore = versionId !== null && versionId === storeVersionId;
-  const stateQuery = useVersionState(projectId, fromStore ? null : versionId);
-  const state: EditorStateMap | undefined = fromStore ? storeState : stateQuery.data;
-
   const version = history.versions.find((candidate) => candidate.id === versionId);
+  // Not while the panel is about to decline to name a version: with the list
+  // failed or still coming, a `/state` request is made behind an error screen
+  // for a version this render will not show.
+  const wanted = version !== undefined && !fromStore ? versionId : null;
+  const stateQuery = useVersionState(projectId, wanted);
+  const state: EditorStateMap | undefined = fromStore ? storeState : stateQuery.data;
 
   if (versionId === null || version === undefined) {
     // Which of the three is true matters: the list is still coming, the list

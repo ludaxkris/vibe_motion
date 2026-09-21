@@ -190,7 +190,7 @@ export function ExportFrames() {
 
       <div className="flex flex-wrap items-start gap-8">
         <TallFrame
-                    slug="export-full-js"
+          slug="export-full-js"
           title="Full page · in-view, so the script is in the zip"
           note="Three files. The footer says the script is included."
         >
@@ -198,7 +198,7 @@ export function ExportFrames() {
         </TallFrame>
 
         <TallFrame
-                    slug="export-full-no-js"
+          slug="export-full-no-js"
           title="Full page · no in-view trigger"
           note="vibe-motion.js is faint and cannot be opened: it is not needed here."
         >
@@ -206,7 +206,7 @@ export function ExportFrames() {
         </TallFrame>
 
         <TallFrame
-                    slug="export-snippet"
+          slug="export-snippet"
           title="Snippet · one element"
           note="One file, and the class name to paste is in the comment at the top."
         >

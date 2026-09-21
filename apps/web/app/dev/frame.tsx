@@ -48,5 +48,7 @@ const TALL_PANEL_FRAME = `flex h-[560px] flex-col ${PANEL_FRAME}`;
 
 /** {@link Frame} at {@link TALL_PANEL_FRAME}, so the height is written once. */
 export function TallFrame(props: Omit<Parameters<typeof Frame>[0], "bodyClassName">) {
-  return <Frame bodyClassName={TALL_PANEL_FRAME} {...props} />;
+  // Spread first: the height is this wrapper's to decide, and that holds
+  // whatever `props` grows to carry.
+  return <Frame {...props} bodyClassName={TALL_PANEL_FRAME} />;
 }
