@@ -484,6 +484,86 @@ describe("in-view reachability", () => {
     expect(playState(h, "vm-a")).toBe("running");
   });
 
+  it("re-observes even when another element's entry lands before the resize event", () => {
+    const h = loadBridge(boxes);
+    applyInView(h, "vm-a", 1);
+    applyInView(h, "vm-b", 2);
+    const observer = h.observers()[0];
+    const edge = { width: 200, height: 4000 };
+    const small = { width: 200, height: 60 };
+
+    h.resize(800, 0);
+    h.intersect("vm-a", { isIntersecting: true, intersectionRatio: 0, boundingClientRect: edge, rootBounds: null });
+    h.intersect("vm-b", { isIntersecting: false, intersectionRatio: 0, boundingClientRect: small, rootBounds: null });
+
+    // The pane is back, but the browser delivers the entries it has before it fires `resize`, and
+    // that ordering is not ours to choose: `vm-b` was below the collapsed root, so it crosses a
+    // threshold and gets an entry; `vm-a` sits at the collapsed root's edge, goes from ratio 0 to
+    // a ratio still under `T`, and gets none. If `vm-b`'s entry could lower the latch, the
+    // recovery `vm-a` depends on would return at its first line and `vm-a` would stay held for the
+    // rest of the session. So the callback only ever raises it.
+    h.setRootSize(800, 600);
+    h.intersect("vm-b", { intersectionRatio: 0.9, boundingClientRect: small, rootBounds: null });
+    h.resize(800, 600);
+
+    expect(observer.calls).toEqual([
+      "observe:vm-a",
+      "observe:vm-b",
+      "unobserve:vm-a",
+      "observe:vm-a",
+      "unobserve:vm-b",
+      "observe:vm-b",
+    ]);
+
+    // And the fresh entry that re-observing buys releases it.
+    h.intersect("vm-a", { intersectionRatio: 0.15, boundingClientRect: edge, rootBounds: null });
+    expect(playState(h, "vm-a")).toBe("running");
+  });
+
+  it("keeps holding, and keeps the latch, through a resize that leaves the root still empty", () => {
+    const h = loadBridge(boxes);
+    applyInView(h, "vm-a", 1);
+    const observer = h.observers()[0];
+    const edge = { width: 200, height: 4000 };
+
+    h.resize(800, 0);
+    h.intersect("vm-a", { isIntersecting: true, intersectionRatio: 0, boundingClientRect: edge, rootBounds: null });
+
+    // A pane dragged narrower while still shut: nothing to recover yet, and nothing forgotten.
+    h.resize(400, 0);
+    expect(observer.calls).toEqual(["observe:vm-a"]);
+    expect(playState(h, "vm-a")).toBe("paused");
+
+    h.resize(800, 600);
+
+    expect(observer.calls).toEqual(["observe:vm-a", "unobserve:vm-a", "observe:vm-a"]);
+  });
+
+  it("measures the root by the document box in standards mode and by the window in quirks mode", () => {
+    // In quirks mode (`BackCompat` — a cloned page whose origin had no doctype, which the clone
+    // pipeline never adds) `documentElement.clientHeight` is the DOCUMENT box, not the viewport:
+    // 6000px for a long page in a 600px frame. Measuring against that makes `reachable` come out
+    // as 1 and holds a hero taller than five viewports for ever, which is DT-095 all over again.
+    const tall = { width: 200, height: 4000 };
+    const entry = { intersectionRatio: 0.15, boundingClientRect: tall, rootBounds: null };
+
+    const standards = loadBridge(page(`<div data-vm-id="vm-a">hero</div>`));
+    expect(standards.document.compatMode).toBe("CSS1Compat");
+    applyInView(standards, "vm-a", 1);
+    // The document box says reachable (6000/4000 > 1), and in standards mode that IS the viewport.
+    Object.defineProperty(standards.document.documentElement, "clientHeight", { value: 6000, configurable: true });
+    standards.intersect("vm-a", entry);
+    expect(playState(standards, "vm-a")).toBe("paused");
+
+    const quirks = loadBridge(`<html><head><title>clone</title></head><body><div data-vm-id="vm-a">hero</div></body></html>`);
+    expect(quirks.document.compatMode).toBe("BackCompat");
+    applyInView(quirks, "vm-a", 1);
+    Object.defineProperty(quirks.document.documentElement, "clientHeight", { value: 6000, configurable: true });
+    quirks.intersect("vm-a", entry);
+    // 768/4000 = 0.192 <= T against the window, which is the only honest root here.
+    expect(playState(quirks, "vm-a")).toBe("running");
+  });
+
   it("touches the observer on no resize where the root was never empty", () => {
     const h = loadBridge(boxes);
     applyInView(h, "vm-a", 1);

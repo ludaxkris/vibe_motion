@@ -260,6 +260,70 @@ test.describe("in-view reachability", () => {
     );
   });
 
+  test("releases every in-view element when the frame is restored, not just the first", async ({ page }) => {
+    // The recovery is consumed from the `resize` handler but the latch that guards it was written
+    // from the observer callback, and the ordering between those two is the browser's to choose.
+    // When the root grows, every element that was *below* the collapsed root goes not-intersecting
+    // to intersecting and gets an entry; the one sitting at the collapsed root's edge goes ratio 0
+    // to ratio 0.16, crosses nothing, and gets none. Those other entries arrive first — so a latch
+    // that any non-empty-root callback could lower left the stranded element `paused` at
+    // `opacity: 0` for the rest of the session. Two in-view assignments and a pane dragged shut is
+    // all it takes; every earlier spec here mounted exactly one, which is the only count that
+    // worked.
+    const tracks = [0, 1, 2, 3, 4];
+    const h = await mountBridge(
+      page,
+      tracks
+        .map(
+          (i) =>
+            `<div style="overflow-x:auto;width:600px">
+               <div data-vm-id="vm-e${i}" style="width:5000px;height:60px;background:#ddd">track ${i}</div>
+             </div>`,
+        )
+        .join(""),
+    );
+    const frame = collapsible(page, h, { width: 800, height: 0 });
+
+    await frame.collapse();
+    for (const i of tracks) await h.send("apply", assignment(`vm-e${i}`, inViewOver));
+    await page.waitForTimeout(400);
+    for (const i of tracks) expect(await h.inline(`vm-e${i}`, "animation-play-state")).toBe("paused");
+
+    await frame.restore();
+
+    for (const i of tracks) {
+      await expect.poll(() => h.computed(`vm-e${i}`, "opacity"), { message: `vm-e${i}` }).toBe("1");
+      expect(await h.inline(`vm-e${i}`, "animation-play-state"), `vm-e${i}`).toBe("running");
+    }
+  });
+
+  test("measures the root by the window in a quirks-mode clone, where clientHeight is the document", async ({
+    page,
+  }) => {
+    // A clone gets whatever doctype the origin page had, and the clone pipeline inserts none. With
+    // no doctype `document.compatMode` is `BackCompat`, and there `documentElement.clientHeight` is
+    // the DOCUMENT box: 6000px for this page in a 600px frame, which makes `reachable` come out as
+    // 1 and leaves a hero taller than five viewports waiting for a ratio it can never reach — the
+    // whole of DT-095, reintroduced by a 2% accuracy nit.
+    const h = await mountBridge(
+      page,
+      `<div class="spacer"></div>
+       <div data-vm-id="vm-tall" style="height:4000px;background:#ddd">tall</div>`,
+      "",
+      { quirks: true },
+    );
+    expect(await h.frame.evaluate(() => document.compatMode)).toBe("BackCompat");
+    expect(await h.frame.evaluate(() => document.documentElement.clientHeight)).toBeGreaterThan(2000);
+
+    await h.send("apply", assignment("vm-tall", inViewOver));
+    await expect.poll(() => h.animations("vm-tall")).toMatchObject([{ time: 0, state: "paused" }]);
+
+    await scrollToTarget(h, "vm-tall");
+
+    await expect.poll(() => h.computed("vm-tall", "opacity")).toBe("1");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
+  });
+
   test("holds an ordinary box while the frame is collapsed to no height", async ({ page }) => {
     // The case a per-axis guard did already cover: `min(1, 800/200) * min(1, 0/60)` = `1 * 1`.
     // Kept, because it is the one of the three whose ratio crosses `T` on restore and so would

@@ -93,8 +93,14 @@ const FOREIGN_HTML = `<!doctype html><html><body><script>
   };
 </script></body></html>`;
 
-export function framePage(body: string, head = ""): string {
-  return `<!doctype html><html><head><style>
+/**
+ * @param options.quirks omit the doctype, which is what a cloned page whose origin had none looks
+ *   like: `document.compatMode` is then `BackCompat`, where `documentElement.clientHeight` is the
+ *   DOCUMENT box rather than the viewport. `HtmlRewriter` neither requires nor inserts a doctype,
+ *   so this is ordinary input, not a hypothetical.
+ */
+export function framePage(body: string, head = "", options: { quirks?: boolean } = {}): string {
+  return `${options.quirks ? "" : "<!doctype html>"}<html><head><style>
       body { margin: 0; font: 14px/1.4 system-ui, sans-serif }
       .box { width: 200px; height: 60px; margin: 20px; background: #ddd }
       .spacer { height: 2000px }
@@ -119,10 +125,15 @@ export function assignment(vmId: string, over: Partial<AppliedAssignment> = {}):
   };
 }
 
-export async function mountBridge(page: Page, body: string, head = ""): Promise<BridgeHarness> {
+export async function mountBridge(
+  page: Page,
+  body: string,
+  head = "",
+  options: { quirks?: boolean } = {},
+): Promise<BridgeHarness> {
   await page.route(`${SHELL_ORIGIN}/`, (route) => route.fulfill({ contentType: "text/html", body: SHELL_HTML }));
   await page.route(`${FRAME_ORIGIN}/page`, (route) =>
-    route.fulfill({ contentType: "text/html", body: framePage(body, head) }),
+    route.fulfill({ contentType: "text/html", body: framePage(body, head, options) }),
   );
   await page.route(`${FRAME_ORIGIN}/vm-bridge.js`, (route) =>
     route.fulfill({ contentType: "text/javascript", body: BRIDGE_SOURCE }),

@@ -757,19 +757,43 @@
     return reachable <= IN_VIEW_THRESHOLD;
   }
 
+  /**
+   * The root box an entry with no `rootBounds` is measured against: the frame's own viewport.
+   *
+   * In a standards-mode document `documentElement.clientWidth` / `clientHeight` is the viewport
+   * *without* the scrollbar gutter, which is exactly what the implicit root intersects against and
+   * what `innerWidth` / `innerHeight` overstate by the width of the gutter. In quirks mode
+   * (`BackCompat`) the same two properties are the **document** box instead — a clone whose origin
+   * page had no doctype reports 6000px for a 600px frame — and measuring against that makes every
+   * big element look reachable and holds it for ever, which is the whole of DT-095. A clone gets
+   * whatever doctype the origin had and the clone pipeline inserts none, so the mode is read, not
+   * assumed. `elements:list.viewport` is a different question with a different answer (`window`,
+   * spec §3), which is why this lives here rather than in one shared "the viewport" helper.
+   *
+   * @returns {{ width: number, height: number }}
+   */
+  function fallbackRootBox() {
+    var root = document.documentElement;
+    if (!root || document.compatMode !== "CSS1Compat") {
+      return { width: window.innerWidth, height: window.innerHeight };
+    }
+    return { width: root.clientWidth, height: root.clientHeight };
+  }
+
   /** @param {IntersectionObserverEntry[]} entries */
   function onIntersect(entries) {
-    // The implicit root is the viewport *without* the scrollbar gutter, which is exactly what
-    // `documentElement.clientWidth` / `clientHeight` measure and `innerWidth` / `innerHeight` do
-    // not. Read once for the whole batch, before anything writes, so every entry is judged against
-    // one root and the per-entry path stays two property reads short.
-    var root = document.documentElement;
-    var rootWidth = root ? root.clientWidth : 0;
-    var rootHeight = root ? root.clientHeight : 0;
-    // Remembered for `recoverFromEmptyRoot`: while this is true every element is held, and a root
-    // that grows crosses no threshold for an unreachable one, so nothing would arrive to release
-    // them (spec §6a).
-    inViewRootEmpty = !(rootWidth > 0) || !(rootHeight > 0);
+    // Read once for the whole batch, before anything writes, so every entry is judged against one
+    // root and the per-entry path stays two property reads short.
+    var rootBox = fallbackRootBox();
+    var rootWidth = rootBox.width;
+    var rootHeight = rootBox.height;
+    // Raised here, and lowered *only* by `recoverFromEmptyRoot`. While the root is empty every
+    // element is held, and a root that grows back crosses no threshold for an unreachable one, so
+    // nothing would arrive to release it (spec §6a) — but the elements that were *below* the
+    // collapsed root do cross one, and their entries reach this callback before the `resize` event
+    // does. An `else` here would let them lower the latch and no-op the recovery the stranded
+    // element depends on, for every page with more than one in-view assignment.
+    if (!(rootWidth > 0) || !(rootHeight > 0)) inViewRootEmpty = true;
 
     var changed = /** @type {ElementRecord[]} */ ([]);
     for (var i = 0; i < entries.length; i += 1) {
@@ -813,8 +837,10 @@
    */
   function recoverFromEmptyRoot() {
     if (!inViewRootEmpty || !inViewObserver) return;
-    var root = document.documentElement;
-    if (!root || !(root.clientWidth > 0) || !(root.clientHeight > 0)) return;
+    // The same root the callback judges entries against, so the two can never disagree about what
+    // "empty" means. Still empty: keep the latch and wait for the resize that opens it.
+    var rootBox = fallbackRootBox();
+    if (!(rootBox.width > 0) || !(rootBox.height > 0)) return;
     inViewRootEmpty = false;
     var observer = inViewObserver;
     records.forEach(function (record) {

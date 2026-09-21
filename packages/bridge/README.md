@@ -43,10 +43,16 @@ The element is **armed exactly while that holds**, so it is held on its first ke
 - `rootBounds` is null for an implicit root inside a cross-origin iframe, which is **every** bridge
   there is, so the fallback is the normal path here, not the fallback of last resort it is in an
   export. Reading `.width` off null would throw inside the callback and leave every in-view element
-  held at `opacity: 0`. The fallback is `documentElement.clientWidth` / `clientHeight` — the
-  viewport *without* the scrollbar gutter, which is the box the implicit root intersects against;
-  `innerWidth` / `innerHeight` include the gutter and overstate `reachable` by ~2%. Read once per
-  callback and passed in, so `isOnScreen` reads no globals and the per-entry path stays short.
+  held at `opacity: 0`. The fallback is `documentElement.clientWidth` / `clientHeight` in a
+  standards-mode document — the viewport *without* the scrollbar gutter, which is the box the
+  implicit root intersects against, where `innerWidth` / `innerHeight` include it and overstate
+  `reachable` by ~2% — and `window.innerWidth` / `innerHeight` in a **quirks-mode** one, where
+  those same properties are the *document* box: a clone whose origin page had no doctype reports
+  6000px for a 600px frame, which makes everything look reachable and is DT-095 again. A clone gets
+  whatever doctype its origin had and the clone pipeline inserts none, so `document.compatMode` is
+  read rather than assumed. One helper (`fallbackRootBox`), read once per callback and passed in,
+  so `isOnScreen` reads no globals and the per-entry path stays short. `elements:list.viewport` is
+  a different question with a different answer (`window`, spec §3) and deliberately not shared.
 - An **empty root** is not an unreachable one. It is tested first, before the ratio, and on both
   axes at once: a frame collapsed to nothing reports anything touching its edge as intersecting —
   at ratio 0, or at ratio 1 for a zero-area target — and measuring reachability against it would
@@ -58,13 +64,22 @@ The element is **armed exactly while that holds**, so it is held on its first ke
   unreachable element — ratio 0 to a ratio still under `T`, both inside `[0, T)` — so the browser
   reports nothing and the element would stay held for ever. `unobserve` + `observe` queues a fresh
   initial entry and the normal rule decides. It runs from the `resize` listener the overlay already
-  uses: no new listener, no timer, and one boolean test when the root was never empty.
+  uses: no new listener, no timer, and one boolean test when the root was never empty. The latch
+  that guards it is **raised** by the observer callback and lowered only by the recovery itself:
+  the elements that were below the collapsed root *do* cross a threshold when it grows, and their
+  entries arrive before the `resize` event, so a latch they could lower would no-op the recovery
+  for every page with more than one in-view assignment.
 - `src/vibe-motion-export.js` fires on the same condition; the copies are separate because neither
   file can import the other, and spec §6a is the contract between them. What the preview does *not*
   copy is playing once: it re-arms on every entry so the designer can scroll back and watch again.
-  The empty-root test lands in that copy with the Phase 7 Track C PR, which owns the file and its
-  exporter golden; the re-observe has no counterpart there, because an export unobserves on firing
-  and never disarms.
+  "Every entry" is literal: for an element the ratio rule can never reach, that means every full
+  exit and re-entry, and a *second* collapse of the frame delivers it no entry at all (its
+  threshold index never moves), so it stays armed through that collapse rather than replaying.
+  Two divergences remain until the Phase 7 Track C PR (#28), which owns that file and its exporter
+  golden: the export does not test the root's emptiness, and it reads `window.innerWidth` /
+  `innerHeight` for the fallback root rather than the compat-mode reading above. Track C copies
+  both functions verbatim plus the call-site helper; the re-observe has no counterpart there,
+  because an export unobserves on firing and never disarms.
 - Still uncovered on both sides, and logged as DT-184: a clip container narrower than the root
   bounds the intersection without appearing in `rootBounds`.
 
@@ -183,7 +198,7 @@ three wrong while every jsdom test passed. So `e2e/` exists for exactly that cla
 | Only provable in `e2e/` | Why jsdom cannot see it |
 |---|---|
 | `in-view` holds at the first keyframe, plays, holds again, plays again | needs a real animation with a real `currentTime` and real `animationstart` events |
-| the preview fires for an element taller than five viewports and for a track wider than the frame, still waits for `T` for one that can reach it, and holds both while the frame is collapsed to no height or no width — then plays them when it is restored | needs a real `IntersectionObserver` deciding for itself what to report (including what it does *not* report when a root grows), real layout, and the null `rootBounds` of a cross-origin frame; jsdom's version (`test/triggers.test.ts`) states each entry by hand, so it proves the arithmetic and not the reporting |
+| the preview fires for an element taller than five viewports and for a track wider than the frame, still waits for `T` for one that can reach it, holds both while the frame is collapsed to no height or no width, and plays **every** held element when it is restored — not only the first — including in a quirks-mode clone | needs a real `IntersectionObserver` deciding for itself what to report (including what it does *not* report when a root grows), real layout, and the null `rootBounds` of a cross-origin frame; jsdom's version (`test/triggers.test.ts`) states each entry by hand, so it proves the arithmetic and not the reporting |
 | a forced `replay` ends on its own animation, not a descendant's, and after one iteration when looping | jsdom never fires `animationend` or `animationiteration` |
 | a hover-armed card stays armed over a tagged child | needs real pointer movement over a real layout |
 | the host's `animation` shorthand survives a round trip, and its longhands do not leak in | jsdom's CSSOM does not expand the shorthand at all |

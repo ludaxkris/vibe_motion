@@ -75,8 +75,8 @@ export type FakeEntry = {
   boundingClientRect?: { width: number; height: number };
   /**
    * The root's box, or `null` — which is what a real observer reports for an implicit root inside
-   * a cross-origin iframe, i.e. always, for the bridge. `null` is the default for that reason;
-   * the bridge then falls back to `window.innerWidth` / `innerHeight`.
+   * a cross-origin iframe, i.e. always, for the bridge. `null` is the default for that reason; the
+   * bridge then falls back to the root box the harness stubs (`rootSize()` / `resize()`).
    */
   rootBounds?: { width: number; height: number } | null;
 };
@@ -125,6 +125,11 @@ export type Harness = {
    * `clientHeight`, which jsdom has none of and the harness supplies.
    */
   rootSize(): { width: number; height: number };
+  /**
+   * Resize that root *without* firing `resize`. The pane is already back but the event has not
+   * run yet — which is when the browser delivers the entries that made the latch racy.
+   */
+  setRootSize(width: number, height: number): void;
   /** Resize that root and fire `resize`, the way dragging the editor's split pane does. */
   resize(width: number, height: number): void;
   /** Run every callback queued with `requestAnimationFrame` so far. */
@@ -268,14 +273,19 @@ export function loadBridge(
   });
 
   // --- a viewport for the implicit IntersectionObserver root ----------------------------------
-  // jsdom has no layout, so `document.documentElement.clientWidth` / `clientHeight` are 0 — and
-  // those are what the bridge measures the root with whenever `rootBounds` is null, which inside a
-  // cross-origin frame is always. A root with no area is not on screen at all, so without this
-  // every entry would be held. The document gets the same viewport jsdom gives `window`; a test
-  // collapses it with `resize()`, the way a pane dragged to nothing does.
+  // jsdom has no layout, so `document.documentElement.clientWidth` / `clientHeight` are 0 — and in
+  // a standards-mode document those are what the bridge measures the root with whenever
+  // `rootBounds` is null, which inside a cross-origin frame is always. A root with no area is not
+  // on screen at all, so without this every entry would be held. The document gets the same
+  // viewport jsdom gives `window`, and both move together, so a test cannot leave the two
+  // disagreeing and no assertion depends on which of them the code under test happens to read
+  // (the bridge reads `documentElement` for the observer root and `window` for
+  // `elements:list.viewport`).
   function setRootSize(width: number, height: number) {
     Object.defineProperty(document.documentElement, "clientWidth", { value: width, configurable: true });
     Object.defineProperty(document.documentElement, "clientHeight", { value: height, configurable: true });
+    Object.defineProperty(window, "innerWidth", { value: width, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: height, configurable: true });
   }
   setRootSize(window.innerWidth, window.innerHeight);
 
@@ -392,6 +402,7 @@ export function loadBridge(
     rootSize() {
       return { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight };
     },
+    setRootSize,
     resize(width, height) {
       setRootSize(width, height);
       window.dispatchEvent(new window.Event("resize"));
