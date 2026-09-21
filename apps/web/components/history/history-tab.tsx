@@ -16,7 +16,7 @@
  */
 import { useEffect, useState } from "react";
 
-import { PanelCard, PanelSection } from "@/components/control-panel/panel-card";
+import { PanelCard, PanelSection, PanelSpinner } from "@/components/control-panel/panel-card";
 import { Button } from "@/components/ui/button";
 
 import { HistoryList } from "./history-list";
@@ -53,9 +53,7 @@ export function HistoryTab({
     return (
       <PanelCard data-testid="panel-history">
         <PanelSection>
-          <div role="status" aria-label="Loading history" className="flex justify-center py-2">
-            <div className="size-5 animate-spin rounded-full border-2 border-vm-border border-t-vm-accent" />
-          </div>
+          <PanelSpinner label="Loading history" />
         </PanelSection>
       </PanelCard>
     );

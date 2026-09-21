@@ -1,10 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { VersionHistory } from "@/components/history/use-version-history";
+import {
+  HISTORY_LOAD_FAILED,
+  type VersionHistory,
+} from "@/components/history/use-version-history";
 import type { Assignment, EditorStateMap, ExportBundle, Version } from "@/lib/api-client";
 import { env } from "@/lib/env";
 import { initialEditorState, useEditorStore } from "@/lib/store";
@@ -201,6 +204,60 @@ describe("ExportSection", () => {
     expect(screen.getByRole("radio", { name: "Snippet" })).not.toHaveAttribute("data-disabled");
   });
 
+  it("surfaces a version list that failed, with the same message and Retry as History", () => {
+    const retry = vi.fn();
+    renderSection({
+      history: historyStub({ versions: [], currentVersionId: null, listError: true, retry }),
+    });
+
+    // Not "No saved version to export yet." — v0 always exists, so that line
+    // would be a false statement about the project rather than about the
+    // request that failed.
+    expect(screen.getByRole("alert")).toHaveTextContent(HISTORY_LOAD_FAILED);
+    expect(screen.queryByText(/No saved version to export/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the export usable when the version's state cannot be loaded, and says what is missing", async () => {
+    mockExport();
+    let attempts = 0;
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), () => {
+        attempts += 1;
+        return HttpResponse.json({ code: "internal_error", message: "boom" }, { status: 500 });
+      }),
+    );
+    useEditorStore.setState({
+      currentVersionId: V5,
+      panel: { status: "selected", vmId: "vm-3" },
+      draftState: { "vm-3": assignment("fade-in-up") },
+    });
+
+    renderSection({ exportVersionId: V3 });
+
+    // The export itself is fine — it is built by the API, not from this state.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Download .zip" })).toBeEnabled(),
+    );
+
+    // What is missing is said, rather than shown as zeroes or as a hint that
+    // blames the reader for not selecting an element.
+    await waitFor(() =>
+      expect(screen.getByText(/Could not load this version’s animations/i)).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText("Select an animated element on the page to export a snippet."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Snippet" })).toHaveAttribute("data-disabled");
+    // No counts rather than wrong counts.
+    expect(screen.getByTestId("export-stats")).not.toHaveTextContent("element");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry counts" }));
+    await waitFor(() => expect(attempts).toBeGreaterThan(1));
+  });
+
   it("says so rather than exporting nothing when the version list never landed", () => {
     renderSection({ history: historyStub({ versions: [], currentVersionId: null, pending: false }) });
 
@@ -208,11 +265,13 @@ describe("ExportSection", () => {
     expect(screen.getByText(/No saved version to export/i)).toBeInTheDocument();
   });
 
-  it("waits quietly while the version list is still loading", () => {
+  it("waits quietly while the version list is still loading, under its own name", () => {
     renderSection({
       history: historyStub({ versions: [], currentVersionId: null, pending: true }),
     });
 
-    expect(screen.getByRole("status", { name: "Loading history" })).toBeInTheDocument();
+    // Not "Loading history": this is the Export tab, and a screen reader
+    // should not be told it is somewhere else.
+    expect(screen.getByRole("status", { name: "Loading versions" })).toBeInTheDocument();
   });
 });

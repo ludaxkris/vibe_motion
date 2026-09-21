@@ -1,12 +1,16 @@
 "use client";
 
-import type { VersionHistory } from "@/components/history/use-version-history";
+import {
+  HISTORY_LOAD_FAILED,
+  type VersionHistory,
+} from "@/components/history/use-version-history";
 import { ExportTab } from "@/components/export/export-tab";
+import { Button } from "@/components/ui/button";
 import type { EditorStateMap } from "@/lib/api-client";
 import { selectSelectedVmId, useEditorStore } from "@/lib/store";
 import { useVersionState } from "@/lib/versions/queries";
 
-import { PanelCard, PanelSection } from "./panel-card";
+import { PanelCard, PanelSection, PanelSpinner } from "./panel-card";
 
 /** No version to export: only reachable when the list failed or came back empty. */
 export const NO_VERSION = "No saved version to export yet.";
@@ -63,15 +67,32 @@ export function ExportSection({
   const version = history.versions.find((candidate) => candidate.id === versionId);
 
   if (versionId === null || version === undefined) {
-    // v0 exists from the clone, so there is always something to export once the
-    // list lands. Until it does, this is the list's own state, not the export's.
+    // Which of the three is true matters: the list is still coming, the list
+    // could not be fetched at all, or — the case v0 makes almost impossible —
+    // the project really has no version. Saying the last one for the second
+    // would be a false statement about the project rather than about a request.
     if (history.pending) {
       return (
         <PanelCard data-testid="panel-export-pending">
           <PanelSection>
-            <div role="status" aria-label="Loading history" className="flex justify-center py-2">
-              <div className="size-5 animate-spin rounded-full border-2 border-vm-border border-t-vm-accent" />
-            </div>
+            <PanelSpinner label="Loading versions" />
+          </PanelSection>
+        </PanelCard>
+      );
+    }
+    if (history.listError) {
+      return (
+        <PanelCard data-testid="panel-export-list-error">
+          <PanelSection>
+            {/* The History tab's message and action, deliberately: it is the
+                same failed request, and a second wording for it would only
+                make the reader wonder whether it is a second problem. */}
+            <p role="alert" className="text-sm leading-body text-vm-danger">
+              {HISTORY_LOAD_FAILED}
+            </p>
+            <Button variant="secondary" size="sm" className="self-start" onClick={history.retry}>
+              Retry
+            </Button>
           </PanelSection>
         </PanelCard>
       );
@@ -93,6 +114,11 @@ export function ExportSection({
       isCurrent={versionId === history.currentVersionId}
       selectedVmId={selectedVmId}
       state={state}
+      // The export is the API's work and is unaffected by this failure; what
+      // is lost is the footer's counts and the ability to offer a snippet, and
+      // the panel says exactly that rather than showing zeroes or a hint that
+      // asks the reader to select the element they already selected.
+      stateError={stateQuery.isError ? { onRetry: () => void stateQuery.refetch() } : undefined}
       projectSlug={projectTitle}
     />
   );

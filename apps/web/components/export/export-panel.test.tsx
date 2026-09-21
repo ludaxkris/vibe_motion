@@ -120,6 +120,22 @@ describe("ExportPanel", () => {
     ).not.toHaveAttribute("aria-describedby");
   });
 
+  it("says the counts could not be loaded, rather than blaming the selection", () => {
+    const onRetry = vi.fn();
+    renderPanel({ snippetAvailable: false, stateError: { onRetry } });
+
+    // The export is the API's and is unaffected, so the file tabs and the
+    // download stay live; what is gone is the counts and Snippet.
+    expect(screen.getByRole("button", { name: "Download .zip" })).toBeEnabled();
+    expect(screen.getByText(/Could not load this version’s animations/)).toBeInTheDocument();
+    expect(
+      screen.queryByText("Select an animated element on the page to export a snippet."),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry counts" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it("disables Snippet, and says why, until an animated element is selected", () => {
     const { props } = renderPanel({ snippetAvailable: false });
 

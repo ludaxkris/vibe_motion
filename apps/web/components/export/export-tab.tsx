@@ -57,6 +57,8 @@ export type ExportTabProps = {
   selectedVmId?: string | null;
   /** That version's materialised state, for the footer's counts. */
   state?: EditorStateMap;
+  /** That state could not be loaded: the counts and Snippet are unavailable, the export is not. */
+  stateError?: { onRetry: () => void };
   /** The project's name; only the download file name ever sees it. */
   projectSlug?: string;
 };
@@ -75,6 +77,7 @@ export function ExportTab({
   isCurrent,
   selectedVmId,
   state,
+  stateError,
   projectSlug,
 }: ExportTabProps) {
   const [mode, setMode] = useState<ExportMode>("full");
@@ -119,6 +122,7 @@ export function ExportTab({
       mode={effectiveMode}
       onModeChange={setMode}
       snippetAvailable={snippetAvailable}
+      stateError={stateError}
       counts={exportCounts(countedState)}
       onRetry={() => void query.refetch()}
       projectSlug={projectSlug}

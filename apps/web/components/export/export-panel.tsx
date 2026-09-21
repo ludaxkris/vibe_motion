@@ -30,6 +30,10 @@ const CAPTION =
 /** Said next to the disabled segment, so the reason is on screen, not guessed. */
 const SNIPPET_HINT = "Select an animated element on the page to export a snippet.";
 
+/** …and the other reason it can be disabled, which is nothing the reader did. */
+const STATE_FAILED =
+  "Could not load this version’s animations, so the counts and Snippet are unavailable.";
+
 /** One line above each file in "Copy all", in that file's own comment syntax. */
 function fileSeparator(file: ExportFileView): string {
   return file.kind === "html" ? `<!-- === ${file.name} === -->` : `/* === ${file.name} === */`;
@@ -53,6 +57,16 @@ export type ExportPanelProps = {
   onModeChange: (mode: ExportMode) => void;
   /** False when no element is selected, or the selected one has no animation. */
   snippetAvailable: boolean;
+  /**
+   * The exported version's state could not be loaded, so what the footer
+   * counts and whether a snippet is possible are both unknown.
+   *
+   * The export itself is unaffected — the API builds it from the version, not
+   * from anything this app holds — so the panel stays usable and says what is
+   * missing instead of printing zeroes or blaming the reader for not
+   * selecting an element.
+   */
+  stateError?: { onRetry: () => void };
   /**
    * The version's counts, when the caller has the state to count. Left out,
    * the footer says only whether the script is in the zip — a wrong number is
@@ -83,6 +97,7 @@ export function ExportPanel({
   mode,
   onModeChange,
   snippetAvailable,
+  stateError,
   counts,
   onRetry,
   projectSlug,
@@ -169,7 +184,14 @@ export function ExportPanel({
           onValueChange={(next) => onModeChange(next as ExportMode)}
         />
 
-        {snippetAvailable ? null : (
+        {snippetAvailable ? null : stateError ? (
+          <p id={hintId} className="flex flex-wrap items-baseline gap-1.5 text-xs text-vm-ink-3">
+            <span className="text-vm-danger">{STATE_FAILED}</span>
+            <Button variant="link" size="xs" onClick={stateError.onRetry}>
+              Retry counts
+            </Button>
+          </p>
+        ) : (
           <p id={hintId} className="text-xs text-vm-ink-3">
             {SNIPPET_HINT}
           </p>

@@ -33,3 +33,18 @@ export function PanelSection({ className, ...props }: React.ComponentProps<"div"
     />
   );
 }
+
+/**
+ * The card's "something is on its way" state.
+ *
+ * `label` is required and is what a screen reader announces, so each tab says
+ * what *it* is waiting for — the History tab and the Export tab were
+ * announcing the same "Loading history" from copied markup.
+ */
+export function PanelSpinner({ label }: { label: string }) {
+  return (
+    <div role="status" aria-label={label} className="flex justify-center py-2">
+      <div className="size-5 animate-spin rounded-full border-2 border-vm-border border-t-vm-accent" />
+    </div>
+  );
+}
