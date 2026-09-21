@@ -226,6 +226,19 @@ Still unproven anywhere, and worth knowing:
 - Only Chromium is in the gate. The review measured the same behaviour in WebKit and Firefox by
   hand; nothing re-checks them per commit.
 
+## Versions
+
+`BRIDGE_VERSION` (in `src/vm-bridge.js`, parsed by `BridgeAssets.kt`, sent in `ready`) is bumped by
+every behaviour change, even one with no message or field change; compare it numerically.
+
+- **1.1.3** — `ElementInfo` (`elements:list`, `element:select`, `element:hover`): `rect`, `pageRect`,
+  `visible` and the `elements:query` size floor are judged on the RESTING box (DT-150, PR #28).
+- **1.1.2** — the `in-view` trigger fires on the export's condition: area-based reachability, an
+  empty root is never on screen, compat-mode root size, recovery on `resize` (DT-179, PR #27).
+  `test/in-view-parity.test.ts` holds the bridge's and the export script's copies identical.
+- **1.1.1** — Phase 4 integration fixes (PR #18), the selection ring marking the resting box among them.
+- **1.1.0** — `elements:query` → `elements:list`.
+
 ## Known limits
 
 - **Elements with no offset box (`<svg>`, MathML).** They are not `HTMLElement`s, so the layout-box path cannot serve them. Their ring is always measured live: during an animation it follows the animated box (a spinning logo's ring breathes with the rotation) instead of marking the resting box. It is never empty and it tracks scroll and layout. The same applies to `elements:list` / `element:select` / `element:hover`: such an element is measured live whatever is applied, so a held one can still measure zero and drop out of a list (DT-200).

@@ -354,7 +354,7 @@ describe("elements:query", () => {
     // file, but dropping it entirely would leave nothing in the repo that fails when a behaviour
     // change ships without a bump (Kotlin parses the version, the web client compares it). The
     // floor is the newest version whose behaviour something depends on — `elements:query` shipped
-    // in 1.1.0, the in-view reachability rule in 1.1.2 — and the compare is numeric, as the
+    // in 1.1.0, the in-view reachability rule in 1.1.2, resting-box `ElementInfo` in 1.1.3 — and the compare is numeric, as the
     // README prescribes, so a patch bump can never read as "older".
     const atLeast = (version: string, floor: string) => {
       const [major, minor, patch] = version.split(".").map(Number);
@@ -363,8 +363,8 @@ describe("elements:query", () => {
       if (minor !== fMinor) return minor > fMinor;
       return patch >= fPatch;
     };
-    expect(atLeast(ready.bridgeVersion, "1.1.2")).toBe(true);
-    expect(atLeast("1.10.0", "1.1.2")).toBe(true);
-    expect(atLeast("1.1.1", "1.1.2")).toBe(false);
+    expect(atLeast(ready.bridgeVersion, "1.1.3")).toBe(true);
+    expect(atLeast("1.10.0", "1.1.3")).toBe(true);
+    expect(atLeast("1.1.2", "1.1.3")).toBe(false);
   });
 });
