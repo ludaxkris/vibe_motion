@@ -1,0 +1,14 @@
+/* Vibe Motion · format 1 · v5 · saved 2026-09-20 (UTC) · catalog 1.1.0 */
+
+/* add class="vm-a17" to the element */
+
+@keyframes vm-scale-in-v1-1-0 { from { opacity: 0; transform: scale(var(--vm-from-scale)); } to { opacity: 1; transform: scale(1); } }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* load */
+  .vm-a17 {
+    transform-origin: center;
+    --vm-from-scale: 0.8;
+    animation: vm-scale-in-v1-1-0 500ms cubic-bezier(0.16, 1, 0.3, 1) 0ms 1 normal both;
+  }
+}

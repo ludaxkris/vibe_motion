@@ -1,0 +1,3112 @@
+{
+  "generator": "apps/web/lib/runtime-css/export-parity.test.ts — VM_UPDATE_PARITY=1 to regenerate",
+  "entries": [
+    {
+      "version": "1.0.0",
+      "animationId": "fade-in",
+      "keyframesCss": "@keyframes vm-fade-in-v1-0-0 { from { opacity: 0; } to { opacity: 1; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-in-v1-0-0",
+            "animation-duration": "600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out"
+          },
+          "customProperties": {}
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {}
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {}
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "fade-in-up",
+      "keyframesCss": "@keyframes vm-fade-in-up-v1-0-0 { from { opacity: 0; transform: translateY(var(--vm-distance)); } to { opacity: 1; transform: none; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-in-up-v1-0-0",
+            "animation-duration": "600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out"
+          },
+          "customProperties": {
+            "--vm-distance": "24px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-up-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-up-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "24px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "fade-in-down",
+      "keyframesCss": "@keyframes vm-fade-in-down-v1-0-0 { from { opacity: 0; transform: translateY(calc(-1 * var(--vm-distance))); } to { opacity: 1; transform: none; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-in-down-v1-0-0",
+            "animation-duration": "600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out"
+          },
+          "customProperties": {
+            "--vm-distance": "24px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-down-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-down-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "24px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "fade-in-left",
+      "keyframesCss": "@keyframes vm-fade-in-left-v1-0-0 { from { opacity: 0; transform: translateX(calc(-1 * var(--vm-distance))); } to { opacity: 1; transform: none; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-in-left-v1-0-0",
+            "animation-duration": "600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out"
+          },
+          "customProperties": {
+            "--vm-distance": "32px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-left-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-left-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "32px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "fade-in-right",
+      "keyframesCss": "@keyframes vm-fade-in-right-v1-0-0 { from { opacity: 0; transform: translateX(var(--vm-distance)); } to { opacity: 1; transform: none; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-in-right-v1-0-0",
+            "animation-duration": "600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out"
+          },
+          "customProperties": {
+            "--vm-distance": "32px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-right-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-right-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "32px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "scale-in",
+      "keyframesCss": "@keyframes vm-scale-in-v1-0-0 { from { opacity: 0; transform: scale(var(--vm-from-scale)); } to { opacity: 1; transform: scale(1); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-scale-in-v1-0-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "cubic-bezier(0.16, 1, 0.3, 1)"
+          },
+          "customProperties": {
+            "--vm-from-scale": "0.8"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fromScale": "0"
+          },
+          "longhands": {
+            "animation-name": "vm-scale-in-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-from-scale": "0"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-scale-in-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-from-scale": "0.8"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "slide-in-up",
+      "keyframesCss": "@keyframes vm-slide-in-up-v1-0-0 { from { transform: translateY(var(--vm-distance)); } to { transform: none; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-slide-in-up-v1-0-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out"
+          },
+          "customProperties": {
+            "--vm-distance": "40px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-slide-in-up-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-slide-in-up-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "40px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "blur-in",
+      "keyframesCss": "@keyframes vm-blur-in-v1-0-0 { from { opacity: 0; filter: blur(var(--vm-blur)); } to { opacity: 1; filter: blur(0); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-blur-in-v1-0-0",
+            "animation-duration": "700ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out"
+          },
+          "customProperties": {
+            "--vm-blur": "12px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "blur": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-blur-in-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-blur": "1px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-blur-in-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-blur": "12px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "flip-in-x",
+      "keyframesCss": "@keyframes vm-flip-in-x-v1-0-0 { from { opacity: 0; transform: perspective(600px) rotateX(var(--vm-angle)); } to { opacity: 1; transform: perspective(600px) rotateX(0); } }",
+      "baseStyles": {
+        "backface-visibility": "hidden"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-flip-in-x-v1-0-0",
+            "animation-duration": "700ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out"
+          },
+          "customProperties": {
+            "--vm-angle": "-90deg"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "angle": "-180deg"
+          },
+          "longhands": {
+            "animation-name": "vm-flip-in-x-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-angle": "-180deg"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-flip-in-x-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-angle": "-90deg"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "fade-out",
+      "keyframesCss": "@keyframes vm-fade-out-v1-0-0 { from { opacity: 1; } to { opacity: 0; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-out-v1-0-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in"
+          },
+          "customProperties": {}
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-out-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {}
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-out-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {}
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "fade-out-down",
+      "keyframesCss": "@keyframes vm-fade-out-down-v1-0-0 { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(var(--vm-distance)); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-out-down-v1-0-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in"
+          },
+          "customProperties": {
+            "--vm-distance": "24px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-out-down-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-out-down-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "24px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "scale-out",
+      "keyframesCss": "@keyframes vm-scale-out-v1-0-0 { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(var(--vm-to-scale)); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-scale-out-v1-0-0",
+            "animation-duration": "400ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in"
+          },
+          "customProperties": {
+            "--vm-to-scale": "0.8"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "toScale": "0"
+          },
+          "longhands": {
+            "animation-name": "vm-scale-out-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-to-scale": "0"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-scale-out-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-to-scale": "0.8"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "pulse",
+      "keyframesCss": "@keyframes vm-pulse-v1-0-0 { 0%, 100% { transform: scale(1); } 50% { transform: scale(var(--vm-scale)); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-pulse-v1-0-0",
+            "animation-duration": "1200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "infinite"
+          },
+          "customProperties": {
+            "--vm-scale": "1.05"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "200ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "scale": "1"
+          },
+          "longhands": {
+            "animation-name": "vm-pulse-v1-0-0",
+            "animation-duration": "200ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3"
+          },
+          "customProperties": {
+            "--vm-scale": "1"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "200ms",
+            "easing": "linear",
+            "scale": "1"
+          },
+          "longhands": {
+            "animation-name": "vm-pulse-v1-0-0",
+            "animation-duration": "200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "infinite"
+          },
+          "customProperties": {
+            "--vm-scale": "1"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "shake",
+      "keyframesCss": "@keyframes vm-shake-v1-0-0 { 0%, 100% { transform: translateX(0); } 10%, 30%, 50%, 70%, 90% { transform: translateX(calc(-1 * var(--vm-distance))); } 20%, 40%, 60%, 80% { transform: translateX(var(--vm-distance)); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-shake-v1-0-0",
+            "animation-duration": "700ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "1"
+          },
+          "customProperties": {
+            "--vm-distance": "8px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "200ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "distance": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-shake-v1-0-0",
+            "animation-duration": "200ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3"
+          },
+          "customProperties": {
+            "--vm-distance": "1px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "200ms",
+            "easing": "linear",
+            "distance": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-shake-v1-0-0",
+            "animation-duration": "200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "1"
+          },
+          "customProperties": {
+            "--vm-distance": "1px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "bounce",
+      "keyframesCss": "@keyframes vm-bounce-v1-0-0 { 0%, 20%, 53%, 100% { transform: translateY(0); } 40%, 43% { transform: translateY(calc(-1 * var(--vm-height))); } 70% { transform: translateY(calc(-0.5 * var(--vm-height))); } 90% { transform: translateY(calc(-0.15 * var(--vm-height))); } }",
+      "baseStyles": {
+        "transform-origin": "center bottom"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-bounce-v1-0-0",
+            "animation-duration": "1000ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-iteration-count": "1"
+          },
+          "customProperties": {
+            "--vm-height": "20px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "300ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "height": "2px"
+          },
+          "longhands": {
+            "animation-name": "vm-bounce-v1-0-0",
+            "animation-duration": "300ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3"
+          },
+          "customProperties": {
+            "--vm-height": "2px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "300ms",
+            "easing": "linear",
+            "height": "2px"
+          },
+          "longhands": {
+            "animation-name": "vm-bounce-v1-0-0",
+            "animation-duration": "300ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "1"
+          },
+          "customProperties": {
+            "--vm-height": "2px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "wobble",
+      "keyframesCss": "@keyframes vm-wobble-v1-0-0 { 0%, 100% { transform: none; } 15% { transform: translateX(calc(-1 * var(--vm-distance))) rotate(-5deg); } 30% { transform: translateX(calc(0.8 * var(--vm-distance))) rotate(3deg); } 45% { transform: translateX(calc(-0.6 * var(--vm-distance))) rotate(-3deg); } 60% { transform: translateX(calc(0.4 * var(--vm-distance))) rotate(2deg); } 75% { transform: translateX(calc(-0.2 * var(--vm-distance))) rotate(-1deg); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-wobble-v1-0-0",
+            "animation-duration": "1000ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "1"
+          },
+          "customProperties": {
+            "--vm-distance": "16px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "300ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "distance": "2px"
+          },
+          "longhands": {
+            "animation-name": "vm-wobble-v1-0-0",
+            "animation-duration": "300ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3"
+          },
+          "customProperties": {
+            "--vm-distance": "2px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "300ms",
+            "easing": "linear",
+            "distance": "2px"
+          },
+          "longhands": {
+            "animation-name": "vm-wobble-v1-0-0",
+            "animation-duration": "300ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "1"
+          },
+          "customProperties": {
+            "--vm-distance": "2px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "heartbeat",
+      "keyframesCss": "@keyframes vm-heartbeat-v1-0-0 { 0%, 28%, 70%, 100% { transform: scale(1); } 14%, 42% { transform: scale(var(--vm-scale)); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-heartbeat-v1-0-0",
+            "animation-duration": "1300ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "infinite"
+          },
+          "customProperties": {
+            "--vm-scale": "1.1"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "400ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "scale": "1"
+          },
+          "longhands": {
+            "animation-name": "vm-heartbeat-v1-0-0",
+            "animation-duration": "400ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3"
+          },
+          "customProperties": {
+            "--vm-scale": "1"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "400ms",
+            "easing": "linear",
+            "scale": "1"
+          },
+          "longhands": {
+            "animation-name": "vm-heartbeat-v1-0-0",
+            "animation-duration": "400ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "infinite"
+          },
+          "customProperties": {
+            "--vm-scale": "1"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "glow",
+      "keyframesCss": "@keyframes vm-glow-v1-0-0 { 0%, 100% { box-shadow: 0 0 0 0 var(--vm-color); } 50% { box-shadow: 0 0 var(--vm-radius) calc(var(--vm-radius) / 4) var(--vm-color); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-glow-v1-0-0",
+            "animation-duration": "1600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "infinite"
+          },
+          "customProperties": {
+            "--vm-color": "rgba(99, 102, 241, 0.6)",
+            "--vm-radius": "16px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "300ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "color": "#112233",
+            "radius": "2px"
+          },
+          "longhands": {
+            "animation-name": "vm-glow-v1-0-0",
+            "animation-duration": "300ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3"
+          },
+          "customProperties": {
+            "--vm-color": "#112233",
+            "--vm-radius": "2px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "300ms",
+            "easing": "linear",
+            "color": "#112233"
+          },
+          "longhands": {
+            "animation-name": "vm-glow-v1-0-0",
+            "animation-duration": "300ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "infinite"
+          },
+          "customProperties": {
+            "--vm-color": "#112233",
+            "--vm-radius": "16px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "highlight",
+      "keyframesCss": "@keyframes vm-highlight-v1-0-0 { from { background-color: transparent; } to { background-color: var(--vm-color); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-highlight-v1-0-0",
+            "animation-duration": "600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out"
+          },
+          "customProperties": {
+            "--vm-color": "rgba(250, 204, 21, 0.4)"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "color": "#112233"
+          },
+          "longhands": {
+            "animation-name": "vm-highlight-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-color": "#112233"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-highlight-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-color": "rgba(250, 204, 21, 0.4)"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "underline-sweep",
+      "keyframesCss": "@keyframes vm-underline-sweep-v1-0-0 { from { background-size: 0% var(--vm-thickness); } to { background-size: 100% var(--vm-thickness); } }",
+      "baseStyles": {
+        "background-image": "linear-gradient(var(--vm-color), var(--vm-color))",
+        "background-repeat": "no-repeat",
+        "background-position": "0 100%",
+        "text-decoration": "none"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-underline-sweep-v1-0-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out"
+          },
+          "customProperties": {
+            "--vm-color": "currentColor",
+            "--vm-thickness": "2px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "color": "#112233",
+            "thickness": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-underline-sweep-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-color": "#112233",
+            "--vm-thickness": "1px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear",
+            "thickness": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-underline-sweep-v1-0-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-color": "currentColor",
+            "--vm-thickness": "1px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "spin",
+      "keyframesCss": "@keyframes vm-spin-v1-0-0 { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-spin-v1-0-0",
+            "animation-duration": "2000ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "infinite",
+            "animation-direction": "normal"
+          },
+          "customProperties": {}
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "200ms",
+            "delay": "5000ms",
+            "easing": "ease-in-out",
+            "iteration": "3",
+            "direction": "reverse"
+          },
+          "longhands": {
+            "animation-name": "vm-spin-v1-0-0",
+            "animation-duration": "200ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "3",
+            "animation-direction": "reverse"
+          },
+          "customProperties": {}
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "200ms",
+            "easing": "ease-in-out",
+            "direction": "reverse"
+          },
+          "longhands": {
+            "animation-name": "vm-spin-v1-0-0",
+            "animation-duration": "200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "infinite",
+            "animation-direction": "reverse"
+          },
+          "customProperties": {}
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "float",
+      "keyframesCss": "@keyframes vm-float-v1-0-0 { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(calc(-1 * var(--vm-distance))); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-float-v1-0-0",
+            "animation-duration": "3000ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "infinite"
+          },
+          "customProperties": {
+            "--vm-distance": "10px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "500ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "distance": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-float-v1-0-0",
+            "animation-duration": "500ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3"
+          },
+          "customProperties": {
+            "--vm-distance": "1px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "500ms",
+            "easing": "linear",
+            "distance": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-float-v1-0-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "infinite"
+          },
+          "customProperties": {
+            "--vm-distance": "1px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "shimmer",
+      "keyframesCss": "@keyframes vm-shimmer-v1-0-0 { from { background-position: -200% 0; } to { background-position: 200% 0; } }",
+      "baseStyles": {
+        "background-image": "linear-gradient(100deg, transparent 30%, var(--vm-color) 50%, transparent 70%)",
+        "background-size": "200% 100%",
+        "background-repeat": "no-repeat"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-shimmer-v1-0-0",
+            "animation-duration": "2000ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "infinite"
+          },
+          "customProperties": {
+            "--vm-color": "rgba(255, 255, 255, 0.5)"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "500ms",
+            "delay": "5000ms",
+            "easing": "ease-in-out",
+            "iteration": "3",
+            "color": "#112233"
+          },
+          "longhands": {
+            "animation-name": "vm-shimmer-v1-0-0",
+            "animation-duration": "500ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "3"
+          },
+          "customProperties": {
+            "--vm-color": "#112233"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "500ms",
+            "easing": "ease-in-out",
+            "color": "#112233"
+          },
+          "longhands": {
+            "animation-name": "vm-shimmer-v1-0-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "infinite"
+          },
+          "customProperties": {
+            "--vm-color": "#112233"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "hover-lift",
+      "keyframesCss": "@keyframes vm-hover-lift-v1-0-0 { from { transform: translateY(0); box-shadow: 0 0 0 rgba(0,0,0,0); } to { transform: translateY(calc(-1 * var(--vm-distance))); box-shadow: 0 var(--vm-distance) calc(var(--vm-distance) * 2) rgba(0, 0, 0, 0.15); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-hover-lift-v1-0-0",
+            "animation-duration": "200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out"
+          },
+          "customProperties": {
+            "--vm-distance": "4px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "50ms",
+            "delay": "1000ms",
+            "easing": "linear",
+            "distance": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-hover-lift-v1-0-0",
+            "animation-duration": "50ms",
+            "animation-delay": "1000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "1px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "50ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-hover-lift-v1-0-0",
+            "animation-duration": "50ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-distance": "4px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "hover-grow",
+      "keyframesCss": "@keyframes vm-hover-grow-v1-0-0 { from { transform: scale(1); } to { transform: scale(var(--vm-scale)); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-hover-grow-v1-0-0",
+            "animation-duration": "200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out"
+          },
+          "customProperties": {
+            "--vm-scale": "1.05"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "50ms",
+            "delay": "1000ms",
+            "easing": "linear",
+            "scale": "1"
+          },
+          "longhands": {
+            "animation-name": "vm-hover-grow-v1-0-0",
+            "animation-duration": "50ms",
+            "animation-delay": "1000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-scale": "1"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "50ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-hover-grow-v1-0-0",
+            "animation-duration": "50ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-scale": "1.05"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "animationId": "hover-tilt",
+      "keyframesCss": "@keyframes vm-hover-tilt-v1-0-0 { from { transform: rotate(0deg); } to { transform: rotate(var(--vm-angle)); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-hover-tilt-v1-0-0",
+            "animation-duration": "200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out"
+          },
+          "customProperties": {
+            "--vm-angle": "3deg"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "50ms",
+            "delay": "1000ms",
+            "easing": "linear",
+            "angle": "-30deg"
+          },
+          "longhands": {
+            "animation-name": "vm-hover-tilt-v1-0-0",
+            "animation-duration": "50ms",
+            "animation-delay": "1000ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-angle": "-30deg"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "50ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-hover-tilt-v1-0-0",
+            "animation-duration": "50ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear"
+          },
+          "customProperties": {
+            "--vm-angle": "3deg"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "fade-in",
+      "keyframesCss": "@keyframes vm-fade-in-v1-1-0 { from { opacity: 0; } to { opacity: 1; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-in-v1-1-0",
+            "animation-duration": "600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {}
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {}
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {}
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "fade-in-up",
+      "keyframesCss": "@keyframes vm-fade-in-up-v1-1-0 { from { opacity: 0; transform: translateY(var(--vm-distance)); } to { opacity: 1; transform: none; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-in-up-v1-1-0",
+            "animation-duration": "600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-distance": "24px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-up-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-up-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "fade-in-down",
+      "keyframesCss": "@keyframes vm-fade-in-down-v1-1-0 { from { opacity: 0; transform: translateY(calc(-1 * var(--vm-distance))); } to { opacity: 1; transform: none; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-in-down-v1-1-0",
+            "animation-duration": "600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-distance": "24px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-down-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-down-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "fade-in-left",
+      "keyframesCss": "@keyframes vm-fade-in-left-v1-1-0 { from { opacity: 0; transform: translateX(calc(-1 * var(--vm-distance))); } to { opacity: 1; transform: none; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-in-left-v1-1-0",
+            "animation-duration": "600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-distance": "32px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-left-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-left-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "fade-in-right",
+      "keyframesCss": "@keyframes vm-fade-in-right-v1-1-0 { from { opacity: 0; transform: translateX(var(--vm-distance)); } to { opacity: 1; transform: none; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-in-right-v1-1-0",
+            "animation-duration": "600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-distance": "32px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-right-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-in-right-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "scale-in",
+      "keyframesCss": "@keyframes vm-scale-in-v1-1-0 { from { opacity: 0; transform: scale(var(--vm-from-scale)); } to { opacity: 1; transform: scale(1); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-scale-in-v1-1-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "cubic-bezier(0.16, 1, 0.3, 1)",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-from-scale": "0.8"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "fromScale": "0"
+          },
+          "longhands": {
+            "animation-name": "vm-scale-in-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-from-scale": "0"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear",
+            "fromScale": "0"
+          },
+          "longhands": {
+            "animation-name": "vm-scale-in-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-from-scale": "0"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "slide-in-up",
+      "keyframesCss": "@keyframes vm-slide-in-up-v1-1-0 { from { transform: translateY(var(--vm-distance)); } to { transform: none; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-slide-in-up-v1-1-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-distance": "40px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-slide-in-up-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-slide-in-up-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "blur-in",
+      "keyframesCss": "@keyframes vm-blur-in-v1-1-0 { from { opacity: 0; filter: blur(var(--vm-blur)); } to { opacity: 1; filter: blur(0); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-blur-in-v1-1-0",
+            "animation-duration": "700ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-blur": "12px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "blur": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-blur-in-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-blur": "1px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear",
+            "blur": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-blur-in-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-blur": "1px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "flip-in-x",
+      "keyframesCss": "@keyframes vm-flip-in-x-v1-1-0 { from { opacity: 0; transform: perspective(600px) rotateX(var(--vm-angle)); } to { opacity: 1; transform: perspective(600px) rotateX(0); } }",
+      "baseStyles": {
+        "backface-visibility": "hidden"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-flip-in-x-v1-1-0",
+            "animation-duration": "700ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-angle": "-90deg"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "angle": "-180deg"
+          },
+          "longhands": {
+            "animation-name": "vm-flip-in-x-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-angle": "-180deg"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear",
+            "angle": "-180deg"
+          },
+          "longhands": {
+            "animation-name": "vm-flip-in-x-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "both"
+          },
+          "customProperties": {
+            "--vm-angle": "-180deg"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "fade-out",
+      "keyframesCss": "@keyframes vm-fade-out-v1-1-0 { from { opacity: 1; } to { opacity: 0; } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-out-v1-1-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {}
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-out-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {}
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-out-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {}
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "fade-out-down",
+      "keyframesCss": "@keyframes vm-fade-out-down-v1-1-0 { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(var(--vm-distance)); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-fade-out-down-v1-1-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-distance": "24px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-out-down-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear",
+            "distance": "0px"
+          },
+          "longhands": {
+            "animation-name": "vm-fade-out-down-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-distance": "0px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "scale-out",
+      "keyframesCss": "@keyframes vm-scale-out-v1-1-0 { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(var(--vm-to-scale)); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-scale-out-v1-1-0",
+            "animation-duration": "400ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-to-scale": "0.8"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "toScale": "0"
+          },
+          "longhands": {
+            "animation-name": "vm-scale-out-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-to-scale": "0"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear",
+            "toScale": "0"
+          },
+          "longhands": {
+            "animation-name": "vm-scale-out-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-to-scale": "0"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "pulse",
+      "keyframesCss": "@keyframes vm-pulse-v1-1-0 { 0%, 100% { transform: scale(1); } 50% { transform: scale(var(--vm-scale)); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-pulse-v1-1-0",
+            "animation-duration": "1200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "infinite",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-scale": "1.05"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "200ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "fillMode": "forwards",
+            "scale": "1"
+          },
+          "longhands": {
+            "animation-name": "vm-pulse-v1-1-0",
+            "animation-duration": "200ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-scale": "1"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "200ms",
+            "easing": "linear",
+            "fillMode": "forwards"
+          },
+          "longhands": {
+            "animation-name": "vm-pulse-v1-1-0",
+            "animation-duration": "200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "infinite",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-scale": "1.05"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "shake",
+      "keyframesCss": "@keyframes vm-shake-v1-1-0 { 0%, 100% { transform: translateX(0); } 10%, 30%, 50%, 70%, 90% { transform: translateX(calc(-1 * var(--vm-distance))); } 20%, 40%, 60%, 80% { transform: translateX(var(--vm-distance)); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-shake-v1-1-0",
+            "animation-duration": "700ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "1",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-distance": "8px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "200ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "fillMode": "forwards",
+            "distance": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-shake-v1-1-0",
+            "animation-duration": "200ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-distance": "1px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "200ms",
+            "easing": "linear",
+            "fillMode": "forwards"
+          },
+          "longhands": {
+            "animation-name": "vm-shake-v1-1-0",
+            "animation-duration": "200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "1",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-distance": "8px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "bounce",
+      "keyframesCss": "@keyframes vm-bounce-v1-1-0 { 0%, 20%, 53%, 100% { transform: translateY(0); } 40%, 43% { transform: translateY(calc(-1 * var(--vm-height))); } 70% { transform: translateY(calc(-0.5 * var(--vm-height))); } 90% { transform: translateY(calc(-0.15 * var(--vm-height))); } }",
+      "baseStyles": {
+        "transform-origin": "center bottom"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-bounce-v1-1-0",
+            "animation-duration": "1000ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-iteration-count": "1",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-height": "20px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "300ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "fillMode": "forwards",
+            "height": "2px"
+          },
+          "longhands": {
+            "animation-name": "vm-bounce-v1-1-0",
+            "animation-duration": "300ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-height": "2px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "300ms",
+            "easing": "linear",
+            "fillMode": "forwards"
+          },
+          "longhands": {
+            "animation-name": "vm-bounce-v1-1-0",
+            "animation-duration": "300ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "1",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-height": "20px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "wobble",
+      "keyframesCss": "@keyframes vm-wobble-v1-1-0 { 0%, 100% { transform: none; } 15% { transform: translateX(calc(-1 * var(--vm-distance))) rotate(-5deg); } 30% { transform: translateX(calc(0.8 * var(--vm-distance))) rotate(3deg); } 45% { transform: translateX(calc(-0.6 * var(--vm-distance))) rotate(-3deg); } 60% { transform: translateX(calc(0.4 * var(--vm-distance))) rotate(2deg); } 75% { transform: translateX(calc(-0.2 * var(--vm-distance))) rotate(-1deg); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-wobble-v1-1-0",
+            "animation-duration": "1000ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "1",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-distance": "16px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "300ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "fillMode": "forwards",
+            "distance": "2px"
+          },
+          "longhands": {
+            "animation-name": "vm-wobble-v1-1-0",
+            "animation-duration": "300ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-distance": "2px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "300ms",
+            "easing": "linear",
+            "fillMode": "forwards"
+          },
+          "longhands": {
+            "animation-name": "vm-wobble-v1-1-0",
+            "animation-duration": "300ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "1",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-distance": "16px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "heartbeat",
+      "keyframesCss": "@keyframes vm-heartbeat-v1-1-0 { 0%, 28%, 70%, 100% { transform: scale(1); } 14%, 42% { transform: scale(var(--vm-scale)); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-heartbeat-v1-1-0",
+            "animation-duration": "1300ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "infinite",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-scale": "1.1"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "400ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "fillMode": "forwards",
+            "scale": "1"
+          },
+          "longhands": {
+            "animation-name": "vm-heartbeat-v1-1-0",
+            "animation-duration": "400ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-scale": "1"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "400ms",
+            "easing": "linear",
+            "fillMode": "forwards"
+          },
+          "longhands": {
+            "animation-name": "vm-heartbeat-v1-1-0",
+            "animation-duration": "400ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "infinite",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-scale": "1.1"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "glow",
+      "keyframesCss": "@keyframes vm-glow-v1-1-0 { 0%, 100% { box-shadow: 0 0 0 0 var(--vm-color); } 50% { box-shadow: 0 0 var(--vm-radius) calc(var(--vm-radius) / 4) var(--vm-color); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-glow-v1-1-0",
+            "animation-duration": "1600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "infinite",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-color": "rgba(99, 102, 241, 0.6)",
+            "--vm-radius": "16px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "300ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "fillMode": "forwards",
+            "color": "#112233",
+            "radius": "2px"
+          },
+          "longhands": {
+            "animation-name": "vm-glow-v1-1-0",
+            "animation-duration": "300ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-color": "#112233",
+            "--vm-radius": "2px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "300ms",
+            "easing": "linear",
+            "fillMode": "forwards",
+            "radius": "2px"
+          },
+          "longhands": {
+            "animation-name": "vm-glow-v1-1-0",
+            "animation-duration": "300ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "infinite",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-color": "rgba(99, 102, 241, 0.6)",
+            "--vm-radius": "2px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "highlight",
+      "keyframesCss": "@keyframes vm-highlight-v1-1-0 { from { background-color: transparent; } to { background-color: var(--vm-color); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-highlight-v1-1-0",
+            "animation-duration": "600ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-color": "rgba(250, 204, 21, 0.4)"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "color": "#112233"
+          },
+          "longhands": {
+            "animation-name": "vm-highlight-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-color": "#112233"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear",
+            "color": "#112233"
+          },
+          "longhands": {
+            "animation-name": "vm-highlight-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-color": "#112233"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "underline-sweep",
+      "keyframesCss": "@keyframes vm-underline-sweep-v1-1-0 { from { background-size: 0% var(--vm-thickness); } to { background-size: 100% var(--vm-thickness); } }",
+      "baseStyles": {
+        "background-image": "linear-gradient(var(--vm-color), var(--vm-color))",
+        "background-repeat": "no-repeat",
+        "background-position": "0 100%",
+        "text-decoration": "none"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-underline-sweep-v1-1-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-color": "currentColor",
+            "--vm-thickness": "2px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "100ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "color": "#112233",
+            "thickness": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-underline-sweep-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-color": "#112233",
+            "--vm-thickness": "1px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "100ms",
+            "easing": "linear",
+            "color": "#112233"
+          },
+          "longhands": {
+            "animation-name": "vm-underline-sweep-v1-1-0",
+            "animation-duration": "100ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-color": "#112233",
+            "--vm-thickness": "2px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "spin",
+      "keyframesCss": "@keyframes vm-spin-v1-1-0 { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-spin-v1-1-0",
+            "animation-duration": "2000ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "infinite",
+            "animation-direction": "normal",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {}
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "200ms",
+            "delay": "5000ms",
+            "easing": "ease-in-out",
+            "iteration": "3",
+            "direction": "reverse",
+            "fillMode": "forwards"
+          },
+          "longhands": {
+            "animation-name": "vm-spin-v1-1-0",
+            "animation-duration": "200ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "3",
+            "animation-direction": "reverse",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {}
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "200ms",
+            "easing": "ease-in-out",
+            "direction": "reverse"
+          },
+          "longhands": {
+            "animation-name": "vm-spin-v1-1-0",
+            "animation-duration": "200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "infinite",
+            "animation-direction": "reverse",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {}
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "float",
+      "keyframesCss": "@keyframes vm-float-v1-1-0 { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(calc(-1 * var(--vm-distance))); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-float-v1-1-0",
+            "animation-duration": "3000ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "infinite",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-distance": "10px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "500ms",
+            "delay": "5000ms",
+            "easing": "linear",
+            "iteration": "3",
+            "fillMode": "forwards",
+            "distance": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-float-v1-1-0",
+            "animation-duration": "500ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "3",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-distance": "1px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "500ms",
+            "easing": "linear",
+            "fillMode": "forwards"
+          },
+          "longhands": {
+            "animation-name": "vm-float-v1-1-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "infinite",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-distance": "10px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "shimmer",
+      "keyframesCss": "@keyframes vm-shimmer-v1-1-0 { from { background-position: -200% 0; } to { background-position: 200% 0; } }",
+      "baseStyles": {
+        "background-image": "linear-gradient(100deg, transparent 30%, var(--vm-color) 50%, transparent 70%)",
+        "background-size": "200% 100%",
+        "background-repeat": "no-repeat"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-shimmer-v1-1-0",
+            "animation-duration": "2000ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-iteration-count": "infinite",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-color": "rgba(255, 255, 255, 0.5)"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "500ms",
+            "delay": "5000ms",
+            "easing": "ease-in-out",
+            "iteration": "3",
+            "fillMode": "forwards",
+            "color": "#112233"
+          },
+          "longhands": {
+            "animation-name": "vm-shimmer-v1-1-0",
+            "animation-duration": "500ms",
+            "animation-delay": "5000ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "3",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-color": "#112233"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "500ms",
+            "easing": "ease-in-out",
+            "fillMode": "forwards"
+          },
+          "longhands": {
+            "animation-name": "vm-shimmer-v1-1-0",
+            "animation-duration": "500ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-in-out",
+            "animation-iteration-count": "infinite",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-color": "rgba(255, 255, 255, 0.5)"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "hover-lift",
+      "keyframesCss": "@keyframes vm-hover-lift-v1-1-0 { from { transform: translateY(0); box-shadow: 0 0 0 rgba(0,0,0,0); } to { transform: translateY(calc(-1 * var(--vm-distance))); box-shadow: 0 var(--vm-distance) calc(var(--vm-distance) * 2) rgba(0, 0, 0, 0.15); } }",
+      "baseStyles": {},
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-hover-lift-v1-1-0",
+            "animation-duration": "200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-distance": "4px"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "50ms",
+            "delay": "1000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "distance": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-hover-lift-v1-1-0",
+            "animation-duration": "50ms",
+            "animation-delay": "1000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-distance": "1px"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "50ms",
+            "easing": "linear",
+            "distance": "1px"
+          },
+          "longhands": {
+            "animation-name": "vm-hover-lift-v1-1-0",
+            "animation-duration": "50ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-distance": "1px"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "hover-grow",
+      "keyframesCss": "@keyframes vm-hover-grow-v1-1-0 { from { transform: scale(1); } to { transform: scale(var(--vm-scale)); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-hover-grow-v1-1-0",
+            "animation-duration": "200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-scale": "1.05"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "50ms",
+            "delay": "1000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "scale": "1"
+          },
+          "longhands": {
+            "animation-name": "vm-hover-grow-v1-1-0",
+            "animation-duration": "50ms",
+            "animation-delay": "1000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-scale": "1"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "50ms",
+            "easing": "linear",
+            "scale": "1"
+          },
+          "longhands": {
+            "animation-name": "vm-hover-grow-v1-1-0",
+            "animation-duration": "50ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-scale": "1"
+          }
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "animationId": "hover-tilt",
+      "keyframesCss": "@keyframes vm-hover-tilt-v1-1-0 { from { transform: rotate(0deg); } to { transform: rotate(var(--vm-angle)); } }",
+      "baseStyles": {
+        "transform-origin": "center"
+      },
+      "cases": [
+        {
+          "variant": "defaults",
+          "params": {},
+          "longhands": {
+            "animation-name": "vm-hover-tilt-v1-1-0",
+            "animation-duration": "200ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "ease-out",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-angle": "3deg"
+          }
+        },
+        {
+          "variant": "all",
+          "params": {
+            "duration": "50ms",
+            "delay": "1000ms",
+            "easing": "linear",
+            "fillMode": "none",
+            "angle": "-30deg"
+          },
+          "longhands": {
+            "animation-name": "vm-hover-tilt-v1-1-0",
+            "animation-duration": "50ms",
+            "animation-delay": "1000ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "none"
+          },
+          "customProperties": {
+            "--vm-angle": "-30deg"
+          }
+        },
+        {
+          "variant": "partial",
+          "params": {
+            "duration": "50ms",
+            "easing": "linear",
+            "angle": "-30deg"
+          },
+          "longhands": {
+            "animation-name": "vm-hover-tilt-v1-1-0",
+            "animation-duration": "50ms",
+            "animation-delay": "0ms",
+            "animation-timing-function": "linear",
+            "animation-fill-mode": "forwards"
+          },
+          "customProperties": {
+            "--vm-angle": "-30deg"
+          }
+        }
+      ]
+    }
+  ]
+}

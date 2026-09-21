@@ -12,12 +12,14 @@ import dev.vibemotion.api.domain.ProjectBusyException
 import dev.vibemotion.api.domain.ResourceNotFoundException
 import dev.vibemotion.api.domain.StaleParentErrorBody
 import dev.vibemotion.api.domain.StaleParentException
+import dev.vibemotion.api.export.ExportRequestException
 import dev.vibemotion.api.model.ApiError
 import dev.vibemotion.api.persistence.AppDatabase
 import dev.vibemotion.api.persistence.DatabaseHealth
 import dev.vibemotion.api.routes.NO_SNIFF_HEADER
 import dev.vibemotion.api.routes.bridgeRoutes
 import dev.vibemotion.api.routes.catalogRoutes
+import dev.vibemotion.api.routes.exportRoutes
 import dev.vibemotion.api.routes.healthRoutes
 import dev.vibemotion.api.routes.projectRoutes
 import dev.vibemotion.api.routes.versionRoutes
@@ -162,6 +164,11 @@ fun Application.apiModule(
                 ApiError("project_busy", cause.message ?: "The project is busy; retry in a moment"),
             )
         }
+        // The export endpoint coins its own 400 codes (`missing_vm_id`); `code` is an open string
+        // in the contract and the MSW mock already uses that one.
+        exception<ExportRequestException> { call, cause ->
+            call.respond(HttpStatusCode.BadRequest, ApiError(cause.code, cause.message ?: "Malformed export request"))
+        }
         exception<NotFoundException> { call, cause ->
             call.respond(HttpStatusCode.NotFound, ApiError("not_found", cause.message ?: "Not found"))
         }
@@ -193,6 +200,7 @@ fun Application.apiModule(
         catalogRoutes(catalog)
         projectRoutes(services.projects)
         versionRoutes(services.versions)
+        exportRoutes(services.exports)
         bridgeRoutes()
     }
 }

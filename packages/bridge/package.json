@@ -2,13 +2,14 @@
   "name": "bridge",
   "version": "0.0.0",
   "private": true,
-  "description": "The Vibe Motion preview bridge: the script that runs inside the cloned page's iframe, plus the shared postMessage protocol types and constants.",
+  "description": "The Vibe Motion preview bridge: the script that runs inside the cloned page's iframe, the in-view runtime an export ships, and the shared postMessage protocol types and constants.",
   "type": "module",
   "main": "./src/protocol.ts",
   "types": "./src/protocol.ts",
   "exports": {
     ".": "./src/protocol.ts",
     "./vm-bridge.js": "./src/vm-bridge.js",
+    "./vibe-motion-export.js": "./src/vibe-motion-export.js",
     "./package.json": "./package.json"
   },
   "files": [

@@ -218,7 +218,10 @@ class HtmlRewriterTest :
             }
             document.selectFirst("a:contains(mixed case)")?.attr("href") shouldBe "#"
             document.selectFirst("a:contains(tab escaped)")?.attr("href") shouldBe "#"
-            document.selectFirst("button")?.attr("formaction") shouldBe "#"
+            // `formaction` overrides the form's own neutralised action, so it is removed, not
+            // rewritten: a defused `#` would still beat `action="#"` at nothing, but a surviving
+            // third-party one would post the form off-site from an export.
+            document.selectFirst("button")?.hasAttr("formaction") shouldBe false
             document.selectFirst("use")?.attr("xlink:href") shouldBe "#"
             document.selectFirst("div[style]")?.attr("style") shouldContain """url("#")"""
         }
@@ -249,6 +252,17 @@ class HtmlRewriterTest :
             form.attr("action") shouldBe "#"
             form.hasAttr("target") shouldBe false
             form.selectFirst("input").shouldNotBeNull()
+        }
+
+        test("a disarmed action stays a bare fragment, even though absolutising now runs after it") {
+            // Form normalisation moved into the sanitiser, which runs before the absolutising pass,
+            // so `action="#"` is handed to `resolveUrl` like any other URL. It returns null for a
+            // bare fragment; without that, an exported form would post to the cloned site.
+            val html = """<html><body><form action="/subscribe"><input name="e"></form></body></html>"""
+
+            val form = Jsoup.parse(rewriter.rewrite(html, MARKETING_URL, loaderFor(emptyMap())).html).selectFirst("form")
+
+            form.shouldNotBeNull().attr("action") shouldBe "#"
         }
 
         test("takes the data-vm- namespace back from the source page") {

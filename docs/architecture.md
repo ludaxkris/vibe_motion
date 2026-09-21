@@ -181,6 +181,69 @@ sequenceDiagram
   W-->>D: tabs + copy buttons + zip download
 ```
 
+#### Decisions: what makes an exported page inert
+
+An export is served from the designer's own site, with no CSP of ours behind it (DT-073), and
+`base_html` is immutable — a row cloned by last month's rewriter is exported with today's
+protections because `HtmlSanitiser` runs again on the way out. Two decisions hold that up.
+
+**jsoup is not an oracle for how a browser parses.** The exporter re-parses `base_html` with jsoup
+and serialises it again, and for a while the tests then re-parsed that *output* with jsoup and
+called it proof. It is not: jsoup builds the same tree from our output that it built from the
+input, so a **parser differential** — markup jsoup serialises one way and a browser reads another —
+is invisible from there. One got through: a nested `<form>` that jsoup keeps and a browser ignores,
+shifting a `<style>` into MathML where it is not a raw-text element and its contents become live
+elements. So: **any claim that exported or cloned HTML is inert is proven in a real browser**, over
+the hostile corpus in `apps/api/src/test/resources/export/hostile/`, by
+`packages/bridge/e2e/export-hostile.spec.ts`. The Kotlin assertions are the fast half, not the
+proof. A document whose export is not a fixed point of `emit` is treated as a failure, because
+instability is how that differential announced itself.
+
+**Foreign content in cloned pages is reduced to a safe subset.** Inside an `svg` or `math` subtree,
+whether an element's contents are text or markup depends on the exact insertion mode, and
+re-implementing that is writing a second parser. So `HtmlSanitiser` removes every raw-text HTML
+element (`style`, `xmp`, `noembed`, `noframes`, `plaintext`, `noscript`, `iframe`, `script`) found
+anywhere in a foreign subtree, HTML integration points included, and removes `<form>` from foreign
+content except under an integration point (`foreignObject`, `desc`, `title`, `mtext`, `mi`, `mo`,
+`mn`, `ms`), where ordinary HTML rules resume and the form is disarmed like any other.
+`annotation-xml` is deliberately **not** treated as an integration point: it is one only for
+certain `encoding` values. Nested forms are unwrapped, which is what a browser does with the inner
+start tag.
+
+**One narrow exception, because real pages style their inline icons from inside the `<svg>`.** A
+`<style>` in SVG — with no HTML integration point between it and its **nearest** `svg` ancestor,
+and not under `math` — is kept when both of these hold: it has no element children, and its
+*serialised* bytes contain no `<`. Together those make it impossible for any parser to read the
+block as markup: `<` is the only character that can begin a start tag; a source `&lt;` is decoded
+to text while parsing and written back as `&lt;`, so it never becomes one; and a literal `<` never
+reaches the second check at all, because jsoup builds an element out of it and the first has
+already refused. Nearest, not outermost, is what the code walks to, so
+`svg > foreignObject > svg > style` *is* kept — that inner `<svg>` puts the block back in plain
+foreign content, where the reasoning applies unchanged. A **CDATA section is normalised first**: it
+is rewritten as a plain text node of the same characters, which then serialises escaped and faces
+the same rule as any other block. That shape is what Illustrator, Inkscape and Sketch export, and
+dropping it cost those icons their fills for no safety gained — escaped text cannot become markup
+whatever it says. A kept block is still swept like any other: dangerous `url()` defused, and on the
+clone path its URLs absolutised. Everything else in foreign content still goes. Dropping the lot
+was the first rule here and it was too wide: it kept the corpus inert and quietly unstyled every
+inline icon, a fidelity cost far broader than the threat.
+
+**The gate is a regression set, not the proof.** `packages/bridge/e2e/export-hostile.spec.ts` runs
+in **Chromium only**, and the corpus is a list of shapes that have gone wrong once. What the
+general claim rests on is the structural rule above — no raw-text element under a foreign root, no
+raw `<` in a kept block — which is why the rule had to be structural rather than a list of
+patterns. The gate carries a **positive control**, a document that has *not* been sanitised and
+must trip every check, so a spec that served the wrong body cannot report everything as inert.
+
+**Preview serves the stored bytes; export re-sanitises them.** `base_html` is immutable, so a
+project cloned by an older sanitiser keeps its original bytes in the preview — behind our CSP and
+the iframe sandbox — while its export is re-sanitised with today's rules. The two can therefore
+differ, and when they do, **safety takes the export's side**. Fidelity differences are accepted and
+fixed forward in the sanitiser; `base_html` is never rewritten. Today the visible case is a
+`<style>` in foreign content that the current rule declines to keep: styled in the preview,
+unstyled in the export. This will recur with every sanitiser change, which is why it is a decision
+rather than a bug.
+
 ## 4. Preview bridge (iframe ⇄ shell)
 
 ```mermaid

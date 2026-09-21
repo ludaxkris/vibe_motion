@@ -12,9 +12,10 @@ It is a shared contract (CLAUDE.md rule 6): additive changes only.
 | File | What |
 |---|---|
 | `src/vm-bridge.js` | The bridge itself. One IIFE, `"use strict"`, `// @ts-check`, no imports, no exports, **no build step**. |
+| `src/vibe-motion-export.js` | The `vibe-motion.js` an **export** ships (Phase 7). Same shape as the bridge — one IIFE, classic script, no build step — but it talks to nobody and knows nothing: it adds `vm-js` to `<html>` and releases `.vm-in-view` elements as they are scrolled to. |
 | `src/protocol.ts` | Message types, `AppliedAssignment`, `ElementInfo`, the validation regexes, `IN_VIEW_THRESHOLD`, `BULK_APPLY_LIMIT`, `ELEMENTS_QUERY_LIMIT` / `ELEMENTS_QUERY_MAX`. |
 | `test/harness.ts` | `loadBridge(html)` — builds a JSDOM, stubs `window.parent`, evaluates the script and hands back a controllable frame (fake `IntersectionObserver`, fake `requestAnimationFrame`, recorded posts). |
-| `e2e/harness.ts` | `mountBridge(page, body)` — the same script in a real browser: the test page is the shell on one origin, the framed page is the clone on another, and a third origin hosts a frame that tries to talk to the bridge. Everything is fulfilled by `page.route`, so there is no app and no API to start. |
+| `e2e/harness.ts` | `mountBridge(page, body)` — the same script in a real browser: the test page is the shell on one origin, the framed page is the clone on another, and a third origin hosts a frame that tries to talk to the bridge. Everything is fulfilled by `page.route`, so there is no app and no API to start. Also `mountExport(page, …)`, which serves an exported page — `index.html`, `vibe-motion.css`, `vibe-motion.js` — on an origin of its own, optionally inside a cross-origin iframe. |
 
 `vm-bridge.js` is a **plain classic script**, not a module. It is loaded into someone else's page
 under a CSP of `script-src 'self'; connect-src 'none'`: no `eval`, no injected inline script, no
@@ -70,6 +71,31 @@ The one thing that is **not** `vm-` prefixed is the `postMessage` type names (`a
 `vm-apply`): the envelope's `source: "vibe-motion"` namespaces them, per spec D9 and the amended
 naming rule in CLAUDE.md.
 
+## The export runtime (`src/vibe-motion-export.js`)
+
+The only JavaScript an exported page ever gets, and only when some assignment uses the `in-view`
+trigger — `load` and `hover` are plain CSS. The API returns the file **unchanged**: nothing is
+interpolated into it, ever, which is what makes it something a reviewer can read once.
+
+- Adds `vm-js` to `<html>` **immediately**. Every `in-view` rule in `vibe-motion.css` is scoped to
+  `:where(.vm-js)`, so a page without this file rests in its normal state instead of being stranded
+  on a first keyframe of `opacity: 0`. The `<script>` is in `<head>` and **not deferred** for that
+  one line: the class has to be set before the first paint.
+- At `DOMContentLoaded`, one `IntersectionObserver` at `threshold: [0, IN_VIEW_THRESHOLD]` watches
+  every `.vm-in-view`, and a `MutationObserver` on `documentElement` picks up marked elements that
+  arrive later — snippet mode is pasted into sites that render on the client.
+- An entry fires when `isIntersecting && (intersectionRatio >= T || reachable < T)`, where
+  `reachable = min(1, rootW/w) * min(1, rootH/h)` is the largest ratio the element could ever
+  attain. That second clause is DT-095: `intersectionRatio` is an **area** ratio, so an element
+  big enough can never reach `T` at all and would stay held for ever. Area, not height — a 4000px
+  track in a horizontal scroller tops out at 0.16 with a perfectly ordinary height. `rootBounds`
+  is null when the exported page is itself in a cross-origin iframe, so the viewport stands in for
+  both axes; reading off null would throw and leave everything held.
+- On firing it adds `vm-play` and unobserves, so the animation plays **once** — a deliberate
+  divergence from the preview, which re-arms on every entry (spec §6a).
+- **Nothing may be left held at `opacity: 0`.** No `IntersectionObserver`, a constructor that
+  throws, a callback that throws: every one of those plays everything.
+
 ## How it is consumed
 
 - **`apps/api`**: a Gradle `bridgeResources` Sync task copies `src/vm-bridge.js` into the jar the
@@ -77,6 +103,8 @@ naming rule in CLAUDE.md.
   the script instead of hand-syncing a Kotlin constant. Ktor serves it at `/bridge/vm-bridge.js`
   and `BridgePageRenderer` injects
   `<script src="/bridge/vm-bridge.js" data-vm-parent-origin="<WEB_ORIGIN>" defer>`.
+  A second Sync task, `exportScriptResources`, does the same for `src/vibe-motion-export.js`;
+  `InViewScript.kt` reads it and the exporter puts it in the bundle's `js` field verbatim.
 - **`apps/web`**: imports the types and constants as TypeScript source —
   `import type { AppliedAssignment } from "bridge"`, with `transpilePackages: ["bridge"]` in
   `next.config.ts` because there is no `dist/` — and drives the channel from
@@ -122,6 +150,7 @@ three wrong while every jsdom test passed. So `e2e/` exists for exactly that cla
 | a message from a third origin is never acked | needs three real origins |
 | `baseStyles` and `keyframesCss` cannot escape their rules | needs a real CSS parser |
 | `elements:query` returns real rects, skips `display:none`, reports the viewport, and meets its 50 ms budget on 2,000 elements | `getBoundingClientRect()` returns zeros, so jsdom tests stub it per element |
+| the export runtime holds, plays once, fires for an element taller than five viewports, survives a null `rootBounds` in a cross-origin iframe, and plays everything when the observer is missing or throws | no `IntersectionObserver`, no `rootBounds`, no layout and no `currentTime` |
 
 Still unproven anywhere, and worth knowing:
 
