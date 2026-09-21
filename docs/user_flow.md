@@ -101,19 +101,20 @@ flowchart TD
 ```
 
 - Restoring never deletes or rewrites history. v4 and v5 remain and can be viewed or restored later.
-- Any saved version can be exported directly while viewing it, without restoring.
+- Any saved version can be exported directly while viewing it, without restoring: **Export v3** in the expanded row — or simply opening the Export tab while v3 is on screen — pins the Export panel to v3. Because the switch leaves the History tab, the preview returns to the current version at the same moment; the panel's header (`v3`, with no "· current") is what says which version is being exported.
 - Pressing Esc, or switching away from the History tab, returns to the current version the same way "Back to current" does. Save and Cancel are hidden (not merely disabled) for the whole time the editor is viewing — there is no draft of the viewer's own to save or cancel.
 
 ## 5. Publishing (export) to the local machine
 
 ```mermaid
 flowchart TD
-  start["Editor · Export button"] -->|"unsaved changes?"| guard{"Save first?"}
-  guard -->|"Save"| panel
-  guard -->|"Cancel"| back([return to editor])
+  start["Editor · Export tab, or 'Export v3' in History"] -->|"unsaved changes?"| guard{"Save first?"}
+  guard -->|"Save → the version it creates"| panel
+  guard -->|"Discard → the current version"| panel
+  guard -->|"Keep editing, or a cancelled save"| back([return to the draft])
   start -->|"no unsaved changes"| panel
 
-  panel["Export panel · targets versionId (current or the one being viewed)<br/>tabs: index.html · vibe-motion.css · vibe-motion.js<br/>mode: Full page | Snippet for selected element"]
+  panel["Export panel · targets versionId (current, or the one that was being viewed)<br/>tabs: index.html · vibe-motion.css · vibe-motion.js<br/>mode: Full page | Snippet for selected element"]
   panel -->|"Copy tab"| copied["Clipboard · toast 'Copied CSS'"] --> panel
   panel -->|"Download .zip"| zip["vibe-motion-{project}-v{n}.zip<br/>index.html · vibe-motion.css · vibe-motion.js (only if in-view trigger used) · README.txt"]
   zip --> local([Files saved to designer's Downloads])
@@ -122,11 +123,15 @@ flowchart TD
 
 `README.txt` in the zip explains the three files, how to link the CSS and JS, and which classes were added to which elements.
 
+- The export is always of a **saved** version: nothing is requested while the guard is standing, and the live draft never reaches the API (CLAUDE.md rule 9).
+- **Snippet** is offered only when the selected element has an animation *in the version being exported* — not merely in the draft — because a snippet of anything else is a 404 from the API. The reason is on screen next to the disabled control.
+- `vibe-motion.js` is in the zip, and openable in the tab, only when some exported assignment uses the `in-view` trigger; otherwise the tab shows it faint and the footer says "js not needed".
+
 ## 6. State summary
 
 | Editor mode | Preview shows | Controls | Save | Export target |
 |---|---|---|---|---|
 | editing, clean | current version | enabled | disabled | current |
-| editing, unsaved ● | draft | enabled | enabled | prompts to save |
-| viewing vN | stateAt(vN) | disabled | hidden | vN |
+| editing, unsaved ● | draft | enabled | enabled | prompts to save; Save first exports the version it creates |
+| viewing vN | stateAt(vN) | disabled | hidden | vN (the panel keeps vN; the preview returns to the current version) |
 | cloning | spinner | none | none | none |

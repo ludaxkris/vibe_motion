@@ -120,6 +120,61 @@ describe("ExportPanel", () => {
     ).not.toHaveAttribute("aria-describedby");
   });
 
+  it("says the counts could not be loaded even while a snippet is still on offer", () => {
+    // TanStack keeps the last `data` when a *refetch* fails, so this is the
+    // ordinary shape of a failed refresh: an animated element is selected,
+    // Snippet is live, and nothing on screen said the counts had gone stale.
+    const onRetry = vi.fn();
+    renderPanel({ snippetAvailable: true, stateError: { onRetry } });
+
+    expect(screen.getByText(/Could not load this version’s animations/)).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Snippet" })).not.toHaveAttribute("data-disabled");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry counts" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it("prints no counts at all rather than stale ones under a failure", () => {
+    renderPanel({ counts: { animations: 2, elements: 4 }, stateError: { onRetry: vi.fn() } });
+
+    // The footer's numbers describe a state this panel could not read, so the
+    // line falls back to what it does know: whether the script is in the zip.
+    const stats = screen.getByTestId("export-stats");
+    expect(stats).not.toHaveTextContent("2 animations");
+    expect(stats).not.toHaveTextContent("4 elements");
+    expect(stats).toHaveTextContent("js not needed");
+  });
+
+  it("keeps the disabled segment's description free of its own retry button", () => {
+    renderPanel({ snippetAvailable: false, stateError: { onRetry: vi.fn() } });
+
+    // The button is a sibling of the described text, not inside it: a screen
+    // reader announcing the radio should not read "Retry counts" as part of
+    // the reason it is disabled.
+    const description = screen
+      .getByRole("radiogroup", { name: "Export mode" })
+      .getAttribute("aria-describedby");
+    const described = document.getElementById(description ?? "");
+    expect(described?.textContent).toContain("Could not load");
+    expect(described?.querySelector("button")).toBeNull();
+  });
+
+  it("says the counts could not be loaded, rather than blaming the selection", () => {
+    const onRetry = vi.fn();
+    renderPanel({ snippetAvailable: false, stateError: { onRetry } });
+
+    // The export is the API's and is unaffected, so the file tabs and the
+    // download stay live; what is gone is the counts and Snippet.
+    expect(screen.getByRole("button", { name: "Download .zip" })).toBeEnabled();
+    expect(screen.getByText(/Could not load this version’s animations/)).toBeInTheDocument();
+    expect(
+      screen.queryByText("Select an animated element on the page to export a snippet."),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry counts" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it("disables Snippet, and says why, until an animated element is selected", () => {
     const { props } = renderPanel({ snippetAvailable: false });
 

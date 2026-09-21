@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CreateVersionRequest } from "@/lib/api-client";
-import { fetchVersions, restoreVersion, saveVersion, type WriteOutcome } from "./api";
+import { fetchVersionState, fetchVersions, restoreVersion, saveVersion, type WriteOutcome } from "./api";
 
 export const versionsKey = (projectId: string) => ["project", projectId, "versions"] as const;
 export const versionStateKey = (projectId: string, versionId: string) =>
@@ -13,6 +13,30 @@ type VersionList = Awaited<ReturnType<typeof fetchVersions>>;
 
 export function useVersions(projectId: string, enabled = true) {
   return useQuery({ queryKey: versionsKey(projectId), queryFn: () => fetchVersions(projectId), enabled, retry: false });
+}
+
+/**
+ * One version's materialised state, under the same key `useVersionHistory`
+ * fills when a row is viewed — so opening Export on a version you were just
+ * looking at costs no request at all.
+ *
+ * `versionId` is null when the caller has the state from somewhere better (the
+ * store holds the *current* version's, which is what the editor is forked
+ * from), and the query is simply disabled then.
+ *
+ * A saved version is immutable and so is its state (CLAUDE.md rule 9), hence
+ * `staleTime: Infinity`: nothing can make this answer stale within a session.
+ */
+export function useVersionState(projectId: string, versionId: string | null) {
+  return useQuery({
+    // Never keyed on "": a disabled query still needs a key, and one that
+    // could collide with a real version's is worse than an unreachable one.
+    queryKey: versionStateKey(projectId, versionId ?? "none"),
+    queryFn: () => fetchVersionState(projectId, versionId ?? ""),
+    enabled: versionId !== null,
+    staleTime: Infinity,
+    retry: false,
+  });
 }
 
 function useRefreshOn(projectId: string) {

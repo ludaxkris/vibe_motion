@@ -173,6 +173,133 @@ test("a marked element deep inside a late subtree is observed too", async ({ pag
   await expect.poll(async () => await harness.classes("#late")).toContain("vm-play");
 });
 
+test("a host re-render that rewrites class does not re-hold an element that has played", async ({
+  page,
+}) => {
+  // DT-187. Snippet mode is pasted into someone else's site, and a React/Vue
+  // host owns `class` on the elements it renders: the next re-render writes
+  // `className` back from its own state and `vm-play` is gone. The element was
+  // unobserved when it played, so nothing would ever put it back — and
+  // `.vm-in-view:not(.vm-play)` pauses it at its first keyframe for good.
+  const harness = await mountExport(page, { body: BELOW_THE_FOLD, css: CSS });
+
+  await harness.frame.evaluate(() => document.querySelector("#target")!.scrollIntoView());
+  await expect.poll(async () => (await harness.animation("#target"))?.state).toBe("running");
+
+  await harness.frame.evaluate(() => {
+    // Exactly what a framework re-render does: the whole attribute, from its
+    // own state, with no idea `vm-play` was ever there.
+    document.querySelector("#target")!.className = "box vm-a1 vm-in-view";
+  });
+
+  await expect.poll(async () => await harness.classes("#target")).toContain("vm-play");
+  expect(await harness.animation("#target")).toMatchObject({ state: "running" });
+  // Restored, not restarted: the animation is the same one, still running.
+  expect(await harness.starts(KEYFRAMES)).toBe(1);
+});
+
+test("restoring vm-play does not loop, and leaves other elements alone", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  const harness = await mountExport(page, {
+    body:
+      `<div id="played" class="box vm-a1 vm-in-view">a</div>` +
+      `<div class="spacer"></div>` +
+      `<div id="waiting" class="box vm-a1 vm-in-view">b</div>`,
+    css: CSS,
+  });
+
+  await expect.poll(async () => await harness.classes("#played")).toContain("vm-play");
+
+  await harness.frame.evaluate(() => {
+    document.querySelector("#played")!.className = "box vm-a1 vm-in-view";
+    // A class change on an element that never played must not force it open:
+    // it is below the fold and still waiting its turn.
+    document.querySelector("#waiting")!.className = "box vm-a1 vm-in-view highlighted";
+  });
+  await page.waitForTimeout(200);
+
+  expect(await harness.classes("#played")).toContain("vm-play");
+  expect(await harness.classes("#waiting")).not.toContain("vm-play");
+  expect(await harness.animation("#waiting")).toMatchObject({ state: "paused", time: 0 });
+  expect(errors).toEqual([]);
+});
+
+test("an element that gains vm-in-view by a class rewrite is observed, held, and plays", async ({
+  page,
+}) => {
+  // The mirror of the repair above, and the one snippet mode was written for:
+  // `className={open ? "vm-a1 vm-in-view" : "vm-a1"}` on a framework host adds
+  // the marker with no node insertion at all. Nothing observes it, and
+  // `.vm-in-view:not(.vm-play)` holds it at `opacity: 0` for good — against
+  // this file's overriding rule.
+  const harness = await mountExport(page, {
+    body: `<div class="spacer"></div><div id="target" class="box vm-a1">target</div>`,
+    css: CSS,
+  });
+
+  await harness.frame.evaluate(() => {
+    document.querySelector("#target")!.className = "box vm-a1 vm-in-view";
+  });
+  await page.waitForTimeout(150);
+
+  // Held, not force-played: it is below the fold and has not been reached.
+  // (Paused wherever it had got to, not at 0: this element carried `vm-a1`
+  // without the marker until now, so its animation had already started and the
+  // hold rule caught it mid-flight. An element the *exporter* marks carries
+  // both classes from the first paint and is held at 0, as the specs above.)
+  expect(await harness.classes("#target")).not.toContain("vm-play");
+  expect(await harness.animation("#target")).toMatchObject({ state: "paused" });
+
+  await harness.frame.evaluate(() => document.querySelector("#target")!.scrollIntoView());
+
+  await expect.poll(async () => (await harness.animation("#target"))?.state).toBe("running");
+  expect(await harness.starts(KEYFRAMES)).toBe(1);
+});
+
+test("with no IntersectionObserver, an element that gains the marker is played on sight", async ({
+  page,
+}) => {
+  // Nothing can observe it, and the hold rule applies the moment the marker
+  // lands, so the only answer that keeps it visible is to release it.
+  await page.addInitScript(() => {
+    // @ts-expect-error removing a browser global on purpose
+    delete window.IntersectionObserver;
+  });
+
+  const harness = await mountExport(page, {
+    body: `<div class="spacer"></div><div id="target" class="box vm-a1">target</div>`,
+    css: CSS,
+  });
+
+  await harness.frame.evaluate(() => {
+    document.querySelector("#target")!.className = "box vm-a1 vm-in-view";
+  });
+
+  await expect.poll(async () => await harness.classes("#target")).toContain("vm-play");
+});
+
+test("with no IntersectionObserver, a played element is still restored after a re-render", async ({
+  page,
+}) => {
+  // The fallback path plays everything; a host re-render would drop `vm-play`
+  // there too, and the hold rule applies just the same.
+  await page.addInitScript(() => {
+    // @ts-expect-error removing a browser global on purpose
+    delete window.IntersectionObserver;
+  });
+
+  const harness = await mountExport(page, { body: BELOW_THE_FOLD, css: CSS });
+  await expect.poll(async () => await harness.classes("#target")).toContain("vm-play");
+
+  await harness.frame.evaluate(() => {
+    document.querySelector("#target")!.className = "box vm-a1 vm-in-view";
+  });
+
+  await expect.poll(async () => await harness.classes("#target")).toContain("vm-play");
+});
+
 test("inside a cross-origin iframe, where rootBounds is null, it still plays", async ({ page }) => {
   const harness = await mountExport(page, { body: BELOW_THE_FOLD, css: CSS, embed: true });
 
@@ -192,6 +319,100 @@ test("inside a cross-origin iframe, where rootBounds is null, it still plays", a
   expect(await harness.animation("#target")).toMatchObject({ state: "paused", time: 0 });
   await harness.frame.evaluate(() => document.querySelector("#target")!.scrollIntoView());
   await expect.poll(async () => (await harness.animation("#target"))?.state).toBe("running");
+});
+
+test("a collapsed root does not count as 'seen': the element waits for a viewport", async ({
+  page,
+}) => {
+  // The reachability escape hatch asks "could this element ever reach the threshold in a root
+  // this size?". With a root of height 0 — an exported page inside a collapsed iframe, a closed
+  // accordion, a transient zero-height layout — the honest answer is "there is no viewport yet".
+  // `min(1, 0 / h)` is 0, which is under the threshold, so an element the browser reports as
+  // edge-adjacent would fire unseen; the export unobserves what it plays, so it would then never
+  // play for the reader at all. `reachableFraction` guards `rootSize` for that reason, and
+  // `test/export-script.test.ts` is where that arithmetic is pinned.
+  //
+  // What this spec holds is the behaviour: in a root with no size nothing is released, and the
+  // element still plays once a viewport appears. (Chromium reports no intersection at all in a
+  // collapsed frame — `isIntersecting: false`, `rootBounds: null`, `innerHeight: 0` — so the
+  // guard is defence against the browsers that do report the edge-adjacent case, and this spec
+  // is the characterisation that would catch Chromium starting to.)
+  const harness = await mountExport(page, {
+    body: `<div id="target" class="box vm-a1 vm-in-view">target</div><div class="spacer"></div>`,
+    css: CSS,
+    embed: true,
+    embedHeight: 0,
+  });
+
+  await page.waitForTimeout(250);
+  expect(await harness.classes("#target")).not.toContain("vm-play");
+  expect(await harness.animation("#target")).toMatchObject({ state: "paused", time: 0 });
+
+  // Given a viewport, it plays like any other in-view element.
+  await harness.resizeEmbed(600);
+
+  await expect.poll(async () => await harness.classes("#target")).toContain("vm-play");
+  expect(await harness.starts(KEYFRAMES)).toBe(1);
+});
+
+test("a root empty on one axis holds even an element unreachable on the other, and releases it when the root comes back", async ({
+  page,
+}) => {
+  // The case a per-axis guard misses: a root of 640x0 with a 4000x60 track is
+  // "unreachable" on the width axis (0.16) and "fully reachable" on the height
+  // axis (the empty one answers 1), so the product is under the threshold and
+  // the element fires while nothing is visible — once, and then never again,
+  // because the export unobserves what it plays. The guard belongs to the
+  // root, not to an axis.
+  //
+  // And a root that comes back is not self-announcing: an unreachable element
+  // goes from ratio 0 to a ratio still under the threshold, crossing none of
+  // `[0, T]`, so the browser has nothing to report. The script re-observes.
+  const harness = await mountExport(page, {
+    body:
+      `<div id="target" class="vm-a1 vm-in-view" style="width:4000px;height:60px;background:#ddd"></div>` +
+      `<div class="spacer"></div>`,
+    css: CSS,
+    embed: true,
+    embedHeight: 0,
+  });
+
+  await page.waitForTimeout(250);
+  expect(await harness.classes("#target")).not.toContain("vm-play");
+
+  await harness.resizeEmbed(600);
+
+  await expect.poll(async () => await harness.classes("#target")).toContain("vm-play");
+  expect(await harness.starts(KEYFRAMES)).toBe(1);
+});
+
+test("a page with no doctype still measures the viewport, not the whole document", async ({
+  page,
+}) => {
+  // An export keeps the doctype of the page it was cloned from, and plenty of real pages have
+  // none: `document.compatMode` is then `BackCompat`, where `documentElement.clientHeight` is the
+  // DOCUMENT box, not the viewport — measured 4400px in a 400px frame. A hero taller than five
+  // viewports then looks comfortably reachable (`min(1, 4400 / 2400)` = 1), so the ratio test
+  // decides it, it can never reach 0.2 in a viewport it is six times the height of, and the
+  // element stays at `opacity: 0` for good.
+  //
+  // Embedded, because that is when the script has to measure the root itself: `entry.rootBounds`
+  // is null only inside a cross-origin iframe, and everywhere else the browser's own root box is
+  // used and quirks mode cannot reach the decision.
+  const harness = await mountExport(page, {
+    body: `<div class="spacer"></div><div id="target" class="vm-a1 vm-in-view" style="height:600vh;background:#ddd"></div>`,
+    css: CSS,
+    embed: true,
+    quirks: true,
+  });
+
+  expect(await harness.frame.evaluate(() => document.compatMode)).toBe("BackCompat");
+  expect(await harness.animation("#target")).toMatchObject({ state: "paused", time: 0 });
+
+  await harness.frame.evaluate(() => window.scrollTo(0, 1900));
+
+  await expect.poll(async () => (await harness.animation("#target"))?.state).toBe("running");
+  expect(await harness.starts(KEYFRAMES)).toBe(1);
 });
 
 test("with no IntersectionObserver at all, everything plays", async ({ page }) => {

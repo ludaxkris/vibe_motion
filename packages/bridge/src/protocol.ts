@@ -29,6 +29,16 @@ export const STYLE_KEY_RE = /^(animation-(?!name$)[a-z-]+|--vm-[a-z0-9-]+)$/;
 
 export type Trigger = "load" | "hover" | "in-view";
 export type Rect = { x: number; y: number; width: number; height: number };
+/**
+ * What the bridge knows about one tagged element.
+ *
+ * `rect` / `pageRect` / `visible` describe the box the element **rests** at, not the one it is
+ * painted at: while any of our animations is applied to it or to an ancestor the bridge measures
+ * the layout box, so an `in-view` element held on its first keyframe is still reported at its real
+ * size (spec §3, "`elements:query` rules"). The trade is that a touched element's rect is
+ * integer-snapped and blind to a host ancestor's transform — a consumer comparing one against an
+ * untouched element's live rect needs a pixel or two of tolerance.
+ */
 export type ElementInfo = {
   vmId: string;
   tag: string;

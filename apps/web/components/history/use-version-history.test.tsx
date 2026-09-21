@@ -708,6 +708,32 @@ describe("useVersionHistory · the list", () => {
     expect(result.current.listError).toBe(false);
   });
 
+  it("names the store's current version even while the list still says the old one", async () => {
+    // The rule the Export tab's "Save first" rests on: a save moves the
+    // store's `currentVersionId` immediately (`markSaved`), and the list is
+    // merely invalidated — so a hook that read the list first would hand the
+    // Export tab the version the reader saved *away from*, and the panel would
+    // export v3 the moment after v4 was written. `storeVersionId ??
+    // listVersionId`, in that order, is what makes it v4.
+    //
+    // (The other half — the 201's version being in the cached list before
+    // `mutateAsync` resolves — is `lib/versions/queries.test.tsx`, "puts the
+    // version it wrote in the list, without waiting for the refetch".)
+    const { project, versions } = await projectWithHistory();
+    const { result } = renderHistory(project.id);
+    await waitFor(() => expect(result.current.pending).toBe(false));
+    expect(result.current.currentVersionId).toBe(versions[3].id);
+
+    // A save, as the store sees it, with the list left exactly as it was.
+    act(() => {
+      useEditorStore.getState().markSaved({ ...versions[3], id: "saved-just-now", seq: 4 });
+    });
+
+    expect(result.current.currentVersionId).toBe("saved-just-now");
+    // …and the list is still the stale one, which is the point of the test.
+    expect(result.current.versions.map((version) => version.id)).not.toContain("saved-just-now");
+  });
+
   it("reports a list that could not be loaded, and loads it on retry", async () => {
     const { project } = await projectWithHistory();
     server.use(

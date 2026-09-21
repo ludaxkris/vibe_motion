@@ -21,7 +21,7 @@ export type VersionRowProps = {
   elementCount?: number;
   onView: (versionId: string) => void;
   onRestore: (versionId: string) => void;
-  /** Export stays disabled until Phase 7 wires a handler in. */
+  /** Open the Export tab on this version. Absent (no project behind the panel) disables the button. */
   onExport?: (versionId: string) => void;
   restoring?: boolean;
 };

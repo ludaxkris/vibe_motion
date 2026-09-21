@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 
 import { ConflictDialogContent } from "@/components/dialogs/conflict-dialog";
 import { UNSAVED_GUARD_DIALOG_WIDTH } from "@/components/dialogs/unsaved-guard-dialog";
@@ -9,6 +9,7 @@ import { ViewingBanner } from "@/components/history/viewing-banner";
 import type { Assignment, EditorStateMap, Trigger, Version } from "@/lib/api-client";
 import { CURRENT_CATALOG_VERSION, getCatalogEntry, resolveCatalogParams } from "@/lib/catalog";
 
+import { Frame } from "../frame";
 import { StaticDialog } from "../static-dialog";
 
 /** A draft assignment at the catalog's own defaults, or `undefined` when the id has gone. */
@@ -89,28 +90,11 @@ const CONFLICT_THEIRS = version(5, "Pulse on .cta, retriggered on hover", [
   [".cta", "pulse", "hover"],
 ]);
 
+/** The 320px panel column, unpadded: `HistoryList` brings its own card. */
+const HISTORY_FRAME = "w-[var(--panel-width)] bg-vm-panel";
+
 /** The gallery's fixed "now", so every relative timestamp is deterministic. */
 const NOW = new Date(Date.UTC(2026, 8, 18, 12, 0, 0));
-
-function Frame({
-  slug,
-  title,
-  note,
-  children,
-}: {
-  slug: string;
-  title: string;
-  note?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section data-testid={`dev-frame-${slug}`} className="flex flex-col gap-2">
-      <h3 className="text-md font-semibold">{title}</h3>
-      {note ? <p className="max-w-[46ch] text-sm leading-body text-vm-ink-2">{note}</p> : null}
-      <div className="w-[var(--panel-width)] shrink-0 overflow-hidden bg-vm-panel">{children}</div>
-    </section>
-  );
-}
 
 function HistoryListFrame({ initialViewingId }: { initialViewingId: string | null }) {
   const [viewingVersionId, setViewingVersionId] = useState<string | null>(initialViewingId);
@@ -146,11 +130,17 @@ export function HistoryShowcase() {
         </p>
       </header>
 
-      <Frame slug="history-list" title="History list · nothing viewed">
+      {/* The list draws its own card, so this frame stays unpadded. */}
+      <Frame
+        bodyClassName={HISTORY_FRAME}
+        slug="history-list"
+        title="History list · nothing viewed"
+      >
         <HistoryListFrame initialViewingId={null} />
       </Frame>
 
       <Frame
+        bodyClassName={HISTORY_FRAME}
         slug="history-list-viewing"
         title="History list · v3 viewed"
         note="Expands into that version's own diff, a Restore button and a disabled Export; the footer names every version a restore would leave standing."

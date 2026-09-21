@@ -57,6 +57,8 @@ export type ExportTabProps = {
   selectedVmId?: string | null;
   /** That version's materialised state, for the footer's counts. */
   state?: EditorStateMap;
+  /** That state could not be loaded: the counts and Snippet are unavailable, the export is not. */
+  stateError?: { onRetry: () => void };
   /** The project's name; only the download file name ever sees it. */
   projectSlug?: string;
 };
@@ -64,8 +66,10 @@ export type ExportTabProps = {
 /**
  * The Export tab, wired to `GET /projects/{projectId}/export`.
  *
- * Not mounted anywhere yet: Track C puts it in the panel's Export
- * `TabsContent` once PR #21 and PR #22 are on `main`.
+ * Mounted by `components/control-panel/export-section.tsx`, which is also
+ * where the version this is asked for is decided (plan §5.2: the project's
+ * current version, or the one the reader pinned by opening Export while
+ * viewing it). `/dev/export` renders the presentational half from fixed props.
  */
 export function ExportTab({
   projectId,
@@ -75,6 +79,7 @@ export function ExportTab({
   isCurrent,
   selectedVmId,
   state,
+  stateError,
   projectSlug,
 }: ExportTabProps) {
   const [mode, setMode] = useState<ExportMode>("full");
@@ -119,6 +124,7 @@ export function ExportTab({
       mode={effectiveMode}
       onModeChange={setMode}
       snippetAvailable={snippetAvailable}
+      stateError={stateError}
       counts={exportCounts(countedState)}
       onRetry={() => void query.refetch()}
       projectSlug={projectSlug}

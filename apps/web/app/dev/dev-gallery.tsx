@@ -1,7 +1,6 @@
 "use client";
 
 import { getEntry } from "animation-catalog";
-import { cn } from "cn";
 import Link from "next/link";
 import { useId, useState, type ReactNode } from "react";
 
@@ -35,6 +34,7 @@ import {
 } from "@/lib/catalog";
 import { summariseDiff } from "@/lib/diff-summary";
 
+import { Frame } from "./frame";
 import { StaticDialog } from "./static-dialog";
 
 /** The gallery renders looks, not behaviour: a callback that exists is an enabled control. */
@@ -135,35 +135,6 @@ const AUTO_RESULT_ROWS: AutoResultRow[] = [
   sampleAutoResultRow(VM_DROPPED, "p", "fade-in", "in-view", { duration: "900ms" }),
   sampleAutoResultRow(VM_CTA, "a", "pulse", "hover"),
 ].filter((row): row is AutoResultRow => row !== undefined);
-
-function Frame({
-  slug,
-  title,
-  note,
-  bodyClassName,
-  children,
-}: {
-  /** The screenshot runner's handle: `data-testid="dev-frame-<slug>"`. */
-  slug: string;
-  title: string;
-  note?: string;
-  /** The frame's real width — 320px for a Control Panel state. */
-  bodyClassName: string;
-  children: ReactNode;
-}) {
-  return (
-    <section data-testid={`dev-frame-${slug}`} className="flex flex-col gap-2">
-      <h3 className="text-md font-semibold">{title}</h3>
-      {note ? <p className="max-w-[46ch] text-sm leading-body text-vm-ink-2">{note}</p> : null}
-      <div data-dev-frame-body="" className={cn("shrink-0 overflow-hidden", bodyClassName)}>
-        {children}
-      </div>
-    </section>
-  );
-}
-
-/** The 320px column a Control Panel state lives in, panel background included. */
-const PANEL_FRAME = "w-[var(--panel-width)] bg-vm-panel p-3";
 
 function ChoosingFrame({ initialSearch = "" }: { initialSearch?: string }) {
   const [search, setSearch] = useState(initialSearch);
@@ -293,12 +264,17 @@ export function DevGallery() {
           Dev-only route, 404 in production. Each frame is rendered from props at its real width —
           nothing here reads or writes the editor store, and nothing calls the API.
         </p>
-        {/* Its own page: the version list, the viewing banner and the conflict
-            dialog need a project's worth of history to stand in a frame. */}
+        {/* Their own pages: the version list, the viewing banner and the
+            conflict dialog need a project's worth of history to stand in a
+            frame, and the Export tab needs a bundle. */}
         <p className="text-md leading-body text-vm-ink-2">
           The History tab&rsquo;s states live on{" "}
           <Link href="/dev/history" className="font-medium text-vm-accent hover:underline">
             /dev/history
+          </Link>
+          , and the Export tab&rsquo;s on{" "}
+          <Link href="/dev/export" className="font-medium text-vm-accent hover:underline">
+            /dev/export
           </Link>
           .
         </p>
@@ -308,7 +284,6 @@ export function DevGallery() {
         <Frame
           slug="panel-idle-empty"
           title="Idle · nothing animated yet"
-          bodyClassName={PANEL_FRAME}
         >
           <IdlePanel assignments={{}} prompt="" onPromptChange={noop} onAutoGenerate={noop} />
         </Frame>
@@ -317,7 +292,6 @@ export function DevGallery() {
           slug="panel-idle-assignments"
           title="Idle · with assignments"
           note="The ANIMATED list and Replay all appear once the draft holds anything."
-          bodyClassName={PANEL_FRAME}
         >
           <IdlePanel
             assignments={DRAFT_STATE}
@@ -332,7 +306,6 @@ export function DevGallery() {
           slug="panel-idle-generating"
           title="Idle · auto-generate running"
           note="One run at a time: the button says so and takes no clicks."
-          bodyClassName={PANEL_FRAME}
         >
           <IdlePanel
             assignments={{}}
@@ -347,7 +320,6 @@ export function DevGallery() {
           slug="panel-idle-error"
           title="Idle · auto-generate found nothing"
           note="A failed run leaves the draft untouched and says why under the button."
-          bodyClassName={PANEL_FRAME}
         >
           <IdlePanel
             assignments={{}}
@@ -361,7 +333,6 @@ export function DevGallery() {
         <Frame
           slug="panel-selected"
           title="Selected · no animation yet"
-          bodyClassName={PANEL_FRAME}
         >
           <SelectedPanel vmId={VM_HEADLINE} onGenerate={noop} />
         </Frame>
@@ -370,7 +341,6 @@ export function DevGallery() {
           slug="panel-choosing"
           title="Choosing"
           note="Search and category are live; hovering a card plays the catalog's real keyframes."
-          bodyClassName={PANEL_FRAME}
         >
           <ChoosingFrame />
         </Frame>
@@ -378,7 +348,6 @@ export function DevGallery() {
         <Frame
           slug="panel-choosing-empty-search"
           title="Choosing · nothing matches"
-          bodyClassName={PANEL_FRAME}
         >
           <ChoosingFrame initialSearch="zzz" />
         </Frame>
@@ -386,7 +355,6 @@ export function DevGallery() {
         <Frame
           slug="panel-tuning-distance"
           title="Tuning · an entry with distance"
-          bodyClassName={PANEL_FRAME}
         >
           <TuningFrame animationId="fade-in-up" />
         </Frame>
@@ -394,7 +362,6 @@ export function DevGallery() {
         <Frame
           slug="panel-tuning-scale"
           title="Tuning · an entry with scale"
-          bodyClassName={PANEL_FRAME}
         >
           <TuningFrame animationId="pulse" />
         </Frame>
@@ -403,7 +370,6 @@ export function DevGallery() {
           slug="panel-tuning-selects"
           title="Tuning · an entry with direction"
           note="Direction and Fill mode take the easing row's select: their CSS keywords are too long to read in a quarter of the panel."
-          bodyClassName={PANEL_FRAME}
         >
           <TuningFrame animationId="spin" />
         </Frame>
@@ -412,7 +378,6 @@ export function DevGallery() {
           slug="panel-tuning-from-auto"
           title="Tuning · opened from the result list"
           note="The ‹ control appears only here: it goes back up to the auto-generate result list."
-          bodyClassName={PANEL_FRAME}
         >
           <TuningFrame animationId="fade-in-up" fromAuto />
         </Frame>
@@ -421,7 +386,6 @@ export function DevGallery() {
           slug="panel-auto-result"
           title="Auto-generate result"
           note="One row per element of the last run; a row tuned by hand since keeps its place with a quiet “edited” tag."
-          bodyClassName={PANEL_FRAME}
         >
           <AutoResultPanel
             rows={AUTO_RESULT_ROWS}

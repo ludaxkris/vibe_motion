@@ -402,6 +402,54 @@ export type ExportResult =
   | { status: 400; body: ApiError }
   | { status: 404; body: ApiError };
 
+/**
+ * How many filler elements a cloned URL asked the mock to stand in for:
+ * `?vmExtraElements=N`, the same dev-only knob the mock page route has
+ * (`app/mock-api/projects/[projectId]/page/route.ts`), capped the same way.
+ *
+ * A real clone is whatever size the page was, and both the bridge's
+ * performance budget and the Export tab's layout have to hold for a page of
+ * thousands of lines — not just for the twelve-element fixture.
+ *
+ * It is read off the *cloned URL* rather than off the export request so that
+ * nothing has to be passed through the tab to reach it. Note that this does
+ * **not** make the preview match: `previewPageUrl()` builds
+ * `/mock-api/projects/{id}/page` and carries no query, and the preview route
+ * reads its own `?vmExtraElements` (which is how `bridge-perf.spec.ts` drives
+ * it). So in mock mode the editor can frame the twelve-element fixture while
+ * the export holds hundreds — two plumbings for one knob name, which is fine
+ * for what either is used to measure.
+ */
+function extraElementCount(sourceUrl: string): number {
+  // Declared beside its use rather than after it. The same cap as the mock page
+  // route's (`app/mock-api/projects/[projectId]/page/route.ts`), kept in step by
+  // hand: a stray value must not build a megabyte of markup.
+  const MAX_EXTRA_ELEMENTS = 1000;
+  let requested: number;
+  try {
+    requested = Number(new URL(sourceUrl).searchParams.get("vmExtraElements") ?? 0);
+  } catch {
+    return 0;
+  }
+  if (!Number.isFinite(requested)) return 0;
+  return Math.min(Math.max(Math.trunc(requested), 0), MAX_EXTRA_ELEMENTS);
+}
+
+/** The fixture, plus whatever filler {@link extraElementCount} asked for, before `</body>`. */
+function exportedFixtureHtml(sourceUrl: string): string {
+  const count = extraElementCount(sourceUrl);
+  if (count === 0) return pageFixtureHtml;
+
+  let filler = "";
+  for (let index = 1; index <= count; index += 1) {
+    filler += `    <p data-vm-id="vm-extra-${index}">Filler element ${index}.</p>\n`;
+  }
+  const bodyEnd = pageFixtureHtml.lastIndexOf("</body");
+  return bodyEnd < 0
+    ? pageFixtureHtml + filler
+    : pageFixtureHtml.slice(0, bodyEnd) + filler + pageFixtureHtml.slice(bodyEnd);
+}
+
 export function exportProject(projectId: string, options: ExportOptions): ExportResult {
   const record = projects.get(projectId);
   if (!record) return { status: 404, body: err("not_found", `No project ${projectId}`) };
@@ -416,12 +464,18 @@ export function exportProject(projectId: string, options: ExportOptions): Export
   const fullState = stateAtVersion(record, versionId);
   if (!fullState) return { status: 404, body: err("not_found", `No version ${versionId}`) };
 
+  // A snippet of an element with no animation has nothing to say, and an empty
+  // 200 reads as "this element has none" rather than "you asked for the wrong
+  // element" — so the service 404s, and so does this (plan §1.6).
+  if (mode === "snippet" && options.vmId && !(options.vmId in fullState)) {
+    return {
+      status: 404,
+      body: err("not_found", `No assignment for ${options.vmId} in version ${versionId}`),
+    };
+  }
+
   const state: EditorStateMap =
-    mode === "snippet" && options.vmId
-      ? options.vmId in fullState
-        ? { [options.vmId]: fullState[options.vmId] }
-        : {}
-      : fullState;
+    mode === "snippet" && options.vmId ? { [options.vmId]: fullState[options.vmId] } : fullState;
 
   const pairs: Array<readonly [CatalogEntry, string]> = [];
   const rules: string[] = [];
@@ -441,29 +495,50 @@ export function exportProject(projectId: string, options: ExportOptions): Export
   }
 
   const css = [runtimeStylesheet(pairs), rules.join("\n\n")].filter(Boolean).join("\n\n");
+  // A stand-in for `packages/bridge/src/vibe-motion-export.js`, not a copy of
+  // it: what the mock owes the app is that the script is *present* exactly
+  // when some exported assignment is `in-view`, and that it speaks the same
+  // three class names. The real file's failure paths are its own (DT-033).
   const js = hasInViewTrigger
-    ? `document.querySelectorAll('[data-vm-trigger="in-view"]').forEach((el) => {\n` +
-      `  new IntersectionObserver((entries) => {\n` +
-      `    entries.forEach((entry) => entry.target.classList.toggle('vm-in-view', entry.isIntersecting));\n` +
-      `  }).observe(el);\n` +
-      `});\n`
+    ? `/* Mock stand-in for vibe-motion.js. The real script ships with the API. */\n` +
+      `(function () {\n` +
+      `  document.documentElement.classList.add("vm-js");\n` +
+      `  document.querySelectorAll(".vm-in-view").forEach(function (el) {\n` +
+      `    new IntersectionObserver(function (entries, self) {\n` +
+      `      entries.forEach(function (entry) {\n` +
+      `        if (!entry.isIntersecting) return;\n` +
+      `        entry.target.classList.add("vm-play");\n` +
+      `        self.unobserve(entry.target);\n` +
+      `      });\n` +
+      `    }).observe(el);\n` +
+      `  });\n` +
+      `})();\n`
     : null;
 
+  // The real exporter's names (`apps/api/.../export/ExportModels.kt`, plan
+  // §1.1): the Export tab's file tabs and its zip entries both come from this
+  // list, so a mock that named them anything else would stage a screen no
+  // deployment shows. What is *inside* them still differs — the mock keys its
+  // rules off `data-vm-id`, the exporter off a `vm-a<N>` class — which is
+  // DT-033 and deliberate.
   const files: ExportBundle["files"] =
     mode === "full"
       ? [
           { name: "index.html", contentType: "text/html" },
-          { name: "styles.css", contentType: "text/css" },
-          ...(js ? [{ name: "script.js", contentType: "text/javascript" }] : []),
+          { name: "vibe-motion.css", contentType: "text/css" },
+          ...(js ? [{ name: "vibe-motion.js", contentType: "text/javascript" }] : []),
         ]
-      : [{ name: "snippet.css", contentType: "text/css" }];
+      : [
+          { name: "vibe-motion.css", contentType: "text/css" },
+          ...(js ? [{ name: "vibe-motion.js", contentType: "text/javascript" }] : []),
+        ];
 
   return {
     status: 200,
     body: {
       versionId,
       mode,
-      html: mode === "full" ? pageFixtureHtml : null,
+      html: mode === "full" ? exportedFixtureHtml(record.project.sourceUrl) : null,
       css,
       js,
       files,

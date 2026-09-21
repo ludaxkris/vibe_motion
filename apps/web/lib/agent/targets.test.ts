@@ -157,15 +157,47 @@ describe("selectTargets: a container block animates as one unit", () => {
     expect(selectTargets([article, h2]).targets).toEqual([article, h2]);
   });
 
-  it("allows half a pixel of rounding on every edge, and no more", () => {
+  it("allows a pixel and a half of rounding on every edge, and no more", () => {
     const article = el({ tag: "article", order: 1, ...box(0, 100, 300, 200) });
-    const within = el({ tag: "p", order: 2, ...box(-0.5, 99.5, 301, 201) });
-    const beyond = el({ tag: "p", order: 3, ...box(-0.6, 100, 100, 50) });
+    const within = el({ tag: "p", order: 2, ...box(-1.5, 98.5, 303, 203) });
+    const beyond = el({ tag: "p", order: 3, ...box(-1.6, 100, 100, 50) });
     // `within` is larger than the article, so the area rule keeps it; `beyond`
-    // pokes out by more than the tolerance; `snug` pokes out by exactly 0.5 px.
-    const snug = el({ tag: "p", order: 4, ...box(-0.5, 100, 200, 50) });
+    // pokes out by more than the tolerance; `snug` pokes out by exactly 1.5 px,
+    // which is the most two differently-measured rects are allowed to disagree
+    // by (see `NESTED_TOLERANCE_PX`).
+    const snug = el({ tag: "p", order: 4, ...box(-1.5, 100, 200, 50) });
     const { targets } = selectTargets([article, within, beyond, snug]);
     expect(targets).toEqual([article, within, beyond]);
+  });
+
+  it("nests a child measured off the layout grid against a container measured live", () => {
+    // The mix the bridge's resting box makes possible (DT-150, and DT-198's
+    // rounding): a container whose rect was measured live and fractionally —
+    // remembered from before anything was applied, or simply untouched — and a
+    // child reported from the integer-snapped layout box. Neither is wrong;
+    // they disagree by up to 0.75 px per edge, accumulated over `offsetParent`
+    // hops, and the child is still inside the block.
+    const article = el({ tag: "article", order: 1, ...box(100.4, 200.6, 879.3, 128.4) });
+    const child = el({ tag: "p", order: 2, ...box(99.5, 201, 879, 127) });
+    expect(selectTargets([article, child]).skipped).toEqual([
+      { vmId: child.vmId, reason: "nested" },
+    ]);
+  });
+
+  it("nests one that disagrees on the vertical edges the same way", () => {
+    const article = el({ tag: "article", order: 1, ...box(100.4, 200.6, 879.3, 128.4) });
+    const child = el({ tag: "p", order: 2, ...box(101, 199.7, 879, 128) });
+    expect(selectTargets([article, child]).skipped).toEqual([
+      { vmId: child.vmId, reason: "nested" },
+    ]);
+  });
+
+  it("still refuses a neighbour that is genuinely outside, not merely rounded", () => {
+    // 2 px is not rounding. A tolerance that swallowed this would start
+    // silencing elements that sit beside a block rather than inside it.
+    const article = el({ tag: "article", order: 1, ...box(100.4, 200.6, 879.3, 128.4) });
+    const beside = el({ tag: "p", order: 2, ...box(98, 201, 879, 127) });
+    expect(selectTargets([article, beside]).targets).toEqual([article, beside]);
   });
 
   it("figure > img: the figure stays, the img is nested", () => {

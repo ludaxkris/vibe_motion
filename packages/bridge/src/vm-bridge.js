@@ -1228,6 +1228,60 @@
   }
 
   /**
+   * Whether one of our animations is applied to `el` or to anything above it.
+   *
+   * A CSS transform applies to the whole subtree, so a `figure` held on `rotateX(90deg)` takes
+   * its `img` to zero height with it: asking only about the element's own assignment would still
+   * measure the child mid-flight. `records` holds exactly the elements we have applied or are
+   * previewing, so this is a Map lookup per ancestor and only on a page that has some of our
+   * animation on it at all.
+   *
+   * @param {Element} el
+   * @returns {boolean}
+   */
+  function underOurAnimation(el) {
+    if (records.size === 0) return false;
+    var node = /** @type {Element | null} */ (el);
+    while (node && node.nodeType === 1) {
+      var vmId = node.getAttribute(ID_ATTR);
+      if (vmId && records.has(vmId)) return true;
+      node = node.parentElement;
+    }
+    return false;
+  }
+
+  /**
+   * The box an element RESTS at, which is the one every caller of `elementInfo` wants (DT-150).
+   *
+   * `getBoundingClientRect()` is the *animated* box. An `in-view` element below the fold is held
+   * on its first keyframe for as long as it is off screen, so for a shrinking entrance it
+   * measures smaller than it is, and for `rotateX(90deg)` it has no height at all — which drops
+   * it under the size floor, out of `elements:list` entirely, and takes its children out of the
+   * block they belong to. The same reads decide `visible`. None of that may depend on which
+   * frame of an animation a query landed in.
+   *
+   * So while any of our animation is applied to the element or an ancestor, the box comes from
+   * `layoutBox()`, which no transform can reach — the same substitution the selection ring makes
+   * (see `positionBox`), minus its remembered correction, which belongs to one selected element.
+   * With nothing of ours applied, the live rect is exact and is kept: it sees ancestor CSS
+   * transforms of the page's own, wrapped inlines and sub-pixel widths, which `layoutBox()`
+   * rounds or cannot reach (`packages/bridge/README.md`).
+   *
+   * @param {Element} el
+   * @returns {{ left: number, top: number, width: number, height: number }}
+   */
+  function restingRect(el) {
+    var rect = el.getBoundingClientRect();
+    // Only an HTMLElement has an offset box; an `<svg>` reports every `offset*` as undefined and
+    // is measured live, as the ring measures it.
+    var hasOffsetBox = typeof (/** @type {HTMLElement} */ (el).offsetWidth) === "number";
+    if (!hasOffsetBox || !underOurAnimation(el)) {
+      return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+    }
+    return layoutBox(el);
+  }
+
+  /**
    * `elementInfo` for a caller that already holds the element (`elements:query` walks the map).
    *
    * @param {string} vmId
@@ -1235,7 +1289,7 @@
    * @returns {import("./protocol").ElementInfo}
    */
   function elementInfoFor(vmId, el) {
-    var rect = el.getBoundingClientRect();
+    var rect = restingRect(el);
     var computed = window.getComputedStyle ? window.getComputedStyle(el) : null;
     var text = (el.textContent || "").replace(/\s+/g, " ").trim();
     var scrollX = window.pageXOffset || 0;

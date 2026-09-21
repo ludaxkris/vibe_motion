@@ -53,8 +53,23 @@ function byDocumentOrder(a: ElementInfo, b: ElementInfo): number {
  */
 export const CONTAINER_TAGS: readonly string[] = ["article", "figure", "li", "blockquote"];
 
-/** Sub-pixel layout: a child's edge may round to just outside its parent's. */
-const NESTED_TOLERANCE_PX = 0.5;
+/**
+ * Sub-pixel layout: a child's edge may round to just outside its parent's.
+ *
+ * 1.5 px, not the half pixel sub-pixel layout alone needs, because two rects in
+ * one comparison can come from two different measurements. The bridge reports
+ * an element's **resting** box, which is `getBoundingClientRect()` (fractional)
+ * while nothing of ours is applied to it or an ancestor, and the integer-snapped
+ * layout box once something is — so a container and its child can straddle that
+ * boundary, either way round: a hand-animated card with untouched children, or
+ * the remembered container `run.ts` still substitutes on a regenerate (DT-150)
+ * against children measured fresh. Measured worst case 0.75 px per edge over
+ * `offsetParent` hops (DT-198); at 0.5 px about 5% of truly nested pairs were
+ * lost, at 1 px none. 1.5 px keeps a margin and costs nothing: a child that
+ * overflows its block by a pixel is still part of the block, and 14,160 pairs
+ * produced no false nesting at this tolerance.
+ */
+const NESTED_TOLERANCE_PX = 1.5;
 
 type Rect = ElementInfo["pageRect"];
 

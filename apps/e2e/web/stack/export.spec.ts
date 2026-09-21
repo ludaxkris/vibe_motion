@@ -10,8 +10,8 @@ import { stack } from "./env";
  * Playwright route, so what runs is only what a designer would upload: `index.html`,
  * `vibe-motion.css` and `vibe-motion.js`. No bridge, no iframe, no shell, no CSP of ours.
  *
- * The Export tab is not mounted yet (Track C), so the export is driven through the api. Helpers
- * are local to this file on purpose: `stack/helpers.ts` is being created by another branch.
+ * The export here is driven through the api, so this spec is about the exported page and nothing
+ * else; the pass through the Export tab a designer actually clicks is `export-ui.spec.ts`.
  */
 
 const FIXTURE_URL = `${stack.fixtureOrigin}/marketing.html`;

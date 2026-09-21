@@ -52,6 +52,20 @@ test("the /dev gallery renders every state at the handoff's widths", async ({ pa
   await expect(page.locator("[data-slot='toaster']")).toBeEmpty({ timeout: 5000 });
 });
 
+test("the gallery links to the showcases that need their own page", async ({ page }) => {
+  await page.goto("/dev");
+
+  // The History tab and the Export tab need a project's worth of history and
+  // a bundle respectively, so they live on their own routes — linked from
+  // here, or nobody finds them (DT-186).
+  await expect(page.getByRole("link", { name: "/dev/history" })).toBeVisible();
+
+  await page.getByRole("link", { name: "/dev/export" }).click();
+
+  await page.waitForURL("**/dev/export");
+  await expect(page.getByTestId("dev-frame-export-full-js")).toBeVisible();
+});
+
 test("/dev/panel sends the old gallery to /dev", async ({ page }) => {
   await page.goto("/dev/panel");
 

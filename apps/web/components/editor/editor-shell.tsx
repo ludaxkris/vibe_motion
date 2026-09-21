@@ -66,7 +66,27 @@ function EditorFrame({
   actions?: ReactNode;
 }) {
   return (
-    <>
+    // One screen, exactly the viewport tall — the editor is an app shell, not a
+    // document: the preview sheet and the Control Panel scroll inside
+    // themselves, and the page behind them never does.
+    //
+    // This is what makes every `flex-1`/`min-h-0`/`h-full` below it resolve
+    // against a real number. `app/layout.tsx`'s body is `min-h-full` (so short
+    // *documents* fill the window), which leaves it content-driven — and with
+    // that, a tall panel simply grew the whole page: an Export tab showing a
+    // cloned page's `index.html` reached 14,000px, its code block never
+    // scrolled, and Copy all / Download .zip sat that far below the fold
+    // (`apps/e2e/web/mocked/export.spec.ts` measures it). A viewport unit, not
+    // `%`, so it does not depend on an ancestor being definite.
+    //
+    // `h-screen` first and `dvh` behind `@supports`, in that order on purpose:
+    // `dvh` follows a mobile browser's collapsing toolbar, but a browser
+    // without it (Safari < 15.4, Chrome < 108, Firefox < 101) would drop a bare
+    // `height: 100dvh` and land back on the content-driven height — the bug,
+    // silently. Tailwind emits `.h-dvh` *before* `.h-screen` (checked in the
+    // built stylesheet), so the plain pair would resolve the wrong way round;
+    // the `@supports` block comes after both, so it wins wherever it applies.
+    <div className="flex h-screen supports-[height:100dvh]:h-dvh min-h-0 flex-col">
       <TopBar title={title} chip={chip} actions={actions}>
         {status}
       </TopBar>
@@ -77,7 +97,7 @@ function EditorFrame({
         <h1 className="sr-only">{heading ?? "Editor"}</h1>
         {children}
       </main>
-    </>
+    </div>
   );
 }
 
@@ -477,6 +497,19 @@ export function EditorShell({ projectId }: { projectId: string }) {
             {/* The guard's "…or discard to leave v5 as is" needs the version
                 the draft forked from, which only the versions list knows. */}
             <ControlPanel
+              // A fresh panel per project. The store is `reset()` above, but
+              // the panel's own state is not: its open tab, and the version
+              // the Export tab is pinned to, would otherwise follow the reader
+              // into the next project and back again into the first (the pin
+              // is also filtered by project inside the panel, which hides it
+              // but cannot clear it). Reached by rerender rather than remount
+              // whenever both projects are cached, so the spinner's incidental
+              // unmount is not something to lean on.
+              key={projectId}
+              projectId={projectId}
+              // The Export tab's downloads are named after the project
+              // (`vibe-motion-<slug>-v<seq>.zip`); nothing else sees the title.
+              projectTitle={loaded.title}
               currentVersionLabel={currentVersionLabel}
               history={history}
               onSave={requestSave}

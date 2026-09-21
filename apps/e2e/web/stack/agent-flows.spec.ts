@@ -134,9 +134,14 @@ async function autoGenerate(page: Page): Promise<{ rows: Row[]; received: () => 
 }
 
 /**
- * No entrance is mid-flight in the frame. The bridge measures transformed
- * boxes (DT-150), so what a query lists depends on when it is asked; at rest
- * it is at least stable. A held `in-view` entrance is paused, not running.
+ * No entrance is mid-flight in the frame, so a click lands on a settled page.
+ *
+ * It is **not** a promise that every element is at its resting size: a held
+ * `in-view` entrance is *paused*, not running, so this returns with it still on
+ * its first keyframe — possibly `rotateX(90deg)` and zero pixels tall. Nothing
+ * may derive an expectation from a live box after calling this (that was the
+ * DT-150 workaround the bridge's resting box replaced; see the nested-element
+ * count below).
  */
 async function animationsAtRest(page: Page) {
   await expect
@@ -491,22 +496,41 @@ test("a card the designer animated by hand is still a block: a page run leaves i
   await expect(page.getByTestId("panel-auto-result")).toBeVisible();
   await expect(row(page, cardId)).toContainText("edited");
 
-  // What the bridge will list of the nested elements. Not simply all nine: it
-  // filters on the box as transformed right now (DT-150), and a one-line `p`
-  // inside a block held below the fold on a shrinking first keyframe is under
-  // the 16 px floor, so it is never listed and never counted. The card is
-  // above the fold and at rest, so its two always are.
-  await animationsAtRest(page);
-  const listedNested = await preview(page)
+  // Every one of the nested elements, with no measurement of our own.
+  //
+  // The bridge judges the 40x16 floor on an element's RESTING box: while any of
+  // our animations is applied to it or an ancestor it reports the layout box,
+  // so an `in-view` block held below the fold on `rotateX(90deg)` no longer
+  // takes its children under the floor with it (spec §3, "`elements:query`
+  // rules"; `packages/bridge/e2e/bridge.spec.ts` pins it). All nine rest well
+  // above the floor, so all nine are listed, judged nested, and counted —
+  // whatever any of them happens to be painted at when the query runs.
+  //
+  // This used to filter on `getBoundingClientRect()`, which made the
+  // expectation a function of animation phase: it matched only when the live
+  // boxes happened to equal the resting ones, and a run where a below-the-fold
+  // block was held on a shrinking first keyframe failed with "Expected 6,
+  // Received 9". `animationsAtRest()` could not save it — it waits for
+  // *running* animations, and a held one is paused, so it returns at once.
+  const nested = await preview(page)
     .locator("article.card h2, article.card p, blockquote p, figure img")
     .evaluateAll((els) =>
-      els
-        .filter((el) => {
-          const box = el.getBoundingClientRect();
-          return box.width >= 40 && box.height >= 16;
-        })
-        .map((el) => el.getAttribute("data-vm-id") ?? ""),
+      els.map((el) => ({
+        vmId: el.getAttribute("data-vm-id") ?? "",
+        // The layout box, which is what the bridge reports for these: they are
+        // all inside a block that carries an entrance.
+        width: (el as HTMLElement).offsetWidth,
+        height: (el as HTMLElement).offsetHeight,
+      })),
     );
+  expect(nested).toHaveLength(9);
+  // Said out loud so a fixture edit that shrinks one of these fails here, with
+  // a reason, rather than in the count below.
+  for (const el of nested) {
+    expect(el.width, `${el.vmId} rests above the width floor`).toBeGreaterThanOrEqual(40);
+    expect(el.height, `${el.vmId} rests above the height floor`).toBeGreaterThanOrEqual(16);
+  }
+  const listedNested = nested.map((el) => el.vmId);
   for (const vmId of insideIds) expect(listedNested, vmId).toContain(vmId);
 
   await regenerate(page);
@@ -523,7 +547,8 @@ test("a card the designer animated by hand is still a block: a page run leaves i
   await expect(row(page, cardId)).toContainText(mine);
   expect(await inline(card, "animation-name")).toBe(pickedName);
 
-  // Still counted as skipped, the card's two included.
+  // Still counted as skipped, the card's two included — all nine of them, and
+  // the same nine whatever phase their animations are in.
   const caption = (await page.getByTestId("auto-result-caption").textContent()) ?? "";
   expect(Number(/Skipped (\d+) elements?/.exec(caption)?.[1])).toBe(listedNested.length);
 

@@ -1,9 +1,15 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { VersionHistory } from "@/components/history/use-version-history";
+import type { Version } from "@/lib/api-client";
 import { CURRENT_CATALOG_VERSION, defaultAssignmentFor, getCatalogEntry } from "@/lib/catalog";
+import { env } from "@/lib/env";
 import { initialEditorState, useEditorStore } from "@/lib/store";
+import { server } from "@/mocks/server";
 
 import { ControlPanel } from "./index";
 
@@ -153,14 +159,14 @@ describe("ControlPanel", () => {
     expect(screen.getByRole("tab", { name: "Export" })).toBeInTheDocument();
   });
 
-  it("gives History and Export a caption each until their phases land", () => {
+  it("gives History and Export a caption each when no project is behind the panel", () => {
     render(<ControlPanel />);
 
     fireEvent.click(screen.getByRole("tab", { name: "History" }));
     expect(screen.getByText(/only created when you click Save/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "Export" }));
-    expect(screen.getByText("Export arrives with Phase 7.")).toBeInTheDocument();
+    expect(screen.getByText(/built from a saved version/i)).toBeInTheDocument();
   });
 
   it("keeps the caption pointing at the top bar for Save and Cancel", () => {
@@ -336,7 +342,7 @@ describe("ControlPanel · unsaved guard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
 
     expect(screen.getByRole("tab", { name: "Export" })).toHaveAttribute("data-active");
-    expect(screen.getByText("Export arrives with Phase 7.")).toBeInTheDocument();
+    expect(screen.getByText(/built from a saved version/i)).toBeInTheDocument();
   });
 
   it("discards the draft and then makes the switch", () => {
@@ -995,5 +1001,465 @@ describe("ControlPanel · agent flows (Phase 5)", () => {
       expect(useEditorStore.getState().panel).toEqual({ status: "idle" });
       expect(screen.getByTestId("panel-idle")).toBeInTheDocument();
     });
+  });
+});
+
+describe("ControlPanel · Export tab (Phase 7)", () => {
+  const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
+  const V5 = "55555555-5555-4555-8555-555555555555";
+  const V3 = "33333333-3333-4333-8333-333333333333";
+
+  const api = (path: string) => `${env.apiOrigin}${path}`;
+
+  function version(id: string, seq: number): Version {
+    return {
+      id,
+      projectId: PROJECT_ID,
+      seq,
+      label: `v${seq}`,
+      parentVersionId: null,
+      catalogVersion: "1.1.0",
+      createdAt: "2026-09-20T10:00:00Z",
+      diff: { set: {}, remove: [] },
+    };
+  }
+
+  /** What the shell's `useVersionHistory` hands down; two versions, v5 current. */
+  function exportHistory(overrides: Partial<VersionHistory> = {}): VersionHistory {
+    return {
+      versions: [version(V3, 3), version(V5, 5)],
+      pending: false,
+      listError: false,
+      retry: () => undefined,
+      currentVersionId: V5,
+      viewingVersionId: null,
+      viewing: false,
+      viewingLabel: undefined,
+      currentLabel: "v5",
+      nextLabel: "v6",
+      error: null,
+      restoring: false,
+      view: async () => undefined,
+      back: () => undefined,
+      restore: async () => undefined,
+      ...overrides,
+    };
+  }
+
+  /** Every export the panel asks for, and nothing else answered from the shared mock. */
+  function mockExport(): { calls: URLSearchParams[] } {
+    const calls: URLSearchParams[] = [];
+    server.use(
+      http.get(api("/projects/:projectId/export"), ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        calls.push(query);
+        return HttpResponse.json({
+          versionId: query.get("versionId") ?? V5,
+          mode: "full",
+          html: "<!doctype html>",
+          css: ".vm-a3 {}",
+          js: null,
+          files: [
+            { name: "index.html", contentType: "text/html" },
+            { name: "vibe-motion.css", contentType: "text/css" },
+          ],
+        });
+      }),
+      http.get(api("/projects/:projectId/versions/:versionId/state"), ({ params }) =>
+        HttpResponse.json({ versionId: String(params.versionId), state: {} }),
+      ),
+    );
+    return { calls };
+  }
+
+  function renderPanel(props: Parameters<typeof ControlPanel>[0] = {}) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    return render(<ControlPanel {...props} />, { wrapper: Wrapper });
+  }
+
+  it("mounts the Export tab on the current version once the shell hands it a project", async () => {
+    const { calls } = mockExport();
+    useEditorStore.setState({ currentVersionId: V5 });
+    renderPanel({ projectId: PROJECT_ID, projectTitle: "Nimbus App", history: exportHistory() });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+
+    await waitFor(() => expect(screen.getByTestId("panel-export")).toBeInTheDocument());
+    expect(calls.map((query) => query.get("versionId"))).toEqual([V5]);
+  });
+
+  it("asks for no export until the Export tab is opened", async () => {
+    const { calls } = mockExport();
+    useEditorStore.setState({ currentVersionId: V5 });
+    renderPanel({ projectId: PROJECT_ID, history: exportHistory() });
+
+    // The editor opens on Animate, and Base UI does not mount a closed panel.
+    expect(screen.getByTestId("panel-idle")).toBeInTheDocument();
+    expect(calls).toEqual([]);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+  });
+
+  it("exports the version being viewed when Export is opened from History", async () => {
+    const { calls } = mockExport();
+    const back = vi.fn();
+    useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });
+    renderPanel({
+      projectId: PROJECT_ID,
+      history: exportHistory({ viewing: true, viewingVersionId: V3, viewingLabel: "v3", back }),
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+
+    // docs/user_flow.md §4: the version can be exported while viewed, without
+    // restoring — and §4 again: leaving History puts the canvas back on the
+    // current version, which is what `back()` does.
+    await waitFor(() => expect(calls.map((query) => query.get("versionId"))).toEqual([V3]));
+    expect(back).toHaveBeenCalledOnce();
+    expect(await screen.findByText("v3")).toBeInTheDocument();
+  });
+
+  it("opens Export on the version a History row asked for (DT-160)", async () => {
+    const { calls } = mockExport();
+    const back = vi.fn();
+    // What the History tab looks like with v3 on screen: only the expanded
+    // (= viewed) row shows an Export button at all.
+    useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });
+    renderPanel({
+      projectId: PROJECT_ID,
+      history: exportHistory({ viewing: true, viewingVersionId: V3, viewingLabel: "v3", back }),
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Export v3" }));
+
+    expect(screen.getByRole("tab", { name: "Export" })).toHaveAttribute("data-active");
+    await waitFor(() => expect(calls.map((query) => query.get("versionId"))).toEqual([V3]));
+    expect(await screen.findByText("v3")).toBeInTheDocument();
+    expect(screen.queryByText("· current")).not.toBeInTheDocument();
+    // Leaving History ends the viewing, exactly as any other tab switch does.
+    expect(back).toHaveBeenCalledOnce();
+  });
+
+  it("leaves Export vN disabled when there is no project behind the panel", () => {
+    useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });
+    renderPanel({
+      history: exportHistory({ viewing: true, viewingVersionId: V3, viewingLabel: "v3" }),
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    expect(screen.getByRole("button", { name: "Export v3" })).toBeDisabled();
+  });
+
+  it("does not carry a pin from one project into the next", async () => {
+    const { calls } = mockExport();
+    const OTHER_PROJECT = "44444444-4444-4444-8444-444444444444";
+    const OTHER_V9 = "99999999-9999-4999-8999-999999999999";
+    useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    const { rerender } = render(
+      <ControlPanel
+        projectId={PROJECT_ID}
+        history={exportHistory({ viewing: true, viewingVersionId: V3, viewingLabel: "v3" })}
+      />,
+      { wrapper: Wrapper },
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+
+    // The shell `reset()`s the store on a project change rather than
+    // remounting this component, so v3 of project A would otherwise still be
+    // pinned — and asked for from project B, which has never heard of it.
+    useEditorStore.setState({ ...initialEditorState, currentVersionId: OTHER_V9 });
+    rerender(
+      <ControlPanel
+        projectId={OTHER_PROJECT}
+        history={exportHistory({
+          versions: [version(OTHER_V9, 9)],
+          currentVersionId: OTHER_V9,
+          currentLabel: "v9",
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
+    expect(calls.map((query) => query.get("versionId"))).toEqual([V3]);
+  });
+
+  it("does not resurrect a pin when the reader returns to the first project", async () => {
+    // A -> B -> A inside one mount is the premise the project filter was built
+    // for, and filtering alone does not clear the state: A's pin was still
+    // sitting there when A came back. The shell keys the panel by project, so
+    // the return is a fresh mount and there is nothing left to resurrect.
+    const { calls } = mockExport();
+    const OTHER = "44444444-4444-4444-8444-444444444444";
+    const OTHER_V9 = "99999999-9999-4999-8999-999999999999";
+    useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    const panelFor = (id: string, history: VersionHistory) => (
+      // `key`, as `EditorShell` renders it.
+      <ControlPanel key={id} projectId={id} history={history} />
+    );
+    const { rerender } = render(
+      panelFor(
+        PROJECT_ID,
+        exportHistory({ viewing: true, viewingVersionId: V3, viewingLabel: "v3" }),
+      ),
+      { wrapper: Wrapper },
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    await waitFor(() => expect(calls.map((query) => query.get("versionId"))).toEqual([V3]));
+
+    // …to another project…
+    useEditorStore.setState({ ...initialEditorState, currentVersionId: OTHER_V9 });
+    rerender(
+      panelFor(
+        OTHER,
+        exportHistory({
+          versions: [version(OTHER_V9, 9)],
+          currentVersionId: OTHER_V9,
+          currentLabel: "v9",
+        }),
+      ),
+    );
+    expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
+
+    // …and back to the first one.
+    useEditorStore.setState({ ...initialEditorState, currentVersionId: V5 });
+    rerender(panelFor(PROJECT_ID, exportHistory()));
+
+    expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    // The current version, not the v3 that was pinned on the first visit.
+    await waitFor(() => expect(calls.map((query) => query.get("versionId"))).toEqual([V3, V5]));
+  });
+
+  it("drops the pin when the reader leaves the Export tab and comes back", async () => {
+    const { calls } = mockExport();
+    useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });
+    renderPanel({
+      projectId: PROJECT_ID,
+      history: exportHistory({ viewing: true, viewingVersionId: V3, viewingLabel: "v3" }),
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Animate" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+
+    // Back on the current version: the pin belonged to the visit, not the tab.
+    await waitFor(() => expect(calls.map((query) => query.get("versionId"))).toEqual([V3, V5]));
+  });
+});
+
+describe("ControlPanel · save first, then Export (DT-099)", () => {
+  const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
+  const V5 = "55555555-5555-4555-8555-555555555555";
+  const V6 = "66666666-6666-4666-8666-666666666666";
+
+  const api = (path: string) => `${env.apiOrigin}${path}`;
+
+  function version(id: string, seq: number): Version {
+    return {
+      id,
+      projectId: PROJECT_ID,
+      seq,
+      label: `v${seq}`,
+      parentVersionId: null,
+      catalogVersion: "1.1.0",
+      createdAt: "2026-09-20T10:00:00Z",
+      diff: { set: {}, remove: [] },
+    };
+  }
+
+  function mockExport(): { calls: URLSearchParams[] } {
+    const calls: URLSearchParams[] = [];
+    server.use(
+      http.get(api("/projects/:projectId/export"), ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        calls.push(query);
+        return HttpResponse.json({
+          versionId: query.get("versionId") ?? V5,
+          mode: "full",
+          html: "<!doctype html>",
+          css: ".vm-a1 {}",
+          js: null,
+          files: [
+            { name: "index.html", contentType: "text/html" },
+            { name: "vibe-motion.css", contentType: "text/css" },
+          ],
+        });
+      }),
+    );
+    return { calls };
+  }
+
+  /** A draft that differs from the current version, mid-tuning on vm-1. */
+  function makeDirty() {
+    const store = useEditorStore.getState();
+    store.dispatchPanel({ type: "SELECT", vmId: "vm-1" });
+    store.dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    store.dispatchPanel({ type: "PICK", animationId: "fade-in-up" });
+  }
+
+  /**
+   * The shell, in the one respect that matters here: `onSave` really writes a
+   * version, so the list, the store and the panel move together — which is how
+   * "Save first" can land on a version that did not exist when it was clicked.
+   */
+  function Harness({
+    save,
+    history = {},
+  }: {
+    save: () => Promise<void>;
+    history?: Partial<VersionHistory>;
+  }) {
+    // `useVersionHistory` reads the store's id first and falls back to the
+    // list's, so a save moves the current version in one store write rather
+    // than in two renders — which is what keeps the released guard from
+    // exporting the old version on its way to the new one.
+    const storeVersionId = useEditorStore((state) => state.currentVersionId);
+    const currentVersionId = storeVersionId ?? V5;
+    const versions = [version(V5, 5), ...(currentVersionId === V6 ? [version(V6, 6)] : [])];
+    const onSave = () =>
+      save().then(() => {
+        useEditorStore.getState().markSaved(version(V6, 6));
+      });
+    return (
+      <ControlPanel
+        projectId={PROJECT_ID}
+        history={{
+          versions,
+          pending: false,
+          listError: false,
+          retry: () => undefined,
+          currentVersionId,
+          viewingVersionId: null,
+          viewing: false,
+          viewingLabel: undefined,
+          currentLabel: currentVersionId === V6 ? "v6" : "v5",
+          nextLabel: "v7",
+          error: null,
+          restoring: false,
+          view: async () => undefined,
+          back: () => undefined,
+          restore: async () => undefined,
+          ...history,
+        }}
+        onSave={onSave}
+      />
+    );
+  }
+
+  function renderShell(save: () => Promise<void>, history?: Partial<VersionHistory>) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    return render(<Harness save={save} history={history} />, { wrapper: Wrapper });
+  }
+
+  beforeEach(() => {
+    useEditorStore.setState({ ...initialEditorState, currentVersionId: V5 });
+  });
+
+  it("opens Export on the version the save just created", async () => {
+    const { calls } = mockExport();
+    makeDirty();
+    renderShell(() => Promise.resolve());
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    // The export must not be asked for over an unsaved draft: the guard is
+    // standing and the Animate panel is still what is mounted.
+    expect(screen.getByRole("dialog", { name: "Save changes to vm-1?" })).toBeInTheDocument();
+    expect(calls).toEqual([]);
+
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(screen.getByTestId("panel-export")).toBeInTheDocument());
+    // v6, not the v5 the reader clicked from: what they asked to export was
+    // "my work", and Save is what made it a version.
+    expect(calls.map((query) => query.get("versionId"))).toEqual([V6]);
+    expect(screen.getByText("v6")).toBeInTheDocument();
+    expect(screen.getByText("· current")).toBeInTheDocument();
+  });
+
+  it("opens Export on the current version when the draft is discarded", async () => {
+    const { calls } = mockExport();
+    makeDirty();
+    renderShell(() => Promise.reject(new Error("not this path")));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    await waitFor(() => expect(screen.getByTestId("panel-export")).toBeInTheDocument());
+    expect(calls.map((query) => query.get("versionId"))).toEqual([V5]);
+    expect(useEditorStore.getState().draftState).toEqual({});
+  });
+
+  it("stays where it was on Keep editing", () => {
+    const { calls } = mockExport();
+    makeDirty();
+    renderShell(() => Promise.resolve());
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+
+    expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
+    expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
+    expect(calls).toEqual([]);
+  });
+
+  it("releases the guard through the same exit as an ordinary switch, viewing included", async () => {
+    // DT-154's shape: the reader is on History with a clean draft when
+    // something dirties it (an agent write landing), so the guard can stand
+    // over a History tab that is showing a past version. Whichever way the
+    // guard is released, leaving History has to return the canvas to the
+    // current version — that is `history.back()`, and it must not be a
+    // property of one exit out of three.
+    const back = vi.fn();
+    const { calls } = mockExport();
+    renderShell(() => Promise.resolve(), { back, viewing: true, viewingVersionId: V5 });
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    expect(back).not.toHaveBeenCalled();
+    act(() => makeDirty());
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(back).toHaveBeenCalledOnce();
+    await waitFor(() => expect(calls).toHaveLength(1));
+  });
+
+  it("leaves the reader on their draft when the save is cancelled", async () => {
+    const { calls } = mockExport();
+    makeDirty();
+    // What `requestSave()` rejects with when the Save dialog is cancelled.
+    renderShell(() => Promise.reject(new Error("save cancelled")));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("dialog", { name: "Save changes to vm-1?" })).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
+    expect(calls).toEqual([]);
+    expect(useEditorStore.getState().draftState["vm-1"]).toBeDefined();
   });
 });
