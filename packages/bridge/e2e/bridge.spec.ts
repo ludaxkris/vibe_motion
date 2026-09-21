@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 import { FOREIGN_ORIGIN, assignment, mountBridge } from "./harness";
 
@@ -54,6 +55,320 @@ test.describe("in-view trigger", () => {
     // Re-entry plays a genuinely new animation, so the designer can scroll back and watch again.
     await scrollTo(ivTop - 200);
     await expect.poll(() => h.computed("vm-iv", "opacity")).toBe("1");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(4);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// 1b. in-view reachability (A12 / DT-095 / DT-179)
+//
+// `intersectionRatio` is an **area** ratio — intersected area over the element's *whole* area — so
+// an element much bigger than the root can never reach `IN_VIEW_THRESHOLD` at all, and a rule that
+// only tests the ratio holds it on its first keyframe for the whole session. The preview fires on
+// the same condition as the export (spec §6a): `isIntersecting && (ratio >= T || reachable <= T)`.
+//
+// The frame is 800×600 (`e2e/harness.ts`) and is cross-origin with the shell, which is exactly the
+// case `entry.rootBounds` comes back **null** for: every number below is against the frame's own
+// `documentElement.clientWidth` / `clientHeight`, through the fallback, because in the bridge that
+// is not an edge case but the only case. An **empty** root is not on screen at all, whatever ratio
+// the browser reports, and when it stops being empty every in-view element is re-observed so a
+// fresh entry decides.
+//
+// Not covered here, and logged as DT-184 for preview and export alike: a clip container narrower
+// than the root bounds the intersection without appearing in `rootBounds`, so an element that looks
+// reachable against the viewport can still be unable to reach `T`.
+// ---------------------------------------------------------------------------------------------
+
+test.describe("in-view reachability", () => {
+  /** A 200 ms fade, so "it played" is a settled `opacity: 1` rather than a race. */
+  const inViewOver = {
+    trigger: "in-view" as const,
+    keyframesName: "vm-iv-v1-0-0",
+    keyframesCss: FADE_IN,
+    style: { "animation-duration": "200ms", "animation-fill-mode": "both" },
+  };
+
+  const scrollToTarget = (h: Awaited<ReturnType<typeof mountBridge>>, vmId: string) =>
+    h.frame.evaluate((id) => document.querySelector(`[data-vm-id="${id}"]`)!.scrollIntoView(), vmId);
+
+  test("plays an element taller than five viewports, whose ratio can never reach the threshold", async ({
+    page,
+  }) => {
+    // 4000px tall in a 600px frame: the most of itself it can ever show is 600/4000 = 0.15. With
+    // the ratio test alone this element was held at `opacity: 0` for ever, while the very same
+    // element animated in the export.
+    const h = await mountBridge(
+      page,
+      `<div class="spacer"></div>
+       <div data-vm-id="vm-tall" style="height:4000px;background:#ddd">tall</div>`,
+    );
+    await h.send("apply", assignment("vm-tall", inViewOver));
+
+    // Held below the fold: a real animation, paused on its first keyframe. (A paused animation at
+    // t=0 is still in its active phase, so it counts as one `animationstart`.)
+    await expect.poll(() => h.animations("vm-tall")).toMatchObject([{ time: 0, state: "paused" }]);
+    expect(await h.computed("vm-tall", "opacity")).toBe("0");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(1);
+
+    await scrollToTarget(h, "vm-tall");
+
+    await expect.poll(() => h.computed("vm-tall", "opacity")).toBe("1");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
+  });
+
+  test("plays a track wider than the frame inside a horizontal scroller", async ({ page }) => {
+    // Reachability is an area, not a height: 800/5000 = 0.16 with a perfectly ordinary 60px height,
+    // so a height-only rule leaves this one held. The 600px scroller clips it further still, which
+    // only makes the real ratio smaller (0.12).
+    const h = await mountBridge(
+      page,
+      `<div class="spacer"></div>
+       <div style="overflow-x:auto;width:600px">
+         <div data-vm-id="vm-wide" style="width:5000px;height:60px;background:#ddd">wide</div>
+       </div>`,
+    );
+    await h.send("apply", assignment("vm-wide", inViewOver));
+
+    await expect.poll(() => h.animations("vm-wide")).toMatchObject([{ time: 0, state: "paused" }]);
+    expect(await h.computed("vm-wide", "opacity")).toBe("0");
+
+    await scrollToTarget(h, "vm-wide");
+
+    await expect.poll(() => h.computed("vm-wide", "opacity")).toBe("1");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
+  });
+
+  test("an element that can reach the threshold still waits for it, and not for the first sliver", async ({
+    page,
+  }) => {
+    // The escape hatch must not swallow the ordinary case. This 200×60 box can reach ratio 1, so
+    // it stays held at 6px of itself on screen (0.1) and plays at 30px (0.5).
+    const h = await mountBridge(
+      page,
+      `<div class="spacer"></div>
+       <div class="box" data-vm-id="vm-iv">in view</div>
+       <div class="spacer"></div>`,
+    );
+    const scrollTo = (y: number) => h.frame.evaluate((top) => window.scrollTo(0, top), y);
+    const ivTop = await h.frame.evaluate(
+      () => document.querySelector('[data-vm-id="vm-iv"]')!.getBoundingClientRect().top + window.scrollY,
+    );
+    await h.send("apply", assignment("vm-iv", inViewOver));
+    await expect.poll(() => h.animations("vm-iv")).toMatchObject([{ time: 0, state: "paused" }]);
+
+    await scrollTo(ivTop - 594);
+    // Long enough for a wrong fire to have played the whole 200 ms animation and shown itself.
+    await page.waitForTimeout(400);
+
+    expect(await h.animations("vm-iv")).toMatchObject([{ time: 0, state: "paused" }]);
+    expect(await h.computed("vm-iv", "opacity")).toBe("0");
+    expect(await h.starts("vm-iv-v1-0-0")).toBe(1);
+
+    await scrollTo(ivTop - 570);
+
+    await expect.poll(() => h.computed("vm-iv", "opacity")).toBe("1");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
+  });
+
+  /**
+   * Collapse the frame to `width x height` and put it back, asserting the frame's own root box
+   * each way, read the way the bridge reads it in either compat mode — emptiness, not exact pixels, because a page tall enough to scroll takes a
+   * scrollbar gutter out of `clientWidth` and that is precisely the difference between
+   * `clientWidth` and `innerWidth` the bridge now measures with.
+   */
+  function collapsible(page: Page, h: Awaited<ReturnType<typeof mountBridge>>, size: { width: number; height: number }) {
+    const set = async (width: number, height: number, empty: boolean) => {
+      await page.evaluate(([w, hh]) => {
+        const el = document.getElementById("f")!;
+        el.style.width = `${w}px`;
+        el.style.height = `${hh}px`;
+      }, [width, height] as const);
+      await expect
+        .poll(() =>
+          h.frame.evaluate(() => {
+            // The bridge's own reading (`fallbackRootBox()`): in a quirks-mode clone the root's
+            // `clientHeight` is the document box, not the frame's.
+            const standards = document.compatMode === "CSS1Compat";
+            const root = document.documentElement;
+            const width = standards ? root.clientWidth : window.innerWidth;
+            const height = standards ? root.clientHeight : window.innerHeight;
+            return width > 0 && height > 0;
+          }),
+        )
+        .toBe(!empty);
+    };
+    return { collapse: () => set(size.width, size.height, true), restore: () => set(800, 600, false) };
+  }
+
+  /**
+   * Apply an in-view assignment to a frame that is currently collapsed, prove the element is held,
+   * then restore the frame and prove it plays.
+   *
+   * Held is asserted on the inline group, which is the bridge's own writing and owes nothing to
+   * whether a zero-area frame is rendered at all — that is also why `starts` is bounded here
+   * rather than pinned. Playing on restore is the half that needs the re-observe: a root that
+   * grows moves an unreachable element from ratio 0 to a ratio still under `T`, crossing no
+   * threshold, so Chromium delivers no entry of its own.
+   */
+  async function heldWhileCollapsed(
+    page: Page,
+    body: string,
+    vmId: string,
+    collapsed: { width: number; height: number },
+  ) {
+    const h = await mountBridge(page, body);
+    const frame = collapsible(page, h, collapsed);
+
+    await frame.collapse();
+    await h.send("apply", assignment(vmId, inViewOver));
+    // Long enough for a wrong fire to have run the whole 200 ms animation out.
+    await page.waitForTimeout(400);
+
+    expect(await h.inline(vmId, "animation-play-state")).toBe("paused");
+    expect(await h.animations(vmId)).toMatchObject([{ time: 0, state: "paused" }]);
+    expect(await h.starts("vm-iv-v1-0-0")).toBeLessThanOrEqual(1);
+
+    await frame.restore();
+
+    await expect.poll(() => h.computed(vmId, "opacity")).toBe("1");
+    expect(await h.inline(vmId, "animation-play-state")).toBe("running");
+    expect((await h.animations(vmId))[0]).toMatchObject({ state: "finished" });
+  }
+
+  // An empty root has nothing in view, whatever ratio the browser reports — and guarding the axes
+  // one at a time does not say that. The collapsed axis yields 1, the element's own unreachable
+  // axis carries the product under `T`, and the wide track and the tall hero this rule exists for
+  // armed, played to `finished` where the designer could not see them, and were still armed when
+  // the pane came back, so they never played at all. The editor frames the clone at `size-full`
+  // inside a draggable split pane: a pane dragged to nothing, or a transient zero-height layout at
+  // `state:load`, is all it takes.
+
+  test("holds a wide track, not plays it unseen, while the frame is collapsed to no height", async ({ page }) => {
+    // `min(1, 800/5000) * min(1, 0/60)` = `0.16 * 1`: under `T` on the element's own axis.
+    await heldWhileCollapsed(
+      page,
+      `<div style="overflow-x:auto;width:600px">
+         <div data-vm-id="vm-wide" style="width:5000px;height:60px;background:#ddd">wide</div>
+       </div>`,
+      "vm-wide",
+      { width: 800, height: 0 },
+    );
+  });
+
+  test("holds a tall hero, not plays it unseen, while the frame is collapsed to no width", async ({ page }) => {
+    // The other axis of the same hole: `min(1, 0/200) * min(1, 600/4000)` = `1 * 0.15`.
+    await heldWhileCollapsed(
+      page,
+      `<div data-vm-id="vm-tall" style="height:4000px;background:#ddd">tall</div>`,
+      "vm-tall",
+      { width: 0, height: 600 },
+    );
+  });
+
+  test("releases every in-view element when the frame is restored, not just the first", async ({ page }) => {
+    // The recovery is consumed from the `resize` handler but the latch that guards it was written
+    // from the observer callback, and the ordering between those two is the browser's to choose.
+    // When the root grows, every element that was *below* the collapsed root goes not-intersecting
+    // to intersecting and gets an entry; the one sitting at the collapsed root's edge goes ratio 0
+    // to ratio 0.16, crosses nothing, and gets none. Those other entries arrive first — so a latch
+    // that any non-empty-root callback could lower left the stranded element `paused` at
+    // `opacity: 0` for the rest of the session. Two in-view assignments and a pane dragged shut is
+    // all it takes; every earlier spec here mounted exactly one, which is the only count that
+    // worked.
+    const tracks = [0, 1, 2, 3, 4];
+    const h = await mountBridge(
+      page,
+      tracks
+        .map(
+          (i) =>
+            `<div style="overflow-x:auto;width:600px">
+               <div data-vm-id="vm-e${i}" style="width:5000px;height:60px;background:#ddd">track ${i}</div>
+             </div>`,
+        )
+        .join(""),
+    );
+    const frame = collapsible(page, h, { width: 800, height: 0 });
+
+    await frame.collapse();
+    for (const i of tracks) await h.send("apply", assignment(`vm-e${i}`, inViewOver));
+    await page.waitForTimeout(400);
+    for (const i of tracks) expect(await h.inline(`vm-e${i}`, "animation-play-state")).toBe("paused");
+
+    await frame.restore();
+
+    for (const i of tracks) {
+      await expect.poll(() => h.computed(`vm-e${i}`, "opacity"), { message: `vm-e${i}` }).toBe("1");
+      expect(await h.inline(`vm-e${i}`, "animation-play-state"), `vm-e${i}`).toBe("running");
+    }
+  });
+
+  test("measures the root by the window in a quirks-mode clone, where clientHeight is the document", async ({
+    page,
+  }) => {
+    // A clone gets whatever doctype the origin page had, and the clone pipeline inserts none. With
+    // no doctype `document.compatMode` is `BackCompat`, and there `documentElement.clientHeight` is
+    // the DOCUMENT box: 6000px for this page in a 600px frame, which makes `reachable` come out as
+    // 1 and leaves a hero taller than five viewports waiting for a ratio it can never reach — the
+    // whole of DT-095, reintroduced by a 2% accuracy nit.
+    const h = await mountBridge(
+      page,
+      `<div class="spacer"></div>
+       <div data-vm-id="vm-tall" style="height:4000px;background:#ddd">tall</div>`,
+      "",
+      { quirks: true },
+    );
+    expect(await h.frame.evaluate(() => document.compatMode)).toBe("BackCompat");
+    expect(await h.frame.evaluate(() => document.documentElement.clientHeight)).toBeGreaterThan(2000);
+
+    await h.send("apply", assignment("vm-tall", inViewOver));
+    await expect.poll(() => h.animations("vm-tall")).toMatchObject([{ time: 0, state: "paused" }]);
+
+    await scrollToTarget(h, "vm-tall");
+
+    await expect.poll(() => h.computed("vm-tall", "opacity")).toBe("1");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
+  });
+
+  test("holds an ordinary box while the frame is collapsed to no height", async ({ page }) => {
+    // The case a per-axis guard did already cover: `min(1, 800/200) * min(1, 0/60)` = `1 * 1`.
+    // Kept, because it is the one of the three whose ratio crosses `T` on restore and so would
+    // play even without the re-observe.
+    await heldWhileCollapsed(
+      page,
+      `<div data-vm-id="vm-hero" style="width:200px;height:60px;background:#ddd">hero</div>`,
+      "vm-hero",
+      { width: 800, height: 0 },
+    );
+  });
+
+  test("re-arms an unreachable element on every entry, the way the preview does for any other", async ({
+    page,
+  }) => {
+    // The one thing the preview does not take from the export: the export unobserves on firing and
+    // plays once, the preview holds the element again when it leaves so the designer can scroll
+    // back and watch it a second time (spec §6a). For an element this tall "leaves" can only mean
+    // `isIntersecting` false — its ratio never crosses the threshold in either direction.
+    const h = await mountBridge(
+      page,
+      `<div class="spacer"></div>
+       <div data-vm-id="vm-tall" style="height:4000px;background:#ddd">tall</div>`,
+    );
+    await h.send("apply", assignment("vm-tall", inViewOver));
+    await expect.poll(() => h.animations("vm-tall")).toMatchObject([{ time: 0, state: "paused" }]);
+
+    await scrollToTarget(h, "vm-tall");
+    await expect.poll(() => h.computed("vm-tall", "opacity")).toBe("1");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
+
+    // Away again: held at the FIRST keyframe, not left wherever it finished.
+    await h.frame.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(() => h.computed("vm-tall", "opacity")).toBe("0");
+    expect(await h.animations("vm-tall")).toMatchObject([{ time: 0, state: "paused" }]);
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(3);
+
+    // And back: a genuinely new animation, as for any other in-view element.
+    await scrollToTarget(h, "vm-tall");
+    await expect.poll(() => h.computed("vm-tall", "opacity")).toBe("1");
     await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(4);
   });
 });

@@ -27,6 +27,62 @@ two copies are identical.
 The bridge is a **dumb renderer** (spec D1): the shell computes every byte of CSS and sends it in
 an `AppliedAssignment`. The bridge never reads the catalog and never builds a keyframes name.
 
+### The `in-view` trigger (spec D3, §6a)
+
+One shared `IntersectionObserver` for every `in-view` assignment, at `threshold: [0, T]`, and one
+predicate — `isOnScreen` — that decides both directions: an entry is in view when
+`isIntersecting && (intersectionRatio >= T || reachable <= T)`, where
+`reachable = min(1, rootW/w) * min(1, rootH/h)` is the largest ratio the element could ever attain.
+The element is **armed exactly while that holds**, so it is held on its first keyframe again below
+`T` if it can reach `T`, and only when it stops intersecting if it cannot.
+
+- The second clause is DT-095, and it is why the `0` threshold is there: `intersectionRatio` is an
+  **area** ratio, so an element big enough can never reach `T` at all and a browser told only about
+  `T` would never report it. Area, not height — a 4000px track in a horizontal scroller tops out at
+  0.16 with a perfectly ordinary height.
+- `rootBounds` is null for an implicit root inside a cross-origin iframe, which is **every** bridge
+  there is, so the fallback is the normal path here, not the fallback of last resort it is in an
+  export. Reading `.width` off null would throw inside the callback and leave every in-view element
+  held at `opacity: 0`. The fallback is `documentElement.clientWidth` / `clientHeight` in a
+  standards-mode document — the viewport *without* the scrollbar gutter, which is the box the
+  implicit root intersects against, where `innerWidth` / `innerHeight` include it and overstate
+  `reachable` by ~2% — and `window.innerWidth` / `innerHeight` in a **quirks-mode** one, where
+  those same properties are the *document* box: a clone whose origin page had no doctype reports
+  6000px for a 600px frame, which makes everything look reachable and is DT-095 again. A clone gets
+  whatever doctype its origin had and the clone pipeline inserts none, so `document.compatMode` is
+  read rather than assumed. One helper (`fallbackRootBox`), read once per callback and passed in,
+  so `isOnScreen` reads no globals and the per-entry path stays short. `elements:list.viewport` is
+  a different question with a different answer (`window`, spec §3) and deliberately not shared.
+- An **empty root** is not an unreachable one. It is tested first, before the ratio, and on both
+  axes at once: a frame collapsed to nothing reports anything touching its edge as intersecting —
+  at ratio 0, or at ratio 1 for a zero-area target — and measuring reachability against it would
+  play the page's biggest elements unseen and leave them armed, so they would never play when the
+  pane came back. Per axis is not enough: the collapsed axis yields 1 while the element's own
+  unreachable axis still carries the product under `T`, which is the wide track and the tall hero
+  exactly. `reachableFraction`'s own guards stay as a division backstop and answer for neither.
+- **Re-observed when the root stops being empty.** A root that grows crosses no threshold for an
+  unreachable element — ratio 0 to a ratio still under `T`, both inside `[0, T)` — so the browser
+  reports nothing and the element would stay held for ever. `unobserve` + `observe` queues a fresh
+  initial entry and the normal rule decides. It runs from the `resize` listener the overlay already
+  uses: no new listener, no timer, and one boolean test when the root was never empty. The latch
+  that guards it is **raised** by the observer callback and lowered only by the recovery itself:
+  the elements that were below the collapsed root *do* cross a threshold when it grows, and their
+  entries arrive before the `resize` event, so a latch they could lower would no-op the recovery
+  for every page with more than one in-view assignment.
+- `src/vibe-motion-export.js` fires on the same condition; the copies are separate because neither
+  file can import the other, and spec §6a is the contract between them. What the preview does *not*
+  copy is playing once: it re-arms on every entry so the designer can scroll back and watch again.
+  "Every entry" is literal: for an element the ratio rule can never reach, that means every full
+  exit and re-entry, and a *second* collapse of the frame delivers it no entry at all (its
+  threshold index never moves), so it stays armed through that collapse rather than replaying.
+  Two divergences remain until the Phase 7 Track C PR (#28), which owns that file and its exporter
+  golden: the export does not test the root's emptiness, and it reads `window.innerWidth` /
+  `innerHeight` for the fallback root rather than the compat-mode reading above. Track C copies
+  both functions verbatim plus the call-site helper; the re-observe has no counterpart there,
+  because an export unobserves on firing and never disarms.
+- Still uncovered on both sides, and logged as DT-184: a clip container narrower than the root
+  bounds the intersection without appearing in `rootBounds`.
+
 ### Element discovery (`elements:query` → `elements:list`, bridge ≥ 1.1.0)
 
 The one read-only message pair, added for Phase 5's agent (spec §3, "`elements:query` rules").
@@ -84,9 +140,10 @@ interpolated into it, ever, which is what makes it something a reviewer can read
 - At `DOMContentLoaded`, one `IntersectionObserver` at `threshold: [0, IN_VIEW_THRESHOLD]` watches
   every `.vm-in-view`, and a `MutationObserver` on `documentElement` picks up marked elements that
   arrive later — snippet mode is pasted into sites that render on the client.
-- An entry fires when `isIntersecting && (intersectionRatio >= T || reachable < T)`, where
+- An entry fires when `isIntersecting && (intersectionRatio >= T || reachable <= T)`, where
   `reachable = min(1, rootW/w) * min(1, rootH/h)` is the largest ratio the element could ever
-  attain. That second clause is DT-095: `intersectionRatio` is an **area** ratio, so an element
+  attain — the same condition the bridge uses, above. That second clause is DT-095:
+  `intersectionRatio` is an **area** ratio, so an element
   big enough can never reach `T` at all and would stay held for ever. Area, not height — a 4000px
   track in a horizontal scroller tops out at 0.16 with a perfectly ordinary height. `rootBounds`
   is null when the exported page is itself in a cross-origin iframe, so the viewport stands in for
@@ -141,6 +198,7 @@ three wrong while every jsdom test passed. So `e2e/` exists for exactly that cla
 | Only provable in `e2e/` | Why jsdom cannot see it |
 |---|---|
 | `in-view` holds at the first keyframe, plays, holds again, plays again | needs a real animation with a real `currentTime` and real `animationstart` events |
+| the preview fires for an element taller than five viewports and for a track wider than the frame, still waits for `T` for one that can reach it, holds both while the frame is collapsed to no height or no width, and plays **every** held element when it is restored — not only the first — including in a quirks-mode clone | needs a real `IntersectionObserver` deciding for itself what to report (including what it does *not* report when a root grows), real layout, and the null `rootBounds` of a cross-origin frame; jsdom's version (`test/triggers.test.ts`) states each entry by hand, so it proves the arithmetic and not the reporting |
 | a forced `replay` ends on its own animation, not a descendant's, and after one iteration when looping | jsdom never fires `animationend` or `animationiteration` |
 | a hover-armed card stays armed over a tagged child | needs real pointer movement over a real layout |
 | the host's `animation` shorthand survives a round trip, and its longhands do not leak in | jsdom's CSSOM does not expand the shorthand at all |

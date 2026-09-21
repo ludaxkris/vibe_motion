@@ -54,12 +54,44 @@ export type SendOptions = {
   rawPayload?: boolean;
 };
 
+/**
+ * What a test says about one element in an `IntersectionObserver` callback.
+ *
+ * Only `vmId` is required; each other field defaults to the plainest reading of the ones given,
+ * so a test states the part it is about and nothing else.
+ */
+export type FakeEntry = {
+  vmId: string;
+  /**
+   * Whether the element intersects the root **at all**. Not "past the threshold": with the
+   * bridge's thresholds (`[0, IN_VIEW_THRESHOLD]`) a real observer reports `true` from zero-area
+   * contact — edge-adjacent, before a single pixel shows — which is what the reachability clause
+   * rides on. Defaults to `intersectionRatio > 0`, or `true` when no ratio is given either.
+   */
+  isIntersecting?: boolean;
+  /** Intersected **area** over the element's whole area. Defaults to 1 intersecting, 0 not. */
+  intersectionRatio?: number;
+  /** The element's own box. jsdom has no layout, so a test that cares about size supplies one. */
+  boundingClientRect?: { width: number; height: number };
+  /**
+   * The root's box, or `null` — which is what a real observer reports for an implicit root inside
+   * a cross-origin iframe, i.e. always, for the bridge. `null` is the default for that reason; the
+   * bridge then falls back to the root box the harness stubs (`rootSize()` / `resize()`).
+   */
+  rootBounds?: { width: number; height: number } | null;
+};
+
 export type FakeObserver = {
   targets: Set<Element>;
   options: { threshold?: number | number[] } | undefined;
   disconnected: boolean;
+  /**
+   * Every `observe` / `unobserve` in order, as `"observe:vm-heading"`. What a test asserts when it
+   * cares that the bridge re-observed something, which `targets` alone cannot show.
+   */
+  calls: string[];
   /** Deliver several entries in one callback, the way a real observer batches them. */
-  fire(entries: Array<{ vmId: string; isIntersecting: boolean }>): void;
+  fire(entries: FakeEntry[]): void;
 };
 
 export type Harness = {
@@ -82,9 +114,24 @@ export type Harness = {
   /** The names of the `@keyframes` rules currently in the sheet, in order. */
   keyframeNames(): string[];
   overlay(): HTMLElement | null;
-  /** Fire the shared IntersectionObserver for one element. */
-  intersect(vmId: string, isIntersecting: boolean): void;
+  /**
+   * Fire the shared IntersectionObserver for one element. A boolean is the whole-element case
+   * (`true` = fully on screen, ratio 1); an object states a ratio, a box or a `rootBounds`.
+   */
+  intersect(vmId: string, state?: boolean | Omit<FakeEntry, "vmId">): void;
   observers(): FakeObserver[];
+  /**
+   * The size the implicit `IntersectionObserver` root reports — `documentElement.clientWidth` /
+   * `clientHeight`, which jsdom has none of and the harness supplies.
+   */
+  rootSize(): { width: number; height: number };
+  /**
+   * Resize that root *without* firing `resize`. The pane is already back but the event has not
+   * run yet — which is when the browser delivers the entries that made the latch racy.
+   */
+  setRootSize(width: number, height: number): void;
+  /** Resize that root and fire `resize`, the way dragging the editor's split pane does. */
+  resize(width: number, height: number): void;
   /** Run every callback queued with `requestAnimationFrame` so far. */
   flushRaf(): void;
   mouse(type: string, target: Node, relatedTarget?: Node | null): void;
@@ -178,31 +225,37 @@ export function loadBridge(
     targets = new Set<Element>();
     options: { threshold?: number | number[] } | undefined;
     disconnected = false;
+    calls: string[] = [];
     constructor(cb: IoCallback, options?: { threshold?: number | number[] }) {
       this.options = options;
       observers.push(this);
       callbacks.set(this, cb);
     }
-    fire(entries: Array<{ vmId: string; isIntersecting: boolean }>) {
+    fire(entries: FakeEntry[]) {
       const cb = callbacks.get(this);
       if (!cb) return;
       cb(
-        entries.map(({ vmId, isIntersecting }) => {
-          const target = el(vmId);
+        entries.map((entry) => {
+          const target = el(entry.vmId);
+          const ratioGiven = entry.intersectionRatio;
+          const isIntersecting = entry.isIntersecting ?? (ratioGiven === undefined ? true : ratioGiven > 0);
           return {
             target,
             isIntersecting,
-            intersectionRatio: isIntersecting ? 1 : 0,
-            boundingClientRect: target.getBoundingClientRect(),
+            intersectionRatio: ratioGiven ?? (isIntersecting ? 1 : 0),
+            boundingClientRect: entry.boundingClientRect ?? target.getBoundingClientRect(),
+            rootBounds: entry.rootBounds ?? null,
           };
         }),
         this,
       );
     }
     observe(el: Element) {
+      this.calls.push(`observe:${el.getAttribute("data-vm-id") ?? "?"}`);
       this.targets.add(el);
     }
     unobserve(el: Element) {
+      this.calls.push(`unobserve:${el.getAttribute("data-vm-id") ?? "?"}`);
       this.targets.delete(el);
     }
     disconnect() {
@@ -218,6 +271,23 @@ export function loadBridge(
     configurable: true,
     writable: true,
   });
+
+  // --- a viewport for the implicit IntersectionObserver root ----------------------------------
+  // jsdom has no layout, so `document.documentElement.clientWidth` / `clientHeight` are 0 — and in
+  // a standards-mode document those are what the bridge measures the root with whenever
+  // `rootBounds` is null, which inside a cross-origin frame is always. A root with no area is not
+  // on screen at all, so without this every entry would be held. The document gets the same
+  // viewport jsdom gives `window`, and both move together, so a test cannot leave the two
+  // disagreeing and no assertion depends on which of them the code under test happens to read
+  // (the bridge reads `documentElement` for the observer root and `window` for
+  // `elements:list.viewport`).
+  function setRootSize(width: number, height: number) {
+    Object.defineProperty(document.documentElement, "clientWidth", { value: width, configurable: true });
+    Object.defineProperty(document.documentElement, "clientHeight", { value: height, configurable: true });
+    Object.defineProperty(window, "innerWidth", { value: width, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: height, configurable: true });
+  }
+  setRootSize(window.innerWidth, window.innerHeight);
 
   // --- controllable requestAnimationFrame ----------------------------------------------------
   let rafId = 0;
@@ -319,14 +389,23 @@ export function loadBridge(
     overlay() {
       return document.querySelector<HTMLElement>("[data-vm-overlay]");
     },
-    intersect(vmId, isIntersecting) {
+    intersect(vmId, state = true) {
       const target = el(vmId);
+      const entry: FakeEntry = typeof state === "boolean" ? { vmId, isIntersecting: state } : { vmId, ...state };
       for (const observer of observers) {
-        if (observer.targets.has(target)) observer.fire([{ vmId, isIntersecting }]);
+        if (observer.targets.has(target)) observer.fire([entry]);
       }
     },
     observers() {
       return observers;
+    },
+    rootSize() {
+      return { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight };
+    },
+    setRootSize,
+    resize(width, height) {
+      setRootSize(width, height);
+      window.dispatchEvent(new window.Event("resize"));
     },
     flushRaf() {
       const due = rafQueue;

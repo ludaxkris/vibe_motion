@@ -345,15 +345,26 @@ describe("elements:query", () => {
     expect(h.runtimeCss()).toBe(cssBefore);
   });
 
-  it("announces a bridge version >= 1.1.0 — where elements:query shipped — on an unchanged protocol version", () => {
+  it("announces a bridge version at or above the floor its own behaviour needs", () => {
     const h = loadBridge(MIXED);
     const ready = h.payloads("ready")[0] as { bridgeVersion: string; protocolVersion: number };
 
-    expect(ready).toMatchObject({ bridgeVersion: "1.1.1", protocolVersion: 1 });
-    // The literal moves with every bridge release (1.1.1 carries the overlay resting-box change).
-    // What a consumer must be able to rely on is the numeric semver compare the README prescribes:
-    // `elements:query` exists from 1.1.0 up, and a patch bump must never read as "older".
-    const [major, minor] = ready.bridgeVersion.split(".").map(Number);
-    expect(major > 1 || (major === 1 && minor >= 1)).toBe(true);
+    expect(ready).toMatchObject({ bridgeVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/), protocolVersion: 1 });
+    // A floor, not an equality: pinning the literal only records which release last touched this
+    // file, but dropping it entirely would leave nothing in the repo that fails when a behaviour
+    // change ships without a bump (Kotlin parses the version, the web client compares it). The
+    // floor is the newest version whose behaviour something depends on — `elements:query` shipped
+    // in 1.1.0, the in-view reachability rule in 1.1.2 — and the compare is numeric, as the
+    // README prescribes, so a patch bump can never read as "older".
+    const atLeast = (version: string, floor: string) => {
+      const [major, minor, patch] = version.split(".").map(Number);
+      const [fMajor, fMinor, fPatch] = floor.split(".").map(Number);
+      if (major !== fMajor) return major > fMajor;
+      if (minor !== fMinor) return minor > fMinor;
+      return patch >= fPatch;
+    };
+    expect(atLeast(ready.bridgeVersion, "1.1.2")).toBe(true);
+    expect(atLeast("1.10.0", "1.1.2")).toBe(true);
+    expect(atLeast("1.1.1", "1.1.2")).toBe(false);
   });
 });
