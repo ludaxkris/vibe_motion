@@ -1,9 +1,15 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { VersionHistory } from "@/components/history/use-version-history";
+import type { Version } from "@/lib/api-client";
 import { CURRENT_CATALOG_VERSION, defaultAssignmentFor, getCatalogEntry } from "@/lib/catalog";
+import { env } from "@/lib/env";
 import { initialEditorState, useEditorStore } from "@/lib/store";
+import { server } from "@/mocks/server";
 
 import { ControlPanel } from "./index";
 
@@ -153,14 +159,14 @@ describe("ControlPanel", () => {
     expect(screen.getByRole("tab", { name: "Export" })).toBeInTheDocument();
   });
 
-  it("gives History and Export a caption each until their phases land", () => {
+  it("gives History and Export a caption each when no project is behind the panel", () => {
     render(<ControlPanel />);
 
     fireEvent.click(screen.getByRole("tab", { name: "History" }));
     expect(screen.getByText(/only created when you click Save/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "Export" }));
-    expect(screen.getByText("Export arrives with Phase 7.")).toBeInTheDocument();
+    expect(screen.getByText(/built from a saved version/i)).toBeInTheDocument();
   });
 
   it("keeps the caption pointing at the top bar for Save and Cancel", () => {
@@ -336,7 +342,7 @@ describe("ControlPanel · unsaved guard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
 
     expect(screen.getByRole("tab", { name: "Export" })).toHaveAttribute("data-active");
-    expect(screen.getByText("Export arrives with Phase 7.")).toBeInTheDocument();
+    expect(screen.getByText(/built from a saved version/i)).toBeInTheDocument();
   });
 
   it("discards the draft and then makes the switch", () => {
@@ -995,5 +1001,144 @@ describe("ControlPanel · agent flows (Phase 5)", () => {
       expect(useEditorStore.getState().panel).toEqual({ status: "idle" });
       expect(screen.getByTestId("panel-idle")).toBeInTheDocument();
     });
+  });
+});
+
+describe("ControlPanel · Export tab (Phase 7)", () => {
+  const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
+  const V5 = "55555555-5555-4555-8555-555555555555";
+  const V3 = "33333333-3333-4333-8333-333333333333";
+
+  const api = (path: string) => `${env.apiOrigin}${path}`;
+
+  function version(id: string, seq: number): Version {
+    return {
+      id,
+      projectId: PROJECT_ID,
+      seq,
+      label: `v${seq}`,
+      parentVersionId: null,
+      catalogVersion: "1.1.0",
+      createdAt: "2026-09-20T10:00:00Z",
+      diff: { set: {}, remove: [] },
+    };
+  }
+
+  /** What the shell's `useVersionHistory` hands down; two versions, v5 current. */
+  function exportHistory(overrides: Partial<VersionHistory> = {}): VersionHistory {
+    return {
+      versions: [version(V3, 3), version(V5, 5)],
+      pending: false,
+      listError: false,
+      retry: () => undefined,
+      currentVersionId: V5,
+      viewingVersionId: null,
+      viewing: false,
+      viewingLabel: undefined,
+      currentLabel: "v5",
+      nextLabel: "v6",
+      error: null,
+      restoring: false,
+      view: async () => undefined,
+      back: () => undefined,
+      restore: async () => undefined,
+      ...overrides,
+    };
+  }
+
+  /** Every export the panel asks for, and nothing else answered from the shared mock. */
+  function mockExport(): { calls: URLSearchParams[] } {
+    const calls: URLSearchParams[] = [];
+    server.use(
+      http.get(api("/projects/:projectId/export"), ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        calls.push(query);
+        return HttpResponse.json({
+          versionId: query.get("versionId") ?? V5,
+          mode: "full",
+          html: "<!doctype html>",
+          css: ".vm-a3 {}",
+          js: null,
+          files: [
+            { name: "index.html", contentType: "text/html" },
+            { name: "vibe-motion.css", contentType: "text/css" },
+          ],
+        });
+      }),
+      http.get(api("/projects/:projectId/versions/:versionId/state"), ({ params }) =>
+        HttpResponse.json({ versionId: String(params.versionId), state: {} }),
+      ),
+    );
+    return { calls };
+  }
+
+  function renderPanel(props: Parameters<typeof ControlPanel>[0] = {}) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    return render(<ControlPanel {...props} />, { wrapper: Wrapper });
+  }
+
+  it("mounts the Export tab on the current version once the shell hands it a project", async () => {
+    const { calls } = mockExport();
+    useEditorStore.setState({ currentVersionId: V5 });
+    renderPanel({ projectId: PROJECT_ID, projectTitle: "Nimbus App", history: exportHistory() });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+
+    await waitFor(() => expect(screen.getByTestId("panel-export")).toBeInTheDocument());
+    expect(calls.map((query) => query.get("versionId"))).toEqual([V5]);
+  });
+
+  it("asks for no export until the Export tab is opened", async () => {
+    const { calls } = mockExport();
+    useEditorStore.setState({ currentVersionId: V5 });
+    renderPanel({ projectId: PROJECT_ID, history: exportHistory() });
+
+    // The editor opens on Animate, and Base UI does not mount a closed panel.
+    expect(screen.getByTestId("panel-idle")).toBeInTheDocument();
+    expect(calls).toEqual([]);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+  });
+
+  it("exports the version being viewed when Export is opened from History", async () => {
+    const { calls } = mockExport();
+    const back = vi.fn();
+    useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });
+    renderPanel({
+      projectId: PROJECT_ID,
+      history: exportHistory({ viewing: true, viewingVersionId: V3, viewingLabel: "v3", back }),
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+
+    // docs/user_flow.md §4: the version can be exported while viewed, without
+    // restoring — and §4 again: leaving History puts the canvas back on the
+    // current version, which is what `back()` does.
+    await waitFor(() => expect(calls.map((query) => query.get("versionId"))).toEqual([V3]));
+    expect(back).toHaveBeenCalledOnce();
+    expect(await screen.findByText("v3")).toBeInTheDocument();
+  });
+
+  it("drops the pin when the reader leaves the Export tab and comes back", async () => {
+    const { calls } = mockExport();
+    useEditorStore.setState({ mode: "viewing", currentVersionId: V5, viewingVersionId: V3 });
+    renderPanel({
+      projectId: PROJECT_ID,
+      history: exportHistory({ viewing: true, viewingVersionId: V3, viewingLabel: "v3" }),
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Animate" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+
+    // Back on the current version: the pin belonged to the visit, not the tab.
+    await waitFor(() => expect(calls.map((query) => query.get("versionId"))).toEqual([V3, V5]));
   });
 });

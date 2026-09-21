@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { env } from "@/lib/env";
 import { createProject, listVersions } from "@/mocks/db";
 import { server } from "@/mocks/server";
-import { useRestoreVersion, useSaveVersion, useVersions, versionStateKey } from "./queries";
+import { useRestoreVersion, useSaveVersion, useVersionState, useVersions, versionStateKey } from "./queries";
 
 const api = (path: string) => `${env.apiOrigin}${path}`;
 
@@ -177,5 +177,52 @@ describe("useRestoreVersion", () => {
     });
     expect(staleOutcome?.kind).toBe("stale");
     expect(invalidateSpy).toHaveBeenCalled();
+  });
+});
+
+describe("useVersionState", () => {
+  it("reads a version's state under the key a viewed version already filled", async () => {
+    const created = createProject("https://example.com/");
+    if (created.status !== 201) throw new Error("setup");
+    const p = created.body;
+    const client = newClient();
+    // Exactly what `useVersionHistory.view()` leaves behind.
+    client.setQueryData(versionStateKey(p.id, p.currentVersionId), {
+      "vm-1": { animationId: "fade-in", catalogVersion: "1.1.0", trigger: "load", params: {} },
+    });
+    let requests = 0;
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), () => {
+        requests += 1;
+        return HttpResponse.json({ versionId: p.currentVersionId, state: {} });
+      }),
+    );
+
+    const { result } = renderHook(() => useVersionState(p.id, p.currentVersionId), {
+      wrapper: wrapper(client),
+    });
+
+    await waitFor(() => expect(result.current.data).toHaveProperty("vm-1"));
+    // A saved version's state is immutable, so the cached answer is the answer.
+    expect(requests).toBe(0);
+  });
+
+  it("asks for nothing at all when the caller has no version to ask about", async () => {
+    const client = newClient();
+    let requests = 0;
+    server.use(
+      http.get(api("/projects/:projectId/versions/:versionId/state"), () => {
+        requests += 1;
+        return HttpResponse.json({ versionId: "x", state: {} });
+      }),
+    );
+
+    const { result } = renderHook(() => useVersionState("some-project", null), {
+      wrapper: wrapper(client),
+    });
+
+    await vi.waitFor(() => expect(result.current.fetchStatus).toBe("idle"));
+    expect(requests).toBe(0);
+    expect(result.current.data).toBeUndefined();
   });
 });

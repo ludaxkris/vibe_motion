@@ -477,6 +477,10 @@ export function EditorShell({ projectId }: { projectId: string }) {
             {/* The guard's "…or discard to leave v5 as is" needs the version
                 the draft forked from, which only the versions list knows. */}
             <ControlPanel
+              projectId={projectId}
+              // The Export tab's downloads are named after the project
+              // (`vibe-motion-<slug>-v<seq>.zip`); nothing else sees the title.
+              projectTitle={loaded.title}
               currentVersionLabel={currentVersionLabel}
               history={history}
               onSave={requestSave}

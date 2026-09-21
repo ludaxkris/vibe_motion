@@ -28,6 +28,7 @@ import {
 
 import { AutoResultPanel, type AutoResultRow } from "./auto-result";
 import { ChoosingPanel } from "./choosing";
+import { ExportSection } from "./export-section";
 import { IdlePanel } from "./idle";
 import { PanelCard, PanelSection } from "./panel-card";
 import { SelectedPanel } from "./selected";
@@ -364,6 +365,26 @@ const TABS = [
 ] as const;
 
 /**
+ * Which tab is open, and — for Export — which version it is open *on*.
+ *
+ * One object rather than two pieces of state because the guard parks the whole
+ * request: "Export v3" raised over an unsaved draft has to come back as v3
+ * after Save, not as "the Export tab, on whatever is current now".
+ */
+type TabRequest = {
+  tab: string;
+  /**
+   * The version the Export tab is pinned to, or null for the project's current
+   * one (plan §5.2). Set when the switch is made from a version on screen —
+   * the Export tab opened while viewing vN, or a History row's "Export vN" —
+   * and dropped again on the way out of the tab.
+   */
+  exportVersionId: string | null;
+};
+
+const ANIMATE: TabRequest = { tab: TABS[0].value, exportVersionId: null };
+
+/**
  * Control Panel: idle -> selected -> choosing -> tuning (+ the `auto` result
  * list), driven by the
  * `panel` state machine (`lib/store/panel-machine.ts`), under the handoff's
@@ -377,6 +398,8 @@ const TABS = [
  * until then `panel` is only advanced from here, `/dev` and tests.
  */
 export function ControlPanel({
+  projectId,
+  projectTitle,
   currentVersionLabel,
   history,
   onPreview,
@@ -386,6 +409,10 @@ export function ControlPanel({
   onGenerateElement,
   onAutoGeneratePage,
 }: {
+  /** The project the Export tab exports. Absent (no project behind the panel) leaves it on its placeholder. */
+  projectId?: string;
+  /** The project's name; only the exported zip's file name ever sees it. */
+  projectTitle?: string;
   currentVersionLabel?: string;
   /**
    * The shell's `useVersionHistory` — the History tab's list, and the view /
@@ -429,8 +456,8 @@ export function ControlPanel({
   // parks the requested tab here and `onValueChange` is simply not honoured
   // until the user says what to do with the draft (docs/user_flow.md §1,
   // "unsaved → History/Export → guard").
-  const [committedTab, setCommittedTab] = useState<string>(TABS[0].value);
-  const [pendingTab, setPendingTab] = useState<string | null>(null);
+  const [committedTab, setCommittedTab] = useState<TabRequest>(ANIMATE);
+  const [pendingTab, setPendingTab] = useState<TabRequest | null>(null);
   // A guard with nothing left to lose is no longer a question. The draft can
   // go clean without this component's promise resolving — the 409's "Discard
   // my changes" loads their version, so `requestSave()` rightly rejects — and
@@ -438,7 +465,8 @@ export function ControlPanel({
   // with a Save that could do nothing at all. Derived rather than reconciled
   // in an effect, so there is no render in which that is true.
   const guardHeld = unsaved && pendingTab !== null;
-  const tab = guardHeld ? committedTab : (pendingTab ?? committedTab);
+  const open = guardHeld ? committedTab : (pendingTab ?? committedTab);
+  const tab = open.tab;
 
   // Guard-on-element-click and guard-on-Export/Restore are later phases; this
   // is the tab switch only.
@@ -472,6 +500,10 @@ export function ControlPanel({
     ? () =>
         onSave().then(
           () => {
+            // The parked request, version and all — and with `exportVersionId`
+            // null (the only way to reach the guard is with a draft, which
+            // means not viewing), the Export tab opens on the version this
+            // very save has just created.
             if (pendingTab !== null) setCommittedTab(pendingTab);
             setPendingTab(null);
           },
@@ -480,6 +512,33 @@ export function ControlPanel({
         )
     : undefined;
 
+  /**
+   * Ask for a tab. The guard decides whether the request is honoured now or
+   * parked until the draft is dealt with.
+   *
+   * `exportVersionId` is only ever non-null for the Export tab: it is the
+   * version on screen at the moment of the switch (plan §5.2).
+   */
+  const openTab = (next: TabRequest) => {
+    if (next.tab === open.tab && next.exportVersionId === open.exportVersionId) return;
+    if (unsaved) {
+      setPendingTab(next);
+      return;
+    }
+    // Viewing is a read-only detour that belongs to the History tab, so
+    // leaving the tab returns to the current version — the editor is never in
+    // viewing mode with History closed (docs/user_flow.md §4). Called even
+    // when nothing is on screen yet: `back()` is also what cancels a version
+    // still loading. The version being left is already pinned in `next` when
+    // the reader asked for its export.
+    if (open.tab === "history") history?.back();
+    // Any tab the user picks with a clean draft is the whole answer:
+    // a `pendingTab` left over from a guard that went away with the
+    // unsaved work has nothing left to say.
+    setPendingTab(null);
+    setCommittedTab(next);
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <Tabs
@@ -487,21 +546,13 @@ export function ControlPanel({
         onValueChange={(next) => {
           const value = String(next);
           if (value === tab) return;
-          if (unsaved) {
-            setPendingTab(value);
-            return;
-          }
-          // Viewing is a read-only detour that belongs to the History tab, so
-          // leaving the tab returns to the current version first — the editor
-          // is never in viewing mode with History closed
-          // (docs/user_flow.md §4). Called even when nothing is on screen
-          // yet: `back()` is also what cancels a version still loading.
-          if (tab === "history") history?.back();
-          // Any tab the user picks with a clean draft is the whole answer:
-          // a `pendingTab` left over from a guard that went away with the
-          // unsaved work has nothing left to say.
-          setPendingTab(null);
-          setCommittedTab(value);
+          openTab({
+            tab: value,
+            // "Any saved version can be exported directly while viewing it,
+            // without restoring" (docs/user_flow.md §4). Read here, before
+            // `openTab` leaves the History tab and ends the viewing.
+            exportVersionId: value === "export" ? (history?.viewingVersionId ?? null) : null,
+          });
         }}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
@@ -598,8 +649,23 @@ export function ControlPanel({
             )}
           </TabsContent>
 
-          <TabsContent value="export">
-            <PlaceholderTab>Export arrives with Phase 7.</PlaceholderTab>
+          {/* Base UI renders a `TabsContent` only while its tab is open
+              (`keepMounted: false`), which is what keeps the export request
+              from being issued behind the Animate tab — and keeps the
+              section's store reads off the slider's path (DT-126). */}
+          <TabsContent value="export" className="flex min-h-0 flex-col">
+            {projectId && history ? (
+              <ExportSection
+                projectId={projectId}
+                projectTitle={projectTitle}
+                history={history}
+                exportVersionId={open.exportVersionId}
+              />
+            ) : (
+              <PlaceholderTab>
+                Your page’s HTML, CSS and JS appear here, built from a saved version.
+              </PlaceholderTab>
+            )}
           </TabsContent>
         </div>
       </Tabs>
