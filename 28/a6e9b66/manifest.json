@@ -1,0 +1,20 @@
+{
+  "branch": "feat/7-export-wiring",
+  "sha": "a6e9b661ba4516fd915109123835709f29f7e681",
+  "viewport": "1440x900",
+  "names": [
+    "1-home.png",
+    "2-editor-idle.png",
+    "3-editor-selected.png",
+    "4-editor-choosing.png",
+    "5-editor-tuning.png",
+    "6-export-guard-unsaved.png",
+    "7-editor-save-dialog.png",
+    "8-export-panel.png",
+    "9-editor-with-export.png",
+    "10-export-copy-toast.png",
+    "11-export-html-tab.png",
+    "13-history.png"
+  ],
+  "diffs": {}
+}
