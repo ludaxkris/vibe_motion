@@ -226,6 +226,60 @@ test("restoring vm-play does not loop, and leaves other elements alone", async (
   expect(errors).toEqual([]);
 });
 
+test("an element that gains vm-in-view by a class rewrite is observed, held, and plays", async ({
+  page,
+}) => {
+  // The mirror of the repair above, and the one snippet mode was written for:
+  // `className={open ? "vm-a1 vm-in-view" : "vm-a1"}` on a framework host adds
+  // the marker with no node insertion at all. Nothing observes it, and
+  // `.vm-in-view:not(.vm-play)` holds it at `opacity: 0` for good — against
+  // this file's overriding rule.
+  const harness = await mountExport(page, {
+    body: `<div class="spacer"></div><div id="target" class="box vm-a1">target</div>`,
+    css: CSS,
+  });
+
+  await harness.frame.evaluate(() => {
+    document.querySelector("#target")!.className = "box vm-a1 vm-in-view";
+  });
+  await page.waitForTimeout(150);
+
+  // Held, not force-played: it is below the fold and has not been reached.
+  // (Paused wherever it had got to, not at 0: this element carried `vm-a1`
+  // without the marker until now, so its animation had already started and the
+  // hold rule caught it mid-flight. An element the *exporter* marks carries
+  // both classes from the first paint and is held at 0, as the specs above.)
+  expect(await harness.classes("#target")).not.toContain("vm-play");
+  expect(await harness.animation("#target")).toMatchObject({ state: "paused" });
+
+  await harness.frame.evaluate(() => document.querySelector("#target")!.scrollIntoView());
+
+  await expect.poll(async () => (await harness.animation("#target"))?.state).toBe("running");
+  expect(await harness.starts(KEYFRAMES)).toBe(1);
+});
+
+test("with no IntersectionObserver, an element that gains the marker is played on sight", async ({
+  page,
+}) => {
+  // Nothing can observe it, and the hold rule applies the moment the marker
+  // lands, so the only answer that keeps it visible is to release it.
+  await page.addInitScript(() => {
+    // @ts-expect-error removing a browser global on purpose
+    delete window.IntersectionObserver;
+  });
+
+  const harness = await mountExport(page, {
+    body: `<div class="spacer"></div><div id="target" class="box vm-a1">target</div>`,
+    css: CSS,
+  });
+
+  await harness.frame.evaluate(() => {
+    document.querySelector("#target")!.className = "box vm-a1 vm-in-view";
+  });
+
+  await expect.poll(async () => await harness.classes("#target")).toContain("vm-play");
+});
+
 test("with no IntersectionObserver, a played element is still restored after a re-render", async ({
   page,
 }) => {

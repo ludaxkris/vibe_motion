@@ -213,9 +213,19 @@
 
           if (record.type === "attributes") {
             var target = /** @type {Element} */ (record.target);
-            if (played.has(target) && !target.classList.contains(PLAY_CLASS)) {
-              target.classList.add(PLAY_CLASS);
+            if (played.has(target)) {
+              // A host re-render rewrote `class` and took `vm-play` with it.
+              if (!target.classList.contains(PLAY_CLASS)) target.classList.add(PLAY_CLASS);
+              continue;
             }
+            // The mirror case: an element that *gains* the marker from the
+            // host (`className={open ? "vm-a1 vm-in-view" : "vm-a1"}`) arrives
+            // with no node insertion, so nothing else here would ever see it —
+            // and the hold rule applies the moment the class lands.
+            if (!target.classList.contains(MARKER_CLASS)) continue;
+            // `observe` on an element already being observed is a no-op.
+            if (observer === null) play(target);
+            else observer.observe(target);
             continue;
           }
 

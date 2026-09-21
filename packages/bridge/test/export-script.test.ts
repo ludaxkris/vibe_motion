@@ -107,6 +107,9 @@ describe("vibe-motion-export.js", () => {
     expect(SOURCE).toContain("new WeakSet()");
     expect(SOURCE).toContain("attributeFilter: [\"class\"]");
     expect(SOURCE).toContain("played.has(target)");
+    // …and the mirror: an element that GAINS the marker from the host has to
+    // be picked up, or nothing ever observes it and the hold rule keeps it.
+    expect(SOURCE).toContain("target.classList.contains(MARKER_CLASS)");
     // Guarded, so our own repair does not write again on the record it produces.
     expect(SOURCE).toContain("!target.classList.contains(PLAY_CLASS)");
   });
