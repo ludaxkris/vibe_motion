@@ -269,10 +269,16 @@ export function exportedCss(classes: string[]): string {
   );
 }
 
-/** The page shape `HtmlEmitter` produces: the link last in head, the script after it, not deferred. */
-export function exportedPage(body: string, css: string): string {
+/**
+ * The page shape `HtmlEmitter` produces: the link last in head, the script after it, not deferred.
+ *
+ * `quirks` drops the doctype, which an export inherits from the page it was cloned from — plenty
+ * of real pages have none. `document.compatMode` is then `BackCompat`, and
+ * `documentElement.clientHeight` stops being the viewport and becomes the whole document box.
+ */
+export function exportedPage(body: string, css: string, quirks = false): string {
   return (
-    `<!doctype html><html><head><meta charset="utf-8">` +
+    `${quirks ? "" : "<!doctype html>"}<html><head><meta charset="utf-8">` +
     `<style>body{margin:0;font:14px/1.4 system-ui,sans-serif}` +
     `.box{width:200px;height:60px;margin:20px;background:#ddd}.spacer{height:2000px}</style>` +
     `<link rel="stylesheet" href="vibe-motion.css">` +
@@ -289,13 +295,17 @@ export function exportedPage(body: string, css: string): string {
  * @param embedHeight the embedding iframe's height in px (default 400). `0` is the collapsed
  *   root a host can produce with a closed accordion or a transient layout, where every ratio is
  *   0 and nothing is really visible.
+ * @param quirks serve the page with no doctype, as a clone of a doctype-less page produces.
  */
 export async function mountExport(
   page: Page,
-  options: { body: string; css: string; embed?: boolean; embedHeight?: number },
+  options: { body: string; css: string; embed?: boolean; embedHeight?: number; quirks?: boolean },
 ): Promise<ExportHarness> {
   await page.route(`${EXPORT_ORIGIN}/index.html`, (route) =>
-    route.fulfill({ contentType: "text/html", body: exportedPage(options.body, options.css) }),
+    route.fulfill({
+      contentType: "text/html",
+      body: exportedPage(options.body, options.css, options.quirks),
+    }),
   );
   await page.route(`${EXPORT_ORIGIN}/vibe-motion.css`, (route) =>
     route.fulfill({ contentType: "text/css", body: options.css }),

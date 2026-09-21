@@ -386,6 +386,35 @@ test("a root empty on one axis holds even an element unreachable on the other, a
   expect(await harness.starts(KEYFRAMES)).toBe(1);
 });
 
+test("a page with no doctype still measures the viewport, not the whole document", async ({
+  page,
+}) => {
+  // An export keeps the doctype of the page it was cloned from, and plenty of real pages have
+  // none: `document.compatMode` is then `BackCompat`, where `documentElement.clientHeight` is the
+  // DOCUMENT box, not the viewport — measured 4400px in a 400px frame. A hero taller than five
+  // viewports then looks comfortably reachable (`min(1, 4400 / 2400)` = 1), so the ratio test
+  // decides it, it can never reach 0.2 in a viewport it is six times the height of, and the
+  // element stays at `opacity: 0` for good.
+  //
+  // Embedded, because that is when the script has to measure the root itself: `entry.rootBounds`
+  // is null only inside a cross-origin iframe, and everywhere else the browser's own root box is
+  // used and quirks mode cannot reach the decision.
+  const harness = await mountExport(page, {
+    body: `<div class="spacer"></div><div id="target" class="vm-a1 vm-in-view" style="height:600vh;background:#ddd"></div>`,
+    css: CSS,
+    embed: true,
+    quirks: true,
+  });
+
+  expect(await harness.frame.evaluate(() => document.compatMode)).toBe("BackCompat");
+  expect(await harness.animation("#target")).toMatchObject({ state: "paused", time: 0 });
+
+  await harness.frame.evaluate(() => window.scrollTo(0, 1900));
+
+  await expect.poll(async () => (await harness.animation("#target"))?.state).toBe("running");
+  expect(await harness.starts(KEYFRAMES)).toBe(1);
+});
+
 test("with no IntersectionObserver at all, everything plays", async ({ page }) => {
   await page.addInitScript(() => {
     // @ts-expect-error removing a browser global on purpose

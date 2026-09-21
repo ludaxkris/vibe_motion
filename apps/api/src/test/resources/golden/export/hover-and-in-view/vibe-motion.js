@@ -35,6 +35,17 @@
   /** Kept in sync with IN_VIEW_THRESHOLD in src/protocol.ts, and with the bridge's own copy. */
   var IN_VIEW_THRESHOLD = 0.2;
 
+  /**
+   * The observer root's measured size. (A typedef rather than an inline object type: an inline
+   * one needs doubled braces, and this file may contain nothing that looks like a template
+   * placeholder — the exporter serves it byte for byte, and `test/export-script.test.ts`
+   * enforces that.)
+   *
+   * @typedef {Object} RootSize
+   * @property {number} width
+   * @property {number} height
+   */
+
   var GATE_CLASS = "vm-js";
   var MARKER_CLASS = "vm-in-view";
   var PLAY_CLASS = "vm-play";
@@ -55,7 +66,8 @@
    * While that is true every element is held (see {@link isOnScreen}), and a root that grows back
    * announces nothing for them: an unreachable element goes from ratio 0 to a ratio still under
    * the threshold, crossing none of `[0, T]`, and there is no `isIntersecting` flip to report
-   * either. {@link recoverFromEmptyRoot} is what releases them.
+   * either. The `resize` recovery in {@link watchRootSize} is what releases them, and it is the
+   * only thing that clears this.
    */
   var rootWasEmpty = false;
 
@@ -122,7 +134,7 @@
    * intersection without appearing in `rootBounds`.
    *
    * Byte-identical to the bridge's copy (DT-190). The **call site** is each host's own: this file
-   * measures the root in {@link start}'s callback, the bridge in its own.
+   * measures the root in {@link onIntersect} via {@link rootSize}, the bridge in its own callback.
    *
    * @param {IntersectionObserverEntry} entry
    * @param {number} fallbackWidth the root's width when `rootBounds` is null
@@ -141,6 +153,58 @@
     return reachable <= IN_VIEW_THRESHOLD;
   }
 
+  /**
+   * The root an implicit-root observer measures against, for the one case the browser does not
+   * report it: `entry.rootBounds` is null inside a cross-origin iframe.
+   *
+   * `documentElement.clientWidth` / `clientHeight` is the viewport *without* the scrollbar
+   * gutter, which `innerWidth` / `innerHeight` include — but only in standards mode. In quirks
+   * mode (`BackCompat`, which an export inherits whenever the page it was cloned from had no
+   * doctype) it is the DOCUMENT box instead: measured 4400px in a 400px frame, which makes a hero
+   * six times the height of the viewport look comfortably reachable and holds it at `opacity: 0`
+   * for ever. There, `innerHeight` is the honest answer.
+   *
+   * Read once per callback, never per entry.
+   *
+   * @returns {RootSize}
+   */
+  function rootSize() {
+    var root = document.documentElement;
+    if (root && document.compatMode === "CSS1Compat") {
+      return { width: root.clientWidth || 0, height: root.clientHeight || 0 };
+    }
+    return { width: window.innerWidth || 0, height: window.innerHeight || 0 };
+  }
+
+  /**
+   * One `IntersectionObserver` callback: release everything that is on screen, and remember a
+   * root that had no area.
+   *
+   * @param {IntersectionObserverEntry[]} entries
+   * @param {IntersectionObserver} self
+   */
+  function onIntersect(entries, self) {
+    try {
+      var root = rootSize();
+      // Set, never cleared here. A root that comes back announces nothing for the elements it was
+      // holding, so the latch is what tells `recoverFromEmptyRoot` there is work to do — and the
+      // entries that DO arrive on restore (other elements flipping to `isIntersecting`) reach
+      // this callback first, so clearing it here would drop the recovery on the floor and leave
+      // the held ones at `opacity: 0` for good.
+      if (!(root.width > 0) || !(root.height > 0)) rootWasEmpty = true;
+
+      for (var i = 0; i < entries.length; i++) {
+        var entry = entries[i];
+        if (!isOnScreen(entry, root.width, root.height)) continue;
+        play(entry.target);
+        // Unobserved, so it plays once and never again.
+        self.unobserve(entry.target);
+      }
+    } catch (callbackError) {
+      playEverything();
+    }
+  }
+
   function start() {
     /** @type {IntersectionObserver | null} */
     var observer = null;
@@ -150,30 +214,9 @@
     } else {
       try {
         observer = new window.IntersectionObserver(
-          // The observer arrives as the second argument, so nothing has to close over a variable
-          // that is still being assigned.
-          function (entries, self) {
-            try {
-              // The implicit root is the viewport *without* the scrollbar gutter, which is what
-              // `documentElement.clientWidth` / `clientHeight` measure and `innerWidth` /
-              // `innerHeight` do not. Read once for the whole batch, before anything writes, so
-              // every entry is judged against one root.
-              var root = document.documentElement;
-              var rootWidth = root ? root.clientWidth : 0;
-              var rootHeight = root ? root.clientHeight : 0;
-              rootWasEmpty = !(rootWidth > 0) || !(rootHeight > 0);
-
-              for (var i = 0; i < entries.length; i++) {
-                var entry = entries[i];
-                if (!isOnScreen(entry, rootWidth, rootHeight)) continue;
-                play(entry.target);
-                // Unobserved, so it plays once and never again.
-                self.unobserve(entry.target);
-              }
-            } catch (callbackError) {
-              playEverything();
-            }
-          },
+          // The observer arrives as the callback's second argument, so nothing has to close over
+          // a variable that is still being assigned.
+          onIntersect,
           // Two thresholds: 0 so a very tall element is reported the moment it intersects at all,
           // and the real one for everything else.
           { threshold: [0, IN_VIEW_THRESHOLD] },
@@ -232,9 +275,12 @@
       "resize",
       function () {
         try {
+          // One boolean test on every resize of a root that has never been empty — not even a
+          // layout read.
           if (!rootWasEmpty) return;
-          var root = document.documentElement;
-          if (!root || !(root.clientWidth > 0) || !(root.clientHeight > 0)) return;
+          var root = rootSize();
+          if (!(root.width > 0) || !(root.height > 0)) return;
+          // The only place the latch is cleared.
           rootWasEmpty = false;
           var held = document.querySelectorAll(MARKER_SELECTOR);
           for (var i = 0; i < held.length; i++) {

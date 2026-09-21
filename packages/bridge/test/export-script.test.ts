@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { IN_VIEW_THRESHOLD } from "../src/protocol";
-import { callable } from "./source";
+import { callable, functionSource } from "./source";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = path.join(here, "..", "src", "vibe-motion-export.js");
@@ -105,23 +105,46 @@ describe("vibe-motion-export.js", () => {
     expect(SOURCE).toContain("reachable <= IN_VIEW_THRESHOLD");
   });
 
-  it("measures the root without the scrollbar gutter, once per callback", () => {
-    // `innerWidth` / `innerHeight` include the gutter; the implicit root does not. Read once
-    // before anything writes, so every entry in a batch is judged against one root.
-    expect(SOURCE).toContain("var rootWidth = root ? root.clientWidth : 0;");
-    expect(SOURCE).toContain("var rootHeight = root ? root.clientHeight : 0;");
-    expect(SOURCE).toContain("isOnScreen(entry, rootWidth, rootHeight)");
-    expect(SOURCE).not.toMatch(/window\.inner(Width|Height)/);
+  it("measures the root itself, once per callback, and only where the browser does not", () => {
+    // `documentElement.clientWidth/clientHeight` is the viewport without the scrollbar gutter —
+    // in standards mode. In quirks mode it is the whole DOCUMENT box (measured 4400px in a 400px
+    // frame), which makes a tall hero look reachable and holds it for ever, so there the answer
+    // is `innerWidth`/`innerHeight`. An export inherits the cloned page's doctype, or its
+    // absence, so both modes are real.
+    const rootSize = functionSource(SOURCE, "rootSize");
+    expect(rootSize).toContain('document.compatMode === "CSS1Compat"');
+    expect(rootSize).toContain("root.clientWidth || 0");
+    expect(rootSize).toContain("root.clientHeight || 0");
+    expect(rootSize).toContain("window.innerWidth || 0");
+    expect(rootSize).toContain("window.innerHeight || 0");
+    // Once per callback, not once per entry.
+    const callback = functionSource(SOURCE, "onIntersect");
+    expect(callback.match(/rootSize\(\)/g)).toHaveLength(1);
+    expect(callback).toContain("isOnScreen(entry, root.width, root.height)");
   });
 
-  it("re-observes what an empty root was holding, once the root comes back", () => {
-    // A root that grows announces nothing for an element it was holding: the ratio goes from 0 to
-    // a value still under the threshold, crossing none of `[0, T]`. Without this they stay at
-    // `opacity: 0` for ever.
-    expect(SOURCE).toContain("rootWasEmpty");
-    expect(SOURCE).toContain('"resize"');
-    expect(SOURCE).toContain("observer.unobserve(held[i]);");
-    expect(SOURCE).toContain("observer.observe(held[i]);");
+  it("latches an empty root in the callback and never clears it there", () => {
+    // On restore, the entries that DO arrive (other elements flipping to `isIntersecting`) reach
+    // the callback before the `resize` does. A callback that cleared the latch on a non-empty
+    // root would drop the recovery, and the elements with no entry of their own — ratio 0 to a
+    // ratio still under the threshold — would stay at `opacity: 0` for ever.
+    const callback = functionSource(SOURCE, "onIntersect");
+
+    expect(callback).toContain("if (!(root.width > 0) || !(root.height > 0)) rootWasEmpty = true;");
+    expect(callback).not.toContain("rootWasEmpty = false");
+  });
+
+  it("clears the latch only in the recovery, and re-observes only what has not played", () => {
+    const recovery = functionSource(SOURCE, "watchRootSize");
+
+    // The cheap path first: a root that has never been empty costs one boolean test on each
+    // resize, not a layout read.
+    expect(recovery.indexOf("if (!rootWasEmpty) return;")).toBeLessThan(recovery.indexOf("rootSize()"));
+    expect(recovery).toContain("rootWasEmpty = false;");
+    expect(recovery).toContain("if (played.has(held[i])) continue;");
+    expect(recovery).toContain("observer.unobserve(held[i]);");
+    expect(recovery).toContain("observer.observe(held[i]);");
+    expect(recovery).toContain('"resize"');
   });
 
   it("watches for marked elements that arrive after DOMContentLoaded", () => {
