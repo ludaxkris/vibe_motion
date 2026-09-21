@@ -47,9 +47,14 @@ back `elements:list { seq, elements: ElementInfo[], truncated, viewport }`, then
 - Listed = `visible === true`, which means a non-zero box that is not `visibility:hidden` /
   `display:none`. It does not mean on screen: `opacity: 0`, off-canvas and clipped elements are
   still listed. Document order.
-- Rects are the transformed box. An `in-view` element the bridge is holding on its first keyframe
-  measures in that pose (displaced, or zero-height and so unlisted). Re-querying a page that has
-  assignments applied? Prefer the `ElementInfo` you remembered (the Phase 5 shell does).
+- **Rects are the element's RESTING box** — `rect`, `pageRect`, the size floor and `visible` alike,
+  for `elements:list`, `element:select` and `element:hover`. With nothing of ours applied to the
+  element or an ancestor it is exactly `getBoundingClientRect()`; with something applied (any
+  trigger, any play state, previews included) it is the layout box, because an `in-view` element
+  held on its first keyframe measures displaced, shrunken, or zero-height and drops out of the
+  list altogether — and a transform applies to the whole subtree, so an untouched child of a held
+  block is distorted too. The bridge is the single source of truth: do **not** substitute an
+  `ElementInfo` you remembered from before the assignments were applied.
 - `limit` defaults to `ELEMENTS_QUERY_LIMIT` (200), clamped to `[1, ELEMENTS_QUERY_MAX]` (500).
 - `invalid-payload`, no list: a string / number / array payload, a non-object or array `filter`,
   non-array `tags` or a non-string entry, any non-finite number. Missing or `null` payload = `{}`.
@@ -165,7 +170,16 @@ Still unproven anywhere, and worth knowing:
 
 ## Known limits
 
-- **Elements with no offset box (`<svg>`, MathML).** They are not `HTMLElement`s, so the layout-box path cannot serve them. Their ring is always measured live: during an animation it follows the animated box (a spinning logo's ring breathes with the rotation) instead of marking the resting box. It is never empty and it tracks scroll and layout.
+- **Elements with no offset box (`<svg>`, MathML).** They are not `HTMLElement`s, so the layout-box path cannot serve them. Their ring is always measured live: during an animation it follows the animated box (a spinning logo's ring breathes with the rotation) instead of marking the resting box. It is never empty and it tracks scroll and layout. The same applies to `elements:list` / `element:select` / `element:hover`: such an element is measured live whatever is applied, so a held one can still measure zero and drop out of a list (DT-200).
+- **The layout box's own limits now reach `elements:list`, for touched subtrees only.** While any of
+  our animations is applied to an element or an ancestor, that element's reported rect comes from
+  the layout box rather than the live one — so it is integer-snapped (edges up to 0.75 px from the
+  live rect, which is why a consumer comparing a remembered live rect with a fresh layout one needs
+  a tolerance: `apps/web/lib/agent/targets.ts` uses 1.5 px), it does not see a **host ancestor's**
+  own `transform` (a page that scales a wrapper reports the un-scaled size, DT-198), and it reports
+  the first fragment of a wrapped inline rather than the union. Unlike the ring, this path applies
+  no remembered correction: a correction belongs to one selected element, and a query measures
+  hundreds. An untouched page is unaffected — it is measured live and exactly.
 - **Duplicate `data-vm-id` in a clone.** The element map keeps the first element with a given
   vmId, so inline styles land only on that one, but the `[data-vm-id="…"] { … }` base-styles rule
   matches every copy, and `clear` restores only the first. The clone pipeline is what should
