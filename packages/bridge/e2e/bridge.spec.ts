@@ -59,6 +59,147 @@ test.describe("in-view trigger", () => {
 });
 
 // ---------------------------------------------------------------------------------------------
+// 1b. in-view reachability (A12 / DT-095 / DT-179)
+//
+// `intersectionRatio` is an **area** ratio — intersected area over the element's *whole* area — so
+// an element much bigger than the root can never reach `IN_VIEW_THRESHOLD` at all, and a rule that
+// only tests the ratio holds it on its first keyframe for the whole session. The preview fires on
+// the same condition as the export (spec §6a): `isIntersecting && (ratio >= T || reachable <= T)`.
+//
+// The frame is 800×600 (`e2e/harness.ts`) and is cross-origin with the shell, which is exactly the
+// case `entry.rootBounds` comes back **null** for: every number below is against the frame's own
+// `window.innerWidth` / `innerHeight`, through the fallback, because in the bridge that is not an
+// edge case but the only case.
+//
+// Not covered here, and logged as DT-184 for preview and export alike: a clip container narrower
+// than the root bounds the intersection without appearing in `rootBounds`, so an element that looks
+// reachable against the viewport can still be unable to reach `T`.
+// ---------------------------------------------------------------------------------------------
+
+test.describe("in-view reachability", () => {
+  /** A 200 ms fade, so "it played" is a settled `opacity: 1` rather than a race. */
+  const inViewOver = {
+    trigger: "in-view" as const,
+    keyframesName: "vm-iv-v1-0-0",
+    keyframesCss: FADE_IN,
+    style: { "animation-duration": "200ms", "animation-fill-mode": "both" },
+  };
+
+  const scrollToTarget = (h: Awaited<ReturnType<typeof mountBridge>>, vmId: string) =>
+    h.frame.evaluate((id) => document.querySelector(`[data-vm-id="${id}"]`)!.scrollIntoView(), vmId);
+
+  test("plays an element taller than five viewports, whose ratio can never reach the threshold", async ({
+    page,
+  }) => {
+    // 4000px tall in a 600px frame: the most of itself it can ever show is 600/4000 = 0.15. With
+    // the ratio test alone this element was held at `opacity: 0` for ever, while the very same
+    // element animated in the export.
+    const h = await mountBridge(
+      page,
+      `<div class="spacer"></div>
+       <div data-vm-id="vm-tall" style="height:4000px;background:#ddd">tall</div>`,
+    );
+    await h.send("apply", assignment("vm-tall", inViewOver));
+
+    // Held below the fold: a real animation, paused on its first keyframe. (A paused animation at
+    // t=0 is still in its active phase, so it counts as one `animationstart`.)
+    await expect.poll(() => h.animations("vm-tall")).toMatchObject([{ time: 0, state: "paused" }]);
+    expect(await h.computed("vm-tall", "opacity")).toBe("0");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(1);
+
+    await scrollToTarget(h, "vm-tall");
+
+    await expect.poll(() => h.computed("vm-tall", "opacity")).toBe("1");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
+  });
+
+  test("plays a track wider than the frame inside a horizontal scroller", async ({ page }) => {
+    // Reachability is an area, not a height: 800/5000 = 0.16 with a perfectly ordinary 60px height,
+    // so a height-only rule leaves this one held. The 600px scroller clips it further still, which
+    // only makes the real ratio smaller (0.12).
+    const h = await mountBridge(
+      page,
+      `<div class="spacer"></div>
+       <div style="overflow-x:auto;width:600px">
+         <div data-vm-id="vm-wide" style="width:5000px;height:60px;background:#ddd">wide</div>
+       </div>`,
+    );
+    await h.send("apply", assignment("vm-wide", inViewOver));
+
+    await expect.poll(() => h.animations("vm-wide")).toMatchObject([{ time: 0, state: "paused" }]);
+    expect(await h.computed("vm-wide", "opacity")).toBe("0");
+
+    await scrollToTarget(h, "vm-wide");
+
+    await expect.poll(() => h.computed("vm-wide", "opacity")).toBe("1");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
+  });
+
+  test("an element that can reach the threshold still waits for it, and not for the first sliver", async ({
+    page,
+  }) => {
+    // The escape hatch must not swallow the ordinary case. This 200×60 box can reach ratio 1, so
+    // it stays held at 6px of itself on screen (0.1) and plays at 30px (0.5).
+    const h = await mountBridge(
+      page,
+      `<div class="spacer"></div>
+       <div class="box" data-vm-id="vm-iv">in view</div>
+       <div class="spacer"></div>`,
+    );
+    const scrollTo = (y: number) => h.frame.evaluate((top) => window.scrollTo(0, top), y);
+    const ivTop = await h.frame.evaluate(
+      () => document.querySelector('[data-vm-id="vm-iv"]')!.getBoundingClientRect().top + window.scrollY,
+    );
+    await h.send("apply", assignment("vm-iv", inViewOver));
+    await expect.poll(() => h.animations("vm-iv")).toMatchObject([{ time: 0, state: "paused" }]);
+
+    await scrollTo(ivTop - 594);
+    // Long enough for a wrong fire to have played the whole 200 ms animation and shown itself.
+    await page.waitForTimeout(400);
+
+    expect(await h.animations("vm-iv")).toMatchObject([{ time: 0, state: "paused" }]);
+    expect(await h.computed("vm-iv", "opacity")).toBe("0");
+    expect(await h.starts("vm-iv-v1-0-0")).toBe(1);
+
+    await scrollTo(ivTop - 570);
+
+    await expect.poll(() => h.computed("vm-iv", "opacity")).toBe("1");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
+  });
+
+  test("re-arms an unreachable element on every entry, the way the preview does for any other", async ({
+    page,
+  }) => {
+    // The one thing the preview does not take from the export: the export unobserves on firing and
+    // plays once, the preview holds the element again when it leaves so the designer can scroll
+    // back and watch it a second time (spec §6a). For an element this tall "leaves" can only mean
+    // `isIntersecting` false — its ratio never crosses the threshold in either direction.
+    const h = await mountBridge(
+      page,
+      `<div class="spacer"></div>
+       <div data-vm-id="vm-tall" style="height:4000px;background:#ddd">tall</div>`,
+    );
+    await h.send("apply", assignment("vm-tall", inViewOver));
+    await expect.poll(() => h.animations("vm-tall")).toMatchObject([{ time: 0, state: "paused" }]);
+
+    await scrollToTarget(h, "vm-tall");
+    await expect.poll(() => h.computed("vm-tall", "opacity")).toBe("1");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
+
+    // Away again: held at the FIRST keyframe, not left wherever it finished.
+    await h.frame.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(() => h.computed("vm-tall", "opacity")).toBe("0");
+    expect(await h.animations("vm-tall")).toMatchObject([{ time: 0, state: "paused" }]);
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(3);
+
+    // And back: a genuinely new animation, as for any other in-view element.
+    await scrollToTarget(h, "vm-tall");
+    await expect.poll(() => h.computed("vm-tall", "opacity")).toBe("1");
+    await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(4);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
 // 2. replay (B2)
 // ---------------------------------------------------------------------------------------------
 

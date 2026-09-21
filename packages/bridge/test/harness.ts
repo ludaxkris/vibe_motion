@@ -54,12 +54,38 @@ export type SendOptions = {
   rawPayload?: boolean;
 };
 
+/**
+ * What a test says about one element in an `IntersectionObserver` callback.
+ *
+ * Only `vmId` is required; each other field defaults to the plainest reading of the ones given,
+ * so a test states the part it is about and nothing else.
+ */
+export type FakeEntry = {
+  vmId: string;
+  /**
+   * Whether the element intersects the root **at all**. Not "past the threshold": with the
+   * bridge's thresholds (`[0, IN_VIEW_THRESHOLD]`) a real observer reports `true` from the first
+   * pixel. Defaults to `intersectionRatio > 0`, or `true` when no ratio is given either.
+   */
+  isIntersecting?: boolean;
+  /** Intersected **area** over the element's whole area. Defaults to 1 intersecting, 0 not. */
+  intersectionRatio?: number;
+  /** The element's own box. jsdom has no layout, so a test that cares about size supplies one. */
+  boundingClientRect?: { width: number; height: number };
+  /**
+   * The root's box, or `null` — which is what a real observer reports for an implicit root inside
+   * a cross-origin iframe, i.e. always, for the bridge. `null` is the default for that reason;
+   * the bridge then falls back to `window.innerWidth` / `innerHeight`.
+   */
+  rootBounds?: { width: number; height: number } | null;
+};
+
 export type FakeObserver = {
   targets: Set<Element>;
   options: { threshold?: number | number[] } | undefined;
   disconnected: boolean;
   /** Deliver several entries in one callback, the way a real observer batches them. */
-  fire(entries: Array<{ vmId: string; isIntersecting: boolean }>): void;
+  fire(entries: FakeEntry[]): void;
 };
 
 export type Harness = {
@@ -82,8 +108,11 @@ export type Harness = {
   /** The names of the `@keyframes` rules currently in the sheet, in order. */
   keyframeNames(): string[];
   overlay(): HTMLElement | null;
-  /** Fire the shared IntersectionObserver for one element. */
-  intersect(vmId: string, isIntersecting: boolean): void;
+  /**
+   * Fire the shared IntersectionObserver for one element. A boolean is the whole-element case
+   * (`true` = fully on screen, ratio 1); an object states a ratio, a box or a `rootBounds`.
+   */
+  intersect(vmId: string, state?: boolean | Omit<FakeEntry, "vmId">): void;
   observers(): FakeObserver[];
   /** Run every callback queued with `requestAnimationFrame` so far. */
   flushRaf(): void;
@@ -183,17 +212,20 @@ export function loadBridge(
       observers.push(this);
       callbacks.set(this, cb);
     }
-    fire(entries: Array<{ vmId: string; isIntersecting: boolean }>) {
+    fire(entries: FakeEntry[]) {
       const cb = callbacks.get(this);
       if (!cb) return;
       cb(
-        entries.map(({ vmId, isIntersecting }) => {
-          const target = el(vmId);
+        entries.map((entry) => {
+          const target = el(entry.vmId);
+          const ratioGiven = entry.intersectionRatio;
+          const isIntersecting = entry.isIntersecting ?? (ratioGiven === undefined ? true : ratioGiven > 0);
           return {
             target,
             isIntersecting,
-            intersectionRatio: isIntersecting ? 1 : 0,
-            boundingClientRect: target.getBoundingClientRect(),
+            intersectionRatio: ratioGiven ?? (isIntersecting ? 1 : 0),
+            boundingClientRect: entry.boundingClientRect ?? target.getBoundingClientRect(),
+            rootBounds: entry.rootBounds ?? null,
           };
         }),
         this,
@@ -319,10 +351,11 @@ export function loadBridge(
     overlay() {
       return document.querySelector<HTMLElement>("[data-vm-overlay]");
     },
-    intersect(vmId, isIntersecting) {
+    intersect(vmId, state = true) {
       const target = el(vmId);
+      const entry: FakeEntry = typeof state === "boolean" ? { vmId, isIntersecting: state } : { vmId, ...state };
       for (const observer of observers) {
-        if (observer.targets.has(target)) observer.fire([{ vmId, isIntersecting }]);
+        if (observer.targets.has(target)) observer.fire([entry]);
       }
     },
     observers() {

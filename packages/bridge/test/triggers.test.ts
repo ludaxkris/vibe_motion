@@ -246,7 +246,9 @@ describe("in-view trigger", () => {
 
     expect(h.observers()).toHaveLength(1);
     expect(h.observers()[0].targets.size).toBe(5);
-    expect(h.observers()[0].options?.threshold).toBe(IN_VIEW_THRESHOLD);
+    // Two thresholds: 0, so an element that can never reach the real one is still reported the
+    // moment it intersects at all, and the real one for everything else (spec §6a).
+    expect(h.observers()[0].options?.threshold).toEqual([0, IN_VIEW_THRESHOLD]);
   });
 
   it("stops observing an element whose assignment is cleared", () => {
@@ -257,6 +259,140 @@ describe("in-view trigger", () => {
     h.send({ type: "clear", payload: { vmId: "vm-heading" }, seq: 2 });
 
     expect(h.observers()[0].targets.size).toBe(0);
+  });
+});
+
+/**
+ * The firing condition itself (A12 / DT-095 / DT-179), the same one the export runtime uses
+ * (`src/vibe-motion-export.js`, spec §6a): `isIntersecting && (ratio >= T || reachable <= T)`,
+ * where `reachable = min(1, rootW/w) * min(1, rootH/h)` is the largest ratio the element could
+ * ever attain. `intersectionRatio` is an **area** ratio, so an element big enough can never reach
+ * `T` at all and a ratio-only rule holds it on its first keyframe for ever.
+ *
+ * jsdom has no layout and no `IntersectionObserver`, so each case states its own entry. What only
+ * `e2e/bridge.spec.ts` can prove is that a real observer reports these entries for a real element:
+ * these tests are the arithmetic, that one is the behaviour.
+ */
+describe("in-view reachability", () => {
+  const playState = (h: ReturnType<typeof loadBridge>, vmId: string) =>
+    h.el(vmId).style.getPropertyValue("animation-play-state");
+
+  /** An in-view assignment, held on its first keyframe until the trigger fires. */
+  function applyInView(h: ReturnType<typeof loadBridge>, vmId: string, seq: number) {
+    h.send({ type: "apply", payload: applied({ ...held, vmId }), seq });
+    expect(playState(h, vmId)).toBe("paused");
+  }
+
+  it("fires for an element taller than the root can ever show, well under the threshold", () => {
+    const h = loadBridge(hostPage);
+    applyInView(h, "vm-heading", 1);
+
+    // Six viewports tall: it can show at most 1/6 = 0.167 of itself, so `ratio >= 0.2` is not a
+    // condition it can ever meet, in the preview or in the export.
+    h.intersect("vm-heading", {
+      intersectionRatio: 0.16,
+      boundingClientRect: { width: 200, height: h.window.innerHeight * 6 },
+    });
+
+    expect(playState(h, "vm-heading")).toBe("running");
+  });
+
+  it("fires for a track wider than the root, at a perfectly ordinary height", () => {
+    const h = loadBridge(hostPage);
+    applyInView(h, "vm-heading", 1);
+
+    // Reachability is an area, not a height: a wide track in a horizontal scroller is short of the
+    // threshold on the width axis alone.
+    h.intersect("vm-heading", {
+      intersectionRatio: 0.1,
+      boundingClientRect: { width: h.window.innerWidth * 6, height: 60 },
+    });
+
+    expect(playState(h, "vm-heading")).toBe("running");
+  });
+
+  it("measures against rootBounds when the observer reports one, and the window when it is null", () => {
+    const h = loadBridge(hostPage);
+    applyInView(h, "vm-heading", 1);
+    applyInView(h, "vm-para", 2);
+    const box = { width: 4000, height: 60 };
+
+    // Against a 640px-wide root, 640/4000 = 0.16: unreachable, so it fires.
+    h.intersect("vm-heading", { intersectionRatio: 0.1, boundingClientRect: box, rootBounds: { width: 640, height: 400 } });
+    // Against this window (jsdom's 1024), 1024/4000 = 0.256: reachable, so the ratio still rules.
+    // `rootBounds` is null for an implicit root inside a cross-origin iframe — which is every
+    // bridge there is — so this fallback is the bridge's normal path, not its edge case.
+    h.intersect("vm-para", { intersectionRatio: 0.1, boundingClientRect: box, rootBounds: null });
+
+    expect(h.window.innerWidth).toBeGreaterThan(640);
+    expect(playState(h, "vm-heading")).toBe("running");
+    expect(playState(h, "vm-para")).toBe("paused");
+  });
+
+  it("still waits for the real threshold when the element can reach it", () => {
+    const h = loadBridge(hostPage);
+    applyInView(h, "vm-heading", 1);
+    const box = { width: 200, height: 60 };
+
+    // On screen, but by a sliver: a box this size can reach ratio 1, so the escape hatch is not
+    // for it. Intersecting at all is what the `0` threshold reports; it is not "in view".
+    h.intersect("vm-heading", { intersectionRatio: 0.1, boundingClientRect: box });
+    expect(playState(h, "vm-heading")).toBe("paused");
+
+    h.intersect("vm-heading", { intersectionRatio: 0.25, boundingClientRect: box });
+    expect(playState(h, "vm-heading")).toBe("running");
+  });
+
+  it("disarms a reachable element when its ratio drops back under the threshold", () => {
+    const h = loadBridge(hostPage);
+    applyInView(h, "vm-heading", 1);
+    const box = { width: 200, height: 60 };
+    h.intersect("vm-heading", { intersectionRatio: 0.5, boundingClientRect: box });
+    expect(playState(h, "vm-heading")).toBe("running");
+
+    // Unchanged from the single-threshold bridge: for an element that can reach `T`, the arm
+    // boundary is `T` in both directions, not "has left the viewport entirely".
+    h.intersect("vm-heading", { intersectionRatio: 0.1, boundingClientRect: box });
+
+    expect(playState(h, "vm-heading")).toBe("paused");
+    expect(h.el("vm-heading").style.getPropertyValue("animation-delay")).toBe("0s");
+    expect(h.el("vm-heading").style.getPropertyValue("animation-fill-mode")).toBe("both");
+  });
+
+  it("disarms an unreachable element only when it stops intersecting, and re-arms on the next entry", () => {
+    const h = loadBridge(hostPage);
+    applyInView(h, "vm-heading", 1);
+    const tall = { width: 200, height: h.window.innerHeight * 6 };
+
+    h.intersect("vm-heading", { intersectionRatio: 0.16, boundingClientRect: tall });
+    expect(playState(h, "vm-heading")).toBe("running");
+
+    // A ratio it can never raise is not a reason to hold it again: only leaving is.
+    h.intersect("vm-heading", { intersectionRatio: 0.02, boundingClientRect: tall });
+    expect(playState(h, "vm-heading")).toBe("running");
+
+    h.intersect("vm-heading", { isIntersecting: false, intersectionRatio: 0, boundingClientRect: tall });
+    expect(playState(h, "vm-heading")).toBe("paused");
+
+    // Re-armed on the next entry, the preview's deliberate divergence from the export (spec §6a).
+    h.intersect("vm-heading", { intersectionRatio: 0.16, boundingClientRect: tall });
+    expect(playState(h, "vm-heading")).toBe("running");
+  });
+
+  it("does not treat a zero-size element, or a zero-size root, as unreachable", () => {
+    const h = loadBridge(hostPage);
+    applyInView(h, "vm-heading", 1);
+    applyInView(h, "vm-para", 2);
+    const zero = { width: 0, height: 0 };
+
+    // A zero box never really intersects, but an element in a collapsed or hidden container can
+    // still be reported. `rootSize / 0` is Infinity and `0 / 0` is NaN; neither may come out as
+    // "it can never reach the threshold, so play it".
+    h.intersect("vm-heading", { isIntersecting: true, intersectionRatio: 0, boundingClientRect: zero });
+    h.intersect("vm-para", { isIntersecting: true, intersectionRatio: 0, boundingClientRect: zero, rootBounds: zero });
+
+    expect(playState(h, "vm-heading")).toBe("paused");
+    expect(playState(h, "vm-para")).toBe("paused");
   });
 });
 
