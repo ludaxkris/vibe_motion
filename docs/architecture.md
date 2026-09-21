@@ -169,17 +169,38 @@ sequenceDiagram
   participant A as api
   participant P as Postgres
 
-  D->>W: open Export
+  D->>W: open Export (tab, or "Export v3" in History)
+  W->>W: target = the version on screen,<br/>else the project's current one
   opt unsaved changes exist
-    W-->>D: save first (export targets a saved version)
+    W-->>D: unsaved guard: Save first / Discard / Keep editing
+    D->>W: Save first
+    W->>A: POST /projects/{id}/versions
+    A-->>W: 201 v6 → target = v6
   end
-  W->>A: GET /projects/{id}/export?versionId=current
-  A->>P: SELECT base_html, diffs v0..current
-  A->>A: state = stateAt(current)
-  A->>A: exporter: catalog + state → css,<br/>base_html → vm-* classes replace data-vm-id,<br/>remove bridge, link css/js
-  A-->>W: { html, css, js | null }
-  W-->>D: tabs + copy buttons + zip download
+  Note over W: nothing is requested until the target is a saved version
+  W->>A: GET /projects/{id}/export?versionId=target<br/>(plus mode=snippet and vmId for a snippet)
+  A->>P: SELECT base_html, diffs v0..target
+  A->>A: state = stateAt(target)
+  A->>A: exporter: catalog + state → css,<br/>base_html → vm-aN classes replace data-vm-id,<br/>sanitise, link css/js
+  A-->>W: { versionId, mode, html, css, js | null, files }
+  W-->>D: file tabs + copy buttons + zip download
 ```
+
+#### Decisions: which version the tab exports, and where its state comes from
+
+The Export tab exports **one explicit version**, never "whatever the canvas happens to show". It is
+the project's current version by default, and the version being viewed when the tab is opened from
+the History tab or from a row's **Export vN** — captured at the moment of the switch, because
+leaving the History tab ends the viewing (`docs/user_flow.md` §4) and the store's `viewingVersionId`
+is already null by the time the panel renders. The pin lasts for that visit to the tab.
+
+The tab also needs that version's *materialised state*, for the footer's counts and to know whether
+the selected element has an assignment to make a snippet of. It comes from the cheapest true source:
+the store's `currentVersionState` when the store is on that version, and Phase 6's
+`GET /versions/{id}/state` otherwise — the same query key `view()` fills, so exporting a version the
+reader was just looking at costs no extra request. Never the draft: unsaved work is in no version,
+so Snippet is offered only for an element the **exported version** animates, and the footer never
+counts an element the download does not contain.
 
 #### Decisions: what makes an exported page inert
 
