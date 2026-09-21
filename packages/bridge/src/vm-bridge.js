@@ -19,7 +19,7 @@
   "use strict";
 
   /** Parsed out of this file by the API at build time; never hand-synced into Kotlin. */
-  var BRIDGE_VERSION = "1.1.2";
+  var BRIDGE_VERSION = "1.1.3";
   var MESSAGE_SOURCE = "vibe-motion";
   var PROTOCOL_VERSION = 1;
   /** Kept in sync with IN_VIEW_THRESHOLD in src/protocol.ts; the Phase 7 exporter uses it too. */
