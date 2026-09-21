@@ -34,7 +34,7 @@ import {
 } from "@/lib/catalog";
 import { summariseDiff } from "@/lib/diff-summary";
 
-import { Frame, PANEL_FRAME } from "./frame";
+import { Frame } from "./frame";
 import { StaticDialog } from "./static-dialog";
 
 /** The gallery renders looks, not behaviour: a callback that exists is an enabled control. */
@@ -284,7 +284,6 @@ export function DevGallery() {
         <Frame
           slug="panel-idle-empty"
           title="Idle · nothing animated yet"
-          bodyClassName={PANEL_FRAME}
         >
           <IdlePanel assignments={{}} prompt="" onPromptChange={noop} onAutoGenerate={noop} />
         </Frame>
@@ -293,7 +292,6 @@ export function DevGallery() {
           slug="panel-idle-assignments"
           title="Idle · with assignments"
           note="The ANIMATED list and Replay all appear once the draft holds anything."
-          bodyClassName={PANEL_FRAME}
         >
           <IdlePanel
             assignments={DRAFT_STATE}
@@ -308,7 +306,6 @@ export function DevGallery() {
           slug="panel-idle-generating"
           title="Idle · auto-generate running"
           note="One run at a time: the button says so and takes no clicks."
-          bodyClassName={PANEL_FRAME}
         >
           <IdlePanel
             assignments={{}}
@@ -323,7 +320,6 @@ export function DevGallery() {
           slug="panel-idle-error"
           title="Idle · auto-generate found nothing"
           note="A failed run leaves the draft untouched and says why under the button."
-          bodyClassName={PANEL_FRAME}
         >
           <IdlePanel
             assignments={{}}
@@ -337,7 +333,6 @@ export function DevGallery() {
         <Frame
           slug="panel-selected"
           title="Selected · no animation yet"
-          bodyClassName={PANEL_FRAME}
         >
           <SelectedPanel vmId={VM_HEADLINE} onGenerate={noop} />
         </Frame>
@@ -346,7 +341,6 @@ export function DevGallery() {
           slug="panel-choosing"
           title="Choosing"
           note="Search and category are live; hovering a card plays the catalog's real keyframes."
-          bodyClassName={PANEL_FRAME}
         >
           <ChoosingFrame />
         </Frame>
@@ -354,7 +348,6 @@ export function DevGallery() {
         <Frame
           slug="panel-choosing-empty-search"
           title="Choosing · nothing matches"
-          bodyClassName={PANEL_FRAME}
         >
           <ChoosingFrame initialSearch="zzz" />
         </Frame>
@@ -362,7 +355,6 @@ export function DevGallery() {
         <Frame
           slug="panel-tuning-distance"
           title="Tuning · an entry with distance"
-          bodyClassName={PANEL_FRAME}
         >
           <TuningFrame animationId="fade-in-up" />
         </Frame>
@@ -370,7 +362,6 @@ export function DevGallery() {
         <Frame
           slug="panel-tuning-scale"
           title="Tuning · an entry with scale"
-          bodyClassName={PANEL_FRAME}
         >
           <TuningFrame animationId="pulse" />
         </Frame>
@@ -379,7 +370,6 @@ export function DevGallery() {
           slug="panel-tuning-selects"
           title="Tuning · an entry with direction"
           note="Direction and Fill mode take the easing row's select: their CSS keywords are too long to read in a quarter of the panel."
-          bodyClassName={PANEL_FRAME}
         >
           <TuningFrame animationId="spin" />
         </Frame>
@@ -388,7 +378,6 @@ export function DevGallery() {
           slug="panel-tuning-from-auto"
           title="Tuning · opened from the result list"
           note="The ‹ control appears only here: it goes back up to the auto-generate result list."
-          bodyClassName={PANEL_FRAME}
         >
           <TuningFrame animationId="fade-in-up" fromAuto />
         </Frame>
@@ -397,7 +386,6 @@ export function DevGallery() {
           slug="panel-auto-result"
           title="Auto-generate result"
           note="One row per element of the last run; a row tuned by hand since keeps its place with a quiet “edited” tag."
-          bodyClassName={PANEL_FRAME}
         >
           <AutoResultPanel
             rows={AUTO_RESULT_ROWS}

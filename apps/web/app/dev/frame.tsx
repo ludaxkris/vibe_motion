@@ -41,6 +41,12 @@ export const PANEL_FRAME = "w-[var(--panel-width)] bg-vm-panel p-3";
 
 /**
  * {@link PANEL_FRAME} for a panel that fills its height — the Export tab's code
- * block only has a height to scroll inside one.
+ * block only has a height to scroll inside one, which in the editor comes from
+ * the panel column (`components/control-panel/index.tsx`).
  */
-export const TALL_PANEL_FRAME = `flex h-[560px] flex-col ${PANEL_FRAME}`;
+const TALL_PANEL_FRAME = `flex h-[560px] flex-col ${PANEL_FRAME}`;
+
+/** {@link Frame} at {@link TALL_PANEL_FRAME}, so the height is written once. */
+export function TallFrame(props: Omit<Parameters<typeof Frame>[0], "bodyClassName">) {
+  return <Frame bodyClassName={TALL_PANEL_FRAME} {...props} />;
+}

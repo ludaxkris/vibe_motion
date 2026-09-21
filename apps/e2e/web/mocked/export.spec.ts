@@ -9,8 +9,9 @@ import { expect, test, type FrameLocator, type Page } from "@playwright/test";
  *
  * The bundle's *bytes* are the API's business: the mock's CSS keys off
  * `data-vm-id` where the real exporter emits `vm-a<N>` classes (DT-033), so
- * nothing here asserts on the stylesheet's shape. `../stack/export-ui.spec.ts`
- * does that against the real exporter.
+ * nothing here asserts on what a rule looks like — only that a snippet is of
+ * the element that was selected, which is true of either shape.
+ * `../stack/export-ui.spec.ts` asserts the real exporter's own bytes.
  */
 
 const HEADING = "vm-heading";
@@ -103,6 +104,10 @@ test("offers Snippet only for an element this version animates", async ({ page }
   await expect(panel(page).getByRole("tab", { name: "index.html" })).toHaveCount(0);
   await expect(panel(page).getByRole("tab", { name: "vibe-motion.css" })).toBeVisible();
   await expect(panel(page).getByTestId("export-stats")).toContainText("1 animation · 1 element");
+  // The snippet is of the element that was selected. Identified by its vmId
+  // because that is what *this* mock keys its rules off; the real exporter
+  // writes a `vm-a<N>` class for the same element (DT-033), and the stack
+  // spec is where that shape is asserted.
   await expect(page.getByRole("region", { name: "vibe-motion.css" })).toContainText(HEADING);
 });
 

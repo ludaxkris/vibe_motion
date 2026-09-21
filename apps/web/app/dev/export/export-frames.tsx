@@ -5,7 +5,7 @@ import { useState } from "react";
 import { ExportPanel, type ExportMode } from "@/components/export/export-panel";
 import type { ExportBundle } from "@/lib/api-client";
 
-import { Frame, TALL_PANEL_FRAME } from "../frame";
+import { TallFrame } from "../frame";
 
 /**
  * The handoff's own sample, brought up to date: classes are `vm-a<N>` and
@@ -189,34 +189,31 @@ export function ExportFrames() {
       </header>
 
       <div className="flex flex-wrap items-start gap-8">
-        <Frame
-          bodyClassName={TALL_PANEL_FRAME}
-          slug="export-full-js"
+        <TallFrame
+                    slug="export-full-js"
           title="Full page · in-view, so the script is in the zip"
           note="Three files. The footer says the script is included."
         >
           <PanelFrame bundle={FULL_WITH_JS} snippetAvailable />
-        </Frame>
+        </TallFrame>
 
-        <Frame
-          bodyClassName={TALL_PANEL_FRAME}
-          slug="export-full-no-js"
+        <TallFrame
+                    slug="export-full-no-js"
           title="Full page · no in-view trigger"
           note="vibe-motion.js is faint and cannot be opened: it is not needed here."
         >
           <PanelFrame bundle={FULL_NO_JS} snippetAvailable={false} />
-        </Frame>
+        </TallFrame>
 
-        <Frame
-          bodyClassName={TALL_PANEL_FRAME}
-          slug="export-snippet"
+        <TallFrame
+                    slug="export-snippet"
           title="Snippet · one element"
           note="One file, and the class name to paste is in the comment at the top."
         >
           <PanelFrame bundle={SNIPPET} snippetAvailable versionSeq={3} isCurrent={false} />
-        </Frame>
+        </TallFrame>
 
-        <Frame bodyClassName={TALL_PANEL_FRAME} slug="export-pending" title="Waiting for the API">
+        <TallFrame slug="export-pending" title="Waiting for the API">
           <ExportPanel
             bundle={undefined}
             status="pending"
@@ -226,9 +223,9 @@ export function ExportFrames() {
             onModeChange={() => {}}
             snippetAvailable={false}
           />
-        </Frame>
+        </TallFrame>
 
-        <Frame bodyClassName={TALL_PANEL_FRAME} slug="export-error" title="The export could not be built">
+        <TallFrame slug="export-error" title="The export could not be built">
           <ExportPanel
             bundle={undefined}
             status="error"
@@ -240,7 +237,7 @@ export function ExportFrames() {
             snippetAvailable={false}
             onRetry={() => {}}
           />
-        </Frame>
+        </TallFrame>
       </div>
     </div>
   );

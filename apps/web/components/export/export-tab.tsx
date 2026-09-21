@@ -66,8 +66,10 @@ export type ExportTabProps = {
 /**
  * The Export tab, wired to `GET /projects/{projectId}/export`.
  *
- * Not mounted anywhere yet: Track C puts it in the panel's Export
- * `TabsContent` once PR #21 and PR #22 are on `main`.
+ * Mounted by `components/control-panel/export-section.tsx`, which is also
+ * where the version this is asked for is decided (plan §5.2: the project's
+ * current version, or the one the reader pinned by opening Export while
+ * viewing it). `/dev/export` renders the presentational half from fixed props.
  */
 export function ExportTab({
   projectId,
