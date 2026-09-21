@@ -164,7 +164,35 @@ Each task is TDD: the failing Kotest first. One commit per task.
 
 ## 5. Track C — wiring (after PR #21 and PR #22 are on `main`)
 
-Seam check first. Then: **mock alignment** (`apps/web/mocks/db.ts`: file names per §1.1, class-free CSS stays, 404 for a snippet of an unassigned element; extend `handlers.test.ts`; DT-033 already says mock and real output are not byte-identical); a link to `/dev/export` from the gallery; `EditorShell` passes `projectId` to `ControlPanel`; the Export `TabsContent` mounts `ExportTab` with `viewingVersionId ?? currentVersionId` from Phase 6's store slice, the label and `isCurrent` from the versions query, `selectedVmId` from `selectSelectedVmId`, and the materialised state for the stats; the History row's disabled **Export vN** gets `onExport(versionId)` (switches to the Export tab on that version; closes DT-160); opening Export while unsaved offers **Save first** through Phase 6's `requestSave()` in the existing tab guard (closes DT-099); the three tests that assert the placeholder text are updated; a mocked e2e drives the real tab; the stack spec gains a pass through the UI. Docs: build plan Phase 7, `architecture.md` §3.4, `user_flow.md`.
+### 5.1 Seam check (done 2026-09-20, against `main` @ d125a02)
+
+This section was written before Phases 5B and 6 merged. What it assumed, and what is actually there:
+
+| As planned | On `main` |
+|---|---|
+| "`EditorShell` passes `projectId` to `ControlPanel`" | Right, and not quite enough: the zip's file name also needs the project's title (`ExportPanel`'s `projectSlug`). Both are new optional props on `ControlPanel`. |
+| "the label and `isCurrent` from the versions query" | There is no second versions query to add: the shell mounts **one** `useVersionHistory` (`components/history/use-version-history.ts`) and already passes it to `ControlPanel` as `history`. `history.versions` + `history.currentVersionId` give `versionSeq` and `isCurrent`, and `ExportTab` wants a `versionSeq: number`, not a label. |
+| "mounts `ExportTab` with `viewingVersionId ?? currentVersionId` from Phase 6's store slice" | Not reachable as written. `ControlPanel`'s `onValueChange` calls `history.back()` whenever the tab leaves History (`docs/user_flow.md` §4: "switching away from the History tab returns to the current version"), so viewing has already ended by the time the Export panel renders and `viewingVersionId` is always `null` there. See the rule in §5.2. |
+| "and the materialised state for the stats" | No store field holds a *viewed* version's state: while viewing, `draftState` is the viewer buffer and `currentVersionState` is still the real current version. Since viewing ends at the switch, the state for the current version is `currentVersionState` (no request at all), and for any other version it is Phase 6's `GET /versions/{id}/state` under `versionStateKey`, `staleTime: Infinity` — already in the cache whenever the reader came from viewing that version. Additive: a `useVersionState` hook beside `useVersions` in `lib/versions/queries.ts`. |
+| "the History row's disabled **Export vN** gets `onExport(versionId)`" | Right. Note the button only renders inside the *expanded* row, and a row is expanded only while that version is being viewed, so Export vN is only ever clicked on a non-current version that is on screen. |
+| "opening Export while unsaved offers **Save first** … in the existing tab guard" | Phase 6 already routes every tab switch, Export included, through that guard and gave it a live Save (`handleGuardSave` → `requestSave()`). Track C pins the three exits with tests and makes the released switch land on the **new** current version. |
+| "the three tests that assert the placeholder text" | Two, both in `components/control-panel/index.test.tsx`. |
+| (not mentioned) | DT-187 — snippet mode becomes reachable by users in this track, so the export script has to survive a host re-render that rewrites `class`. |
+
+### 5.2 The rule: which version the Export tab exports
+
+The Export tab exports **one explicit version**, held as `exportVersionId` in the Control Panel and defaulting to the project's current version:
+
+- Opening the Export tab **while viewing vN** pins it to vN (captured before `history.back()` runs), so `docs/user_flow.md` §4's "any saved version can be exported while viewing it, without restoring" and §6's "viewing vN → export target vN" hold.
+- **Export vN** in a History row does the same thing explicitly: it pins vN and switches to the Export tab.
+- The canvas rule is untouched: leaving History returns the preview to the current version, and `viewingVersionId` stays a History-tab concern. The panel's own label (`v3`, without the `· current` badge) is what says which version is being exported.
+- The pin is dropped when the reader leaves the Export tab, so the tab is on the current version again next time — including after a save-first, where the new current version is the one that lands.
+
+### 5.3 The tasks
+
+**Mock alignment** (`apps/web/mocks/db.ts`: file names per §1.1, `js` only when an *exported* assignment uses `in-view`, 404 for a snippet of an unassigned element; class-free CSS stays — DT-033 already says mock and real output are not byte-identical; extend `handlers.test.ts`); a link to `/dev/export` from the gallery and the duplicated dev `Frame`/`PANEL_FRAME` folded into one shared module (DT-186, first half); `EditorShell` → `ControlPanel` gains `projectId` and the project's title; the Export `TabsContent` mounts `ExportTab` per §5.2 with `selectedVmId` from `selectSelectedVmId` (Snippet only when that element has an assignment in the *exported version's* state, not merely in the draft); the History row's **Export vN** gets `onExport(versionId)` (closes DT-160); the save-first guard is pinned by tests (closes the Export half of DT-099); the two placeholder tests are updated; `packages/bridge/src/vibe-motion-export.js` remembers played elements so a host re-render cannot re-hold them (DT-187); a mocked e2e drives the real tab and the stack spec gains a pass through the UI. Docs: build plan Phase 7, `architecture.md` §3.4, `user_flow.md`.
+
+The Control Panel must keep the property the render-cost test measures (DT-126): nothing added here may subscribe `ControlPanel` itself to `draftState`. The Export panel's store reads live in a section component that Base UI only mounts while the tab is open (`Tabs.Panel` is `keepMounted: false`), which is also what keeps the export request from being issued behind the Animate tab.
 
 ## 6. Deferred, to log when implementation starts
 
