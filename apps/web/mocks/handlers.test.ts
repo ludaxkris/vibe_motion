@@ -405,11 +405,12 @@ describe("mock API: catalog", () => {
 });
 
 describe("mock API: export", () => {
-  it("exports a bundle including css for a saved assignment", async () => {
+  /** A project whose v1 animates `vm-button`, with the trigger the test needs. */
+  async function projectWithAnimation(trigger: "load" | "in-view" = "load") {
     const created = await apiClient.POST("/projects", { body: { url: "https://example.com" } });
     const project = created.data!;
     const catalog = await apiClient.GET("/catalog");
-    const entry = catalog.data!.entries[0];
+    const entry = catalog.data!.entries.find((candidate) => candidate.triggers.includes(trigger))!;
 
     const saved = await apiClient.POST("/projects/{projectId}/versions", {
       params: { path: { projectId: project.id } },
@@ -421,7 +422,7 @@ describe("mock API: export", () => {
             "vm-button": {
               animationId: entry.id,
               catalogVersion: catalog.data!.version,
-              trigger: entry.triggers[0],
+              trigger,
               params: {},
             },
           },
@@ -430,24 +431,113 @@ describe("mock API: export", () => {
       },
     });
 
-    const exported = await apiClient.GET("/projects/{projectId}/export", {
-      params: { path: { projectId: project.id }, query: { versionId: saved.data!.id } },
+    return { projectId: project.id, versionId: saved.data!.id };
+  }
+
+  function exportOf(projectId: string, query: Record<string, string> = {}) {
+    return apiClient.GET("/projects/{projectId}/export", {
+      params: { path: { projectId }, query },
     });
+  }
+
+  it("exports a bundle including css for a saved assignment", async () => {
+    const { projectId, versionId } = await projectWithAnimation();
+
+    const exported = await exportOf(projectId, { versionId });
 
     expect(exported.response.status).toBe(200);
     expect(exported.data?.mode).toBe("full");
+    expect(exported.data?.versionId).toBe(versionId);
     expect(exported.data?.html).toContain('data-vm-id="vm-heading"');
     expect(exported.data?.css).toContain("vm-button");
+  });
+
+  /*
+   * The names below are the real exporter's (`apps/api/.../ExportModels.kt`,
+   * plan §1.1) and the web app reads `bundle.files` for its tabs and its zip,
+   * so a mock that names them differently tests a screen no deployment shows.
+   * The CSS *inside* them still differs — the mock keys off `data-vm-id`, the
+   * exporter off `vm-a<N>` classes — which is DT-033 and deliberate.
+   */
+  it("names the files as the real exporter does", async () => {
+    const { projectId } = await projectWithAnimation();
+
+    const exported = await exportOf(projectId);
+
+    expect(exported.data?.files).toEqual([
+      { name: "index.html", contentType: "text/html" },
+      { name: "vibe-motion.css", contentType: "text/css" },
+    ]);
+    // No in-view trigger anywhere in this version: no script, and no tab for
+    // one the zip would not contain.
+    expect(exported.data?.js).toBeNull();
+  });
+
+  it("adds the script, and only then, when an exported assignment is in-view", async () => {
+    const { projectId } = await projectWithAnimation("in-view");
+
+    const exported = await exportOf(projectId);
+
+    expect(exported.data?.js).toContain("vm-in-view");
+    expect(exported.data?.files.map((file) => file.name)).toEqual([
+      "index.html",
+      "vibe-motion.css",
+      "vibe-motion.js",
+    ]);
+  });
+
+  it("returns one stylesheet, and no page, for a snippet", async () => {
+    const { projectId } = await projectWithAnimation();
+
+    const exported = await exportOf(projectId, { mode: "snippet", vmId: "vm-button" });
+
+    expect(exported.response.status).toBe(200);
+    expect(exported.data?.mode).toBe("snippet");
+    expect(exported.data?.html).toBeNull();
+    expect(exported.data?.files).toEqual([{ name: "vibe-motion.css", contentType: "text/css" }]);
+    expect(exported.data?.css).toContain("vm-button");
+  });
+
+  it("carries the script in a snippet of an in-view element", async () => {
+    const { projectId } = await projectWithAnimation("in-view");
+
+    const exported = await exportOf(projectId, { mode: "snippet", vmId: "vm-button" });
+
+    expect(exported.data?.js).toContain("vm-in-view");
+    expect(exported.data?.files.map((file) => file.name)).toEqual([
+      "vibe-motion.css",
+      "vibe-motion.js",
+    ]);
+  });
+
+  it("404s for a snippet of an element this version does not animate", async () => {
+    const { projectId } = await projectWithAnimation();
+
+    const exported = await exportOf(projectId, { mode: "snippet", vmId: "vm-heading" });
+
+    // An empty 200 would read as "this element has no animation" rather than
+    // "you asked for the wrong element" (plan §1.6).
+    expect(exported.response.status).toBe(404);
+    expect(exported.error?.code).toBe("not_found");
   });
 
   it("400s when mode=snippet is requested without vmId", async () => {
     const created = await apiClient.POST("/projects", { body: { url: "https://example.com" } });
     const project = created.data!;
 
-    const exported = await apiClient.GET("/projects/{projectId}/export", {
-      params: { path: { projectId: project.id }, query: { mode: "snippet" } },
-    });
+    const exported = await exportOf(project.id, { mode: "snippet" });
 
     expect(exported.response.status).toBe(400);
+    expect(exported.error?.code).toBe("missing_vm_id");
+  });
+
+  it("404s for a version that is not this project's", async () => {
+    const { projectId } = await projectWithAnimation();
+
+    const exported = await exportOf(projectId, {
+      versionId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(exported.response.status).toBe(404);
   });
 });

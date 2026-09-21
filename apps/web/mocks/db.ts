@@ -416,12 +416,18 @@ export function exportProject(projectId: string, options: ExportOptions): Export
   const fullState = stateAtVersion(record, versionId);
   if (!fullState) return { status: 404, body: err("not_found", `No version ${versionId}`) };
 
+  // A snippet of an element with no animation has nothing to say, and an empty
+  // 200 reads as "this element has none" rather than "you asked for the wrong
+  // element" — so the service 404s, and so does this (plan §1.6).
+  if (mode === "snippet" && options.vmId && !(options.vmId in fullState)) {
+    return {
+      status: 404,
+      body: err("not_found", `No assignment for ${options.vmId} in version ${versionId}`),
+    };
+  }
+
   const state: EditorStateMap =
-    mode === "snippet" && options.vmId
-      ? options.vmId in fullState
-        ? { [options.vmId]: fullState[options.vmId] }
-        : {}
-      : fullState;
+    mode === "snippet" && options.vmId ? { [options.vmId]: fullState[options.vmId] } : fullState;
 
   const pairs: Array<readonly [CatalogEntry, string]> = [];
   const rules: string[] = [];
@@ -441,22 +447,43 @@ export function exportProject(projectId: string, options: ExportOptions): Export
   }
 
   const css = [runtimeStylesheet(pairs), rules.join("\n\n")].filter(Boolean).join("\n\n");
+  // A stand-in for `packages/bridge/src/vibe-motion-export.js`, not a copy of
+  // it: what the mock owes the app is that the script is *present* exactly
+  // when some exported assignment is `in-view`, and that it speaks the same
+  // three class names. The real file's failure paths are its own (DT-033).
   const js = hasInViewTrigger
-    ? `document.querySelectorAll('[data-vm-trigger="in-view"]').forEach((el) => {\n` +
-      `  new IntersectionObserver((entries) => {\n` +
-      `    entries.forEach((entry) => entry.target.classList.toggle('vm-in-view', entry.isIntersecting));\n` +
-      `  }).observe(el);\n` +
-      `});\n`
+    ? `/* Mock stand-in for vibe-motion.js. The real script ships with the API. */\n` +
+      `(function () {\n` +
+      `  document.documentElement.classList.add("vm-js");\n` +
+      `  document.querySelectorAll(".vm-in-view").forEach(function (el) {\n` +
+      `    new IntersectionObserver(function (entries, self) {\n` +
+      `      entries.forEach(function (entry) {\n` +
+      `        if (!entry.isIntersecting) return;\n` +
+      `        entry.target.classList.add("vm-play");\n` +
+      `        self.unobserve(entry.target);\n` +
+      `      });\n` +
+      `    }).observe(el);\n` +
+      `  });\n` +
+      `})();\n`
     : null;
 
+  // The real exporter's names (`apps/api/.../export/ExportModels.kt`, plan
+  // §1.1): the Export tab's file tabs and its zip entries both come from this
+  // list, so a mock that named them anything else would stage a screen no
+  // deployment shows. What is *inside* them still differs — the mock keys its
+  // rules off `data-vm-id`, the exporter off a `vm-a<N>` class — which is
+  // DT-033 and deliberate.
   const files: ExportBundle["files"] =
     mode === "full"
       ? [
           { name: "index.html", contentType: "text/html" },
-          { name: "styles.css", contentType: "text/css" },
-          ...(js ? [{ name: "script.js", contentType: "text/javascript" }] : []),
+          { name: "vibe-motion.css", contentType: "text/css" },
+          ...(js ? [{ name: "vibe-motion.js", contentType: "text/javascript" }] : []),
         ]
-      : [{ name: "snippet.css", contentType: "text/css" }];
+      : [
+          { name: "vibe-motion.css", contentType: "text/css" },
+          ...(js ? [{ name: "vibe-motion.js", contentType: "text/javascript" }] : []),
+        ];
 
   return {
     status: 200,
