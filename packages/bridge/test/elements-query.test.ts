@@ -349,10 +349,12 @@ describe("elements:query", () => {
     const h = loadBridge(MIXED);
     const ready = h.payloads("ready")[0] as { bridgeVersion: string; protocolVersion: number };
 
-    expect(ready).toMatchObject({ bridgeVersion: "1.1.1", protocolVersion: 1 });
-    // The literal moves with every bridge release (1.1.1 carries the overlay resting-box change).
-    // What a consumer must be able to rely on is the numeric semver compare the README prescribes:
-    // `elements:query` exists from 1.1.0 up, and a patch bump must never read as "older".
+    expect(ready).toMatchObject({ bridgeVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/), protocolVersion: 1 });
+    // Deliberately not a string equality: the literal moves with every bridge release (1.1.1
+    // carried the overlay resting-box change, 1.1.2 the in-view reachability rule), and a test
+    // that pins it only records which release last touched this file. What a consumer must be
+    // able to rely on is the numeric semver compare the README prescribes: `elements:query`
+    // exists from 1.1.0 up, and a patch bump must never read as "older".
     const [major, minor] = ready.bridgeVersion.split(".").map(Number);
     expect(major > 1 || (major === 1 && minor >= 1)).toBe(true);
   });

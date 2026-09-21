@@ -27,6 +27,29 @@ two copies are identical.
 The bridge is a **dumb renderer** (spec D1): the shell computes every byte of CSS and sends it in
 an `AppliedAssignment`. The bridge never reads the catalog and never builds a keyframes name.
 
+### The `in-view` trigger (spec D3, §6a)
+
+One shared `IntersectionObserver` for every `in-view` assignment, at `threshold: [0, T]`, and one
+predicate — `isOnScreen` — that decides both directions: an entry is in view when
+`isIntersecting && (intersectionRatio >= T || reachable <= T)`, where
+`reachable = min(1, rootW/w) * min(1, rootH/h)` is the largest ratio the element could ever attain.
+The element is **armed exactly while that holds**, so it is held on its first keyframe again below
+`T` if it can reach `T`, and only when it stops intersecting if it cannot.
+
+- The second clause is DT-095, and it is why the `0` threshold is there: `intersectionRatio` is an
+  **area** ratio, so an element big enough can never reach `T` at all and a browser told only about
+  `T` would never report it. Area, not height — a 4000px track in a horizontal scroller tops out at
+  0.16 with a perfectly ordinary height.
+- `rootBounds` is null for an implicit root inside a cross-origin iframe, which is **every** bridge
+  there is, so `window.innerWidth` / `innerHeight` is the normal path here, not the fallback of last
+  resort it is in an export. Reading `.width` off null would throw inside the callback and leave
+  every in-view element held at `opacity: 0`.
+- `src/vibe-motion-export.js` fires on the same condition; the copies are separate because neither
+  file can import the other, and spec §6a is the contract between them. What the preview does *not*
+  copy is playing once: it re-arms on every entry so the designer can scroll back and watch again.
+- Still uncovered on both sides, and logged as DT-184: a clip container narrower than the root
+  bounds the intersection without appearing in `rootBounds`.
+
 ### Element discovery (`elements:query` → `elements:list`, bridge ≥ 1.1.0)
 
 The one read-only message pair, added for Phase 5's agent (spec §3, "`elements:query` rules").
@@ -84,9 +107,10 @@ interpolated into it, ever, which is what makes it something a reviewer can read
 - At `DOMContentLoaded`, one `IntersectionObserver` at `threshold: [0, IN_VIEW_THRESHOLD]` watches
   every `.vm-in-view`, and a `MutationObserver` on `documentElement` picks up marked elements that
   arrive later — snippet mode is pasted into sites that render on the client.
-- An entry fires when `isIntersecting && (intersectionRatio >= T || reachable < T)`, where
+- An entry fires when `isIntersecting && (intersectionRatio >= T || reachable <= T)`, where
   `reachable = min(1, rootW/w) * min(1, rootH/h)` is the largest ratio the element could ever
-  attain. That second clause is DT-095: `intersectionRatio` is an **area** ratio, so an element
+  attain — the same condition the bridge uses, above. That second clause is DT-095:
+  `intersectionRatio` is an **area** ratio, so an element
   big enough can never reach `T` at all and would stay held for ever. Area, not height — a 4000px
   track in a horizontal scroller tops out at 0.16 with a perfectly ordinary height. `rootBounds`
   is null when the exported page is itself in a cross-origin iframe, so the viewport stands in for
@@ -141,6 +165,7 @@ three wrong while every jsdom test passed. So `e2e/` exists for exactly that cla
 | Only provable in `e2e/` | Why jsdom cannot see it |
 |---|---|
 | `in-view` holds at the first keyframe, plays, holds again, plays again | needs a real animation with a real `currentTime` and real `animationstart` events |
+| the preview fires for an element taller than five viewports and for a track wider than the frame, and still waits for `T` for one that can reach it | needs a real `IntersectionObserver` deciding for itself what to report, real layout, and the null `rootBounds` of a cross-origin frame; jsdom's version (`test/triggers.test.ts`) states each entry by hand, so it proves the arithmetic and not the reporting |
 | a forced `replay` ends on its own animation, not a descendant's, and after one iteration when looping | jsdom never fires `animationend` or `animationiteration` |
 | a hover-armed card stays armed over a tagged child | needs real pointer movement over a real layout |
 | the host's `animation` shorthand survives a round trip, and its longhands do not leak in | jsdom's CSSOM does not expand the shorthand at all |

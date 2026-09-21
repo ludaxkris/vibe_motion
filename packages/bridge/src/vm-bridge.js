@@ -19,7 +19,7 @@
   "use strict";
 
   /** Parsed out of this file by the API at build time; never hand-synced into Kotlin. */
-  var BRIDGE_VERSION = "1.1.1";
+  var BRIDGE_VERSION = "1.1.2";
   var MESSAGE_SOURCE = "vibe-motion";
   var PROTOCOL_VERSION = 1;
   /** Kept in sync with IN_VIEW_THRESHOLD in src/protocol.ts; the Phase 7 exporter uses it too. */
@@ -685,8 +685,61 @@
     // Read at call time: the constructor may be missing (old browser, jsdom) or installed late.
     var Ctor = window.IntersectionObserver;
     if (!Ctor) return null;
-    inViewObserver = new Ctor(onIntersect, { threshold: IN_VIEW_THRESHOLD });
+    // Two thresholds: 0, so an element that can never reach the real one is still reported the
+    // moment it intersects at all, and the real one for everything else. `isOnScreen` decides.
+    inViewObserver = new Ctor(onIntersect, { threshold: [0, IN_VIEW_THRESHOLD] });
     return inViewObserver;
+  }
+
+  /**
+   * The largest fraction of `size` that can ever be inside a root of `rootSize`, per axis.
+   *
+   * @param {number} size
+   * @param {number} rootSize
+   * @returns {number}
+   */
+  function reachableFraction(size, rootSize) {
+    // A zero box never intersects, so it never gets here; the guard is against dividing by it.
+    if (!(size > 0)) return 1;
+    return Math.min(1, rootSize / size);
+  }
+
+  /**
+   * Whether this entry counts as "in view" — the same condition the export runtime uses
+   * (`src/vibe-motion-export.js`), so a designer sees in the preview what the export will do
+   * (spec §6a; the two copies must not drift).
+   *
+   * `intersectionRatio` is intersected area over the element's *whole* area, so an element bigger
+   * than the root can never reach 1 — and one big enough can never reach the threshold at all,
+   * which would hold it on its first keyframe for the whole session. The best ratio it could ever
+   * reach is the fraction that fits, in each axis, multiplied: when even that is under the
+   * threshold the ratio test is unreachable and the element counts as in view as soon as it
+   * intersects. `<=`, not `<`: an element whose best possible ratio is exactly the threshold can
+   * only reach it perfectly aligned, which is float rounding rather than being on screen.
+   *
+   * An **area**, not a height: a 4000px track in a horizontal scroller reaches 0.16 with a
+   * perfectly ordinary height, and a 1280x1200 element is short on neither axis alone.
+   *
+   * `rootBounds` is null for an implicit root inside a cross-origin iframe, which is every bridge
+   * there is, so the fallback to the frame's own viewport is the normal path here rather than the
+   * edge case it is in an export; reading `.width` off null would throw inside the observer
+   * callback and leave the element held for ever.
+   *
+   * Still not covered, and logged as DT-184 for preview and export alike: a clip container
+   * narrower than the root, which bounds the intersection without appearing in `rootBounds`.
+   *
+   * @param {IntersectionObserverEntry} entry
+   * @returns {boolean}
+   */
+  function isOnScreen(entry) {
+    if (!entry.isIntersecting) return false;
+    if (entry.intersectionRatio >= IN_VIEW_THRESHOLD) return true;
+    var box = entry.boundingClientRect;
+    var rootBounds = entry.rootBounds;
+    var rootWidth = rootBounds ? rootBounds.width : window.innerWidth;
+    var rootHeight = rootBounds ? rootBounds.height : window.innerHeight;
+    var reachable = reachableFraction(box.width, rootWidth) * reachableFraction(box.height, rootHeight);
+    return reachable <= IN_VIEW_THRESHOLD;
   }
 
   /** @param {IntersectionObserverEntry[]} entries */
@@ -697,9 +750,13 @@
       if (!vmId) continue;
       var record = records.get(vmId);
       if (!record || !record.applied || record.applied.trigger !== "in-view") continue;
+      // Armed exactly while the firing condition holds, so disarming is its negation: an element
+      // that can reach the threshold is held again below it, and one that cannot is held again
+      // only when it stops intersecting at all.
+      //
       // The editor deliberately re-arms on every entry so the designer can scroll back and see
       // the animation again; the export plays once (spec §6a, owner decision §9.2).
-      var next = !!entries[i].isIntersecting;
+      var next = isOnScreen(entries[i]);
       if (record.armed === next) continue;
       record.armed = next;
       // A preview is transient and belongs to the catalog card the pointer is on, not to the
