@@ -355,6 +355,37 @@ test("a collapsed root does not count as 'seen': the element waits for a viewpor
   expect(await harness.starts(KEYFRAMES)).toBe(1);
 });
 
+test("a root empty on one axis holds even an element unreachable on the other, and releases it when the root comes back", async ({
+  page,
+}) => {
+  // The case a per-axis guard misses: a root of 640x0 with a 4000x60 track is
+  // "unreachable" on the width axis (0.16) and "fully reachable" on the height
+  // axis (the empty one answers 1), so the product is under the threshold and
+  // the element fires while nothing is visible — once, and then never again,
+  // because the export unobserves what it plays. The guard belongs to the
+  // root, not to an axis.
+  //
+  // And a root that comes back is not self-announcing: an unreachable element
+  // goes from ratio 0 to a ratio still under the threshold, crossing none of
+  // `[0, T]`, so the browser has nothing to report. The script re-observes.
+  const harness = await mountExport(page, {
+    body:
+      `<div id="target" class="vm-a1 vm-in-view" style="width:4000px;height:60px;background:#ddd"></div>` +
+      `<div class="spacer"></div>`,
+    css: CSS,
+    embed: true,
+    embedHeight: 0,
+  });
+
+  await page.waitForTimeout(250);
+  expect(await harness.classes("#target")).not.toContain("vm-play");
+
+  await harness.resizeEmbed(600);
+
+  await expect.poll(async () => await harness.classes("#target")).toContain("vm-play");
+  expect(await harness.starts(KEYFRAMES)).toBe(1);
+});
+
 test("with no IntersectionObserver at all, everything plays", async ({ page }) => {
   await page.addInitScript(() => {
     // @ts-expect-error removing a browser global on purpose

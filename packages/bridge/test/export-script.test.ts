@@ -64,6 +64,18 @@ describe("vibe-motion-export.js", () => {
     expect(releases.length).toBeGreaterThanOrEqual(5);
   });
 
+  it("guards the root as a whole, not per axis, before the ratio test", () => {
+    // 640x0 with a 4000x60 track: unreachable on width (0.16), "fully reachable" on the empty
+    // height axis (1), product under the threshold — so a per-axis guard fires it while nothing
+    // is visible. And the test must precede the ratio line: a zero-area target that intersects is
+    // reported at ratio 1.
+    const guard = "if (!(rootWidth > 0) || !(rootHeight > 0)) return false;";
+    expect(SOURCE).toContain(guard);
+    expect(SOURCE.indexOf(guard)).toBeLessThan(
+      SOURCE.indexOf("if (entry.intersectionRatio >= IN_VIEW_THRESHOLD) return true;"),
+    );
+  });
+
   it("treats a root with no size as 'no viewport yet', not as 'unreachable'", () => {
     // The escape hatch asks "could this element ever reach the threshold in a root this size?".
     // With a root of zero width or height — an exported page in a collapsed iframe, a closed
@@ -81,15 +93,35 @@ describe("vibe-motion-export.js", () => {
     expect(reachableFraction(4000, 640)).toBe(0.16);
   });
 
-  it("decides reachability by area, with a viewport fallback on both axes", () => {
+  it("decides reachability by area, with the caller's root measurement on both axes", () => {
     // Height alone leaves a wide track — 4000px in a horizontal scroller — held for ever, because
-    // `intersectionRatio` is an area ratio.
-    expect(SOURCE).toContain("rootBounds ? rootBounds.width : window.innerWidth");
-    expect(SOURCE).toContain("rootBounds ? rootBounds.height : window.innerHeight");
+    // `intersectionRatio` is an area ratio. The fallbacks are parameters: the rule is shared with
+    // `vm-bridge.js` byte for byte (DT-190) and only the call site knows how to measure the root.
+    expect(SOURCE).toContain("rootBounds ? rootBounds.width : fallbackWidth");
+    expect(SOURCE).toContain("rootBounds ? rootBounds.height : fallbackHeight");
     expect(SOURCE).toContain(
       "reachableFraction(box.width, rootWidth) * reachableFraction(box.height, rootHeight)",
     );
     expect(SOURCE).toContain("reachable <= IN_VIEW_THRESHOLD");
+  });
+
+  it("measures the root without the scrollbar gutter, once per callback", () => {
+    // `innerWidth` / `innerHeight` include the gutter; the implicit root does not. Read once
+    // before anything writes, so every entry in a batch is judged against one root.
+    expect(SOURCE).toContain("var rootWidth = root ? root.clientWidth : 0;");
+    expect(SOURCE).toContain("var rootHeight = root ? root.clientHeight : 0;");
+    expect(SOURCE).toContain("isOnScreen(entry, rootWidth, rootHeight)");
+    expect(SOURCE).not.toMatch(/window\.inner(Width|Height)/);
+  });
+
+  it("re-observes what an empty root was holding, once the root comes back", () => {
+    // A root that grows announces nothing for an element it was holding: the ratio goes from 0 to
+    // a value still under the threshold, crossing none of `[0, T]`. Without this they stay at
+    // `opacity: 0` for ever.
+    expect(SOURCE).toContain("rootWasEmpty");
+    expect(SOURCE).toContain('"resize"');
+    expect(SOURCE).toContain("observer.unobserve(held[i]);");
+    expect(SOURCE).toContain("observer.observe(held[i]);");
   });
 
   it("watches for marked elements that arrive after DOMContentLoaded", () => {

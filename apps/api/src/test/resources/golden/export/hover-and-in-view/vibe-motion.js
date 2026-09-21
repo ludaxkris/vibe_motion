@@ -50,6 +50,16 @@
   var played = new WeakSet();
 
   /**
+   * Whether the last callback judged the root to have no area.
+   *
+   * While that is true every element is held (see {@link isOnScreen}), and a root that grows back
+   * announces nothing for them: an unreachable element goes from ratio 0 to a ratio still under
+   * the threshold, crossing none of `[0, T]`, and there is no `isIntersecting` flip to report
+   * either. {@link recoverFromEmptyRoot} is what releases them.
+   */
+  var rootWasEmpty = false;
+
+  /**
    * Release one element: it plays, and it is remembered as having played.
    *
    * @param {Element} element
@@ -68,19 +78,19 @@
   /**
    * The largest fraction of `size` that can ever be inside a root of `rootSize`, per axis.
    *
-   * A root with no size is "there is no viewport yet", not "nothing can ever be seen here": a
-   * collapsed iframe, a closed accordion, a transient zero-height layout, or a `window.innerHeight`
-   * of 0 standing in for a null `rootBounds`. Answering 0 there would put every element under the
-   * threshold, and an element the browser reports as edge-adjacent would fire unseen — once, and
-   * then never again for the reader, because the export unobserves what it has played. So a
-   * sizeless root reports 1 (fully reachable) and the element waits for a real viewport.
+   * Byte-identical to the copy in `src/vm-bridge.js` — the preview and the export must fire
+   * `in-view` on the same condition and neither file can import from the other, so
+   * `test/in-view-parity.test.ts` compares the two texts (DT-190).
    *
    * @param {number} size
    * @param {number} rootSize
    * @returns {number}
    */
   function reachableFraction(size, rootSize) {
-    // A zero box never intersects, so it never gets here; the guard is against dividing by it.
+    // `rootSize / 0` is Infinity and `0 / 0` is NaN; `1` is the answer that holds an element rather
+    // than playing it. Neither guard answers for a conforming browser: a zero-*area* target that
+    // intersects is reported at `intersectionRatio: 1`, so such an entry leaves at the ratio line
+    // above, and an empty root is rejected before this is reached at all.
     if (!(size > 0) || !(rootSize > 0)) return 1;
     return Math.min(1, rootSize / size);
   }
@@ -98,25 +108,36 @@
    * nothing wrong with its height at all, and a 1280x1200 element is short of the threshold on
    * neither axis alone.
    *
-   * `rootBounds` is null when this page is itself inside a cross-origin iframe, so the viewport
-   * stands in for both axes; reading `.height` off null would throw and hold everything for ever.
+   * A root with **no area** is "there is no viewport yet" — a collapsed iframe, a closed
+   * accordion, a transient zero-height layout — and holds everything. The guard belongs to the
+   * root rather than to an axis: answering per axis would let an element that is unreachable on
+   * the *other* axis fire while nothing is visible at all. It comes before the ratio test because
+   * a zero-area target that intersects is reported at `intersectionRatio: 1`.
+   *
+   * `rootBounds` is null when this page is itself inside a cross-origin iframe, so the caller's
+   * own measurement of the root stands in for both axes; reading `.height` off null would throw
+   * and hold everything for ever.
    *
    * Still not covered, and logged: a clip container narrower than the root, which bounds the
    * intersection without appearing in `rootBounds`.
    *
+   * Byte-identical to the bridge's copy (DT-190). The **call site** is each host's own: this file
+   * measures the root in {@link start}'s callback, the bridge in its own.
+   *
    * @param {IntersectionObserverEntry} entry
+   * @param {number} fallbackWidth the root's width when `rootBounds` is null
+   * @param {number} fallbackHeight the root's height when `rootBounds` is null
    * @returns {boolean}
    */
-  function isOnScreen(entry) {
+  function isOnScreen(entry, fallbackWidth, fallbackHeight) {
     if (!entry.isIntersecting) return false;
+    var rootBounds = entry.rootBounds;
+    var rootWidth = rootBounds ? rootBounds.width : fallbackWidth;
+    var rootHeight = rootBounds ? rootBounds.height : fallbackHeight;
+    if (!(rootWidth > 0) || !(rootHeight > 0)) return false;
     if (entry.intersectionRatio >= IN_VIEW_THRESHOLD) return true;
     var box = entry.boundingClientRect;
-    var rootBounds = entry.rootBounds;
-    var rootWidth = rootBounds ? rootBounds.width : window.innerWidth;
-    var rootHeight = rootBounds ? rootBounds.height : window.innerHeight;
     var reachable = reachableFraction(box.width, rootWidth) * reachableFraction(box.height, rootHeight);
-    // `<=`, not `<`: an element whose best possible ratio is exactly the threshold can only reach
-    // it perfectly aligned, which is a question of float rounding rather than of being on screen.
     return reachable <= IN_VIEW_THRESHOLD;
   }
 
@@ -133,9 +154,18 @@
           // that is still being assigned.
           function (entries, self) {
             try {
+              // The implicit root is the viewport *without* the scrollbar gutter, which is what
+              // `documentElement.clientWidth` / `clientHeight` measure and `innerWidth` /
+              // `innerHeight` do not. Read once for the whole batch, before anything writes, so
+              // every entry is judged against one root.
+              var root = document.documentElement;
+              var rootWidth = root ? root.clientWidth : 0;
+              var rootHeight = root ? root.clientHeight : 0;
+              rootWasEmpty = !(rootWidth > 0) || !(rootHeight > 0);
+
               for (var i = 0; i < entries.length; i++) {
                 var entry = entries[i];
-                if (!isOnScreen(entry)) continue;
+                if (!isOnScreen(entry, rootWidth, rootHeight)) continue;
                 play(entry.target);
                 // Unobserved, so it plays once and never again.
                 self.unobserve(entry.target);
@@ -157,6 +187,7 @@
     if (observer !== null) {
       try {
         observeWithin(observer, document);
+        watchRootSize(observer);
       } catch (observeError) {
         playEverything();
         observer = null;
@@ -180,6 +211,43 @@
     }
     var targets = root.querySelectorAll(MARKER_SELECTOR);
     for (var i = 0; i < targets.length; i++) observer.observe(targets[i]);
+  }
+
+  /**
+   * Re-observe every held element once the root stops being empty.
+   *
+   * A root with no area holds everything, and a root that grows back does not on its own produce
+   * an entry for what was held: an unreachable element goes from ratio 0 to a ratio still under
+   * the threshold, crossing none of `[0, T]`. `unobserve` + `observe` queues a fresh initial
+   * observation, and the normal rule decides on it.
+   *
+   * One `resize` listener, no timer and no per-frame work; when the root has never been empty it
+   * is a single boolean test and not even a layout read. It cannot loop: only a callback sets the
+   * flag, and observing fires no resize. Played elements are left alone — they have played.
+   *
+   * @param {IntersectionObserver} observer
+   */
+  function watchRootSize(observer) {
+    window.addEventListener(
+      "resize",
+      function () {
+        try {
+          if (!rootWasEmpty) return;
+          var root = document.documentElement;
+          if (!root || !(root.clientWidth > 0) || !(root.clientHeight > 0)) return;
+          rootWasEmpty = false;
+          var held = document.querySelectorAll(MARKER_SELECTOR);
+          for (var i = 0; i < held.length; i++) {
+            if (played.has(held[i])) continue;
+            observer.unobserve(held[i]);
+            observer.observe(held[i]);
+          }
+        } catch (resizeError) {
+          playEverything();
+        }
+      },
+      false,
+    );
   }
 
   /**
