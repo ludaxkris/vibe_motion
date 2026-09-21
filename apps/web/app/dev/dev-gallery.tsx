@@ -1,7 +1,6 @@
 "use client";
 
 import { getEntry } from "animation-catalog";
-import { cn } from "cn";
 import Link from "next/link";
 import { useId, useState, type ReactNode } from "react";
 
@@ -35,6 +34,7 @@ import {
 } from "@/lib/catalog";
 import { summariseDiff } from "@/lib/diff-summary";
 
+import { Frame, PANEL_FRAME } from "./frame";
 import { StaticDialog } from "./static-dialog";
 
 /** The gallery renders looks, not behaviour: a callback that exists is an enabled control. */
@@ -135,35 +135,6 @@ const AUTO_RESULT_ROWS: AutoResultRow[] = [
   sampleAutoResultRow(VM_DROPPED, "p", "fade-in", "in-view", { duration: "900ms" }),
   sampleAutoResultRow(VM_CTA, "a", "pulse", "hover"),
 ].filter((row): row is AutoResultRow => row !== undefined);
-
-function Frame({
-  slug,
-  title,
-  note,
-  bodyClassName,
-  children,
-}: {
-  /** The screenshot runner's handle: `data-testid="dev-frame-<slug>"`. */
-  slug: string;
-  title: string;
-  note?: string;
-  /** The frame's real width — 320px for a Control Panel state. */
-  bodyClassName: string;
-  children: ReactNode;
-}) {
-  return (
-    <section data-testid={`dev-frame-${slug}`} className="flex flex-col gap-2">
-      <h3 className="text-md font-semibold">{title}</h3>
-      {note ? <p className="max-w-[46ch] text-sm leading-body text-vm-ink-2">{note}</p> : null}
-      <div data-dev-frame-body="" className={cn("shrink-0 overflow-hidden", bodyClassName)}>
-        {children}
-      </div>
-    </section>
-  );
-}
-
-/** The 320px column a Control Panel state lives in, panel background included. */
-const PANEL_FRAME = "w-[var(--panel-width)] bg-vm-panel p-3";
 
 function ChoosingFrame({ initialSearch = "" }: { initialSearch?: string }) {
   const [search, setSearch] = useState(initialSearch);
@@ -293,12 +264,17 @@ export function DevGallery() {
           Dev-only route, 404 in production. Each frame is rendered from props at its real width —
           nothing here reads or writes the editor store, and nothing calls the API.
         </p>
-        {/* Its own page: the version list, the viewing banner and the conflict
-            dialog need a project's worth of history to stand in a frame. */}
+        {/* Their own pages: the version list, the viewing banner and the
+            conflict dialog need a project's worth of history to stand in a
+            frame, and the Export tab needs a bundle. */}
         <p className="text-md leading-body text-vm-ink-2">
           The History tab&rsquo;s states live on{" "}
           <Link href="/dev/history" className="font-medium text-vm-accent hover:underline">
             /dev/history
+          </Link>
+          , and the Export tab&rsquo;s on{" "}
+          <Link href="/dev/export" className="font-medium text-vm-accent hover:underline">
+            /dev/export
           </Link>
           .
         </p>

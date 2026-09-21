@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { cn } from "cn";
+import { useState } from "react";
 
 import { ExportPanel, type ExportMode } from "@/components/export/export-panel";
 import type { ExportBundle } from "@/lib/api-client";
+
+import { Frame, TALL_PANEL_FRAME } from "../frame";
 
 /**
  * The handoff's own sample, brought up to date: classes are `vm-a<N>` and
@@ -135,32 +136,6 @@ const SNIPPET: ExportBundle = {
   files: [{ name: "vibe-motion.css", contentType: "text/css" }],
 };
 
-/** The 320px column a Control Panel state lives in, panel background included. */
-const PANEL_FRAME = "flex h-[560px] w-[var(--panel-width)] flex-col bg-vm-panel p-3";
-
-function Frame({
-  slug,
-  title,
-  note,
-  children,
-}: {
-  /** The screenshot runner's handle: `data-testid="dev-frame-<slug>"`. */
-  slug: string;
-  title: string;
-  note?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section data-testid={`dev-frame-${slug}`} className="flex flex-col gap-2">
-      <h3 className="text-md font-semibold">{title}</h3>
-      {note ? <p className="max-w-[46ch] text-sm leading-body text-vm-ink-2">{note}</p> : null}
-      <div data-dev-frame-body="" className={cn("shrink-0 overflow-hidden", PANEL_FRAME)}>
-        {children}
-      </div>
-    </section>
-  );
-}
-
 /** One frame with a live mode switch, so the segmented control can be read. */
 function PanelFrame({
   bundle,
@@ -215,6 +190,7 @@ export function ExportFrames() {
 
       <div className="flex flex-wrap items-start gap-8">
         <Frame
+          bodyClassName={TALL_PANEL_FRAME}
           slug="export-full-js"
           title="Full page · in-view, so the script is in the zip"
           note="Three files. The footer says the script is included."
@@ -223,6 +199,7 @@ export function ExportFrames() {
         </Frame>
 
         <Frame
+          bodyClassName={TALL_PANEL_FRAME}
           slug="export-full-no-js"
           title="Full page · no in-view trigger"
           note="vibe-motion.js is faint and cannot be opened: it is not needed here."
@@ -231,6 +208,7 @@ export function ExportFrames() {
         </Frame>
 
         <Frame
+          bodyClassName={TALL_PANEL_FRAME}
           slug="export-snippet"
           title="Snippet · one element"
           note="One file, and the class name to paste is in the comment at the top."
@@ -238,7 +216,7 @@ export function ExportFrames() {
           <PanelFrame bundle={SNIPPET} snippetAvailable versionSeq={3} isCurrent={false} />
         </Frame>
 
-        <Frame slug="export-pending" title="Waiting for the API">
+        <Frame bodyClassName={TALL_PANEL_FRAME} slug="export-pending" title="Waiting for the API">
           <ExportPanel
             bundle={undefined}
             status="pending"
@@ -250,7 +228,7 @@ export function ExportFrames() {
           />
         </Frame>
 
-        <Frame slug="export-error" title="The export could not be built">
+        <Frame bodyClassName={TALL_PANEL_FRAME} slug="export-error" title="The export could not be built">
           <ExportPanel
             bundle={undefined}
             status="error"
