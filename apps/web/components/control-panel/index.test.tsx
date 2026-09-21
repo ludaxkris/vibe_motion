@@ -1174,3 +1174,172 @@ describe("ControlPanel · Export tab (Phase 7)", () => {
     await waitFor(() => expect(calls.map((query) => query.get("versionId"))).toEqual([V3, V5]));
   });
 });
+
+describe("ControlPanel · save first, then Export (DT-099)", () => {
+  const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
+  const V5 = "55555555-5555-4555-8555-555555555555";
+  const V6 = "66666666-6666-4666-8666-666666666666";
+
+  const api = (path: string) => `${env.apiOrigin}${path}`;
+
+  function version(id: string, seq: number): Version {
+    return {
+      id,
+      projectId: PROJECT_ID,
+      seq,
+      label: `v${seq}`,
+      parentVersionId: null,
+      catalogVersion: "1.1.0",
+      createdAt: "2026-09-20T10:00:00Z",
+      diff: { set: {}, remove: [] },
+    };
+  }
+
+  function mockExport(): { calls: URLSearchParams[] } {
+    const calls: URLSearchParams[] = [];
+    server.use(
+      http.get(api("/projects/:projectId/export"), ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        calls.push(query);
+        return HttpResponse.json({
+          versionId: query.get("versionId") ?? V5,
+          mode: "full",
+          html: "<!doctype html>",
+          css: ".vm-a1 {}",
+          js: null,
+          files: [
+            { name: "index.html", contentType: "text/html" },
+            { name: "vibe-motion.css", contentType: "text/css" },
+          ],
+        });
+      }),
+    );
+    return { calls };
+  }
+
+  /** A draft that differs from the current version, mid-tuning on vm-1. */
+  function makeDirty() {
+    const store = useEditorStore.getState();
+    store.dispatchPanel({ type: "SELECT", vmId: "vm-1" });
+    store.dispatchPanel({ type: "CHOOSE_CUSTOM" });
+    store.dispatchPanel({ type: "PICK", animationId: "fade-in-up" });
+  }
+
+  /**
+   * The shell, in the one respect that matters here: `onSave` really writes a
+   * version, so the list, the store and the panel move together — which is how
+   * "Save first" can land on a version that did not exist when it was clicked.
+   */
+  function Harness({ save }: { save: () => Promise<void> }) {
+    // `useVersionHistory` reads the store's id first and falls back to the
+    // list's, so a save moves the current version in one store write rather
+    // than in two renders — which is what keeps the released guard from
+    // exporting the old version on its way to the new one.
+    const storeVersionId = useEditorStore((state) => state.currentVersionId);
+    const currentVersionId = storeVersionId ?? V5;
+    const versions = [version(V5, 5), ...(currentVersionId === V6 ? [version(V6, 6)] : [])];
+    const onSave = () =>
+      save().then(() => {
+        useEditorStore.getState().markSaved(version(V6, 6));
+      });
+    return (
+      <ControlPanel
+        projectId={PROJECT_ID}
+        history={{
+          versions,
+          pending: false,
+          listError: false,
+          retry: () => undefined,
+          currentVersionId,
+          viewingVersionId: null,
+          viewing: false,
+          viewingLabel: undefined,
+          currentLabel: currentVersionId === V6 ? "v6" : "v5",
+          nextLabel: "v7",
+          error: null,
+          restoring: false,
+          view: async () => undefined,
+          back: () => undefined,
+          restore: async () => undefined,
+        }}
+        onSave={onSave}
+      />
+    );
+  }
+
+  function renderShell(save: () => Promise<void>) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    return render(<Harness save={save} />, { wrapper: Wrapper });
+  }
+
+  beforeEach(() => {
+    useEditorStore.setState({ ...initialEditorState, currentVersionId: V5 });
+  });
+
+  it("opens Export on the version the save just created", async () => {
+    const { calls } = mockExport();
+    makeDirty();
+    renderShell(() => Promise.resolve());
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    // The export must not be asked for over an unsaved draft: the guard is
+    // standing and the Animate panel is still what is mounted.
+    expect(screen.getByRole("dialog", { name: "Save changes to vm-1?" })).toBeInTheDocument();
+    expect(calls).toEqual([]);
+
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(screen.getByTestId("panel-export")).toBeInTheDocument());
+    // v6, not the v5 the reader clicked from: what they asked to export was
+    // "my work", and Save is what made it a version.
+    expect(calls.map((query) => query.get("versionId"))).toEqual([V6]);
+    expect(screen.getByText("v6")).toBeInTheDocument();
+    expect(screen.getByText("· current")).toBeInTheDocument();
+  });
+
+  it("opens Export on the current version when the draft is discarded", async () => {
+    const { calls } = mockExport();
+    makeDirty();
+    renderShell(() => Promise.reject(new Error("not this path")));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    await waitFor(() => expect(screen.getByTestId("panel-export")).toBeInTheDocument());
+    expect(calls.map((query) => query.get("versionId"))).toEqual([V5]);
+    expect(useEditorStore.getState().draftState).toEqual({});
+  });
+
+  it("stays where it was on Keep editing", () => {
+    const { calls } = mockExport();
+    makeDirty();
+    renderShell(() => Promise.resolve());
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+
+    expect(screen.getByRole("tab", { name: "Animate" })).toHaveAttribute("data-active");
+    expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
+    expect(calls).toEqual([]);
+  });
+
+  it("leaves the reader on their draft when the save is cancelled", async () => {
+    const { calls } = mockExport();
+    makeDirty();
+    // What `requestSave()` rejects with when the Save dialog is cancelled.
+    renderShell(() => Promise.reject(new Error("save cancelled")));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("dialog", { name: "Save changes to vm-1?" })).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("panel-tuning")).toBeInTheDocument();
+    expect(calls).toEqual([]);
+    expect(useEditorStore.getState().draftState["vm-1"]).toBeDefined();
+  });
+});
