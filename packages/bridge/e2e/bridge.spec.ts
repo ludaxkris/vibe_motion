@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 import { FOREIGN_ORIGIN, assignment, mountBridge } from "./harness";
 
@@ -68,8 +69,10 @@ test.describe("in-view trigger", () => {
 //
 // The frame is 800×600 (`e2e/harness.ts`) and is cross-origin with the shell, which is exactly the
 // case `entry.rootBounds` comes back **null** for: every number below is against the frame's own
-// `window.innerWidth` / `innerHeight`, through the fallback, because in the bridge that is not an
-// edge case but the only case.
+// `documentElement.clientWidth` / `clientHeight`, through the fallback, because in the bridge that
+// is not an edge case but the only case. An **empty** root is not on screen at all, whatever ratio
+// the browser reports, and when it stops being empty every in-view element is re-observed so a
+// fresh entry decides.
 //
 // Not covered here, and logged as DT-184 for preview and export alike: a clip container narrower
 // than the root bounds the intersection without appearing in `rootBounds`, so an element that looks
@@ -167,39 +170,106 @@ test.describe("in-view reachability", () => {
     await expect.poll(() => h.starts("vm-iv-v1-0-0")).toBe(2);
   });
 
-  test("holds, rather than plays unseen, while the frame is collapsed to no height", async ({ page }) => {
-    // A root with no area shows nothing, so nothing in it is unreachable — but `min(1, 0/60)` is
-    // 0, which reads as "it can never reach the threshold, play it". Chromium reports anything
-    // touching y=0 as `isIntersecting: true, ratio: 0` against a collapsed frame, so without a
-    // guard on the *root* size the element plays to `finished` where nobody can see it, and is
-    // already armed when the pane comes back: it never plays for the designer at all. The editor
-    // frames the clone at `size-full` inside a draggable split pane, so this is a pane dragged to
-    // nothing, or a transient zero-height layout at `state:load`.
-    const h = await mountBridge(page, `<div data-vm-id="vm-hero" style="width:200px;height:60px;background:#ddd">hero</div>`);
-    const collapse = async (height: number) => {
-      await page.evaluate((px) => {
-        document.getElementById("f")!.style.height = `${px}px`;
-      }, height);
-      await expect.poll(() => h.frame.evaluate(() => window.innerHeight)).toBe(height);
+  /**
+   * Collapse the frame to `width x height` and put it back, asserting the frame's own root box
+   * each way — emptiness, not exact pixels, because a page tall enough to scroll takes a
+   * scrollbar gutter out of `clientWidth` and that is precisely the difference between
+   * `clientWidth` and `innerWidth` the bridge now measures with.
+   */
+  function collapsible(page: Page, h: Awaited<ReturnType<typeof mountBridge>>, size: { width: number; height: number }) {
+    const set = async (width: number, height: number, empty: boolean) => {
+      await page.evaluate(([w, hh]) => {
+        const el = document.getElementById("f")!;
+        el.style.width = `${w}px`;
+        el.style.height = `${hh}px`;
+      }, [width, height] as const);
+      await expect
+        .poll(() =>
+          h.frame.evaluate(() => {
+            const root = document.documentElement;
+            return root.clientWidth > 0 && root.clientHeight > 0;
+          }),
+        )
+        .toBe(!empty);
     };
+    return { collapse: () => set(size.width, size.height, true), restore: () => set(800, 600, false) };
+  }
 
-    await collapse(0);
-    await h.send("apply", assignment("vm-hero", inViewOver));
+  /**
+   * Apply an in-view assignment to a frame that is currently collapsed, prove the element is held,
+   * then restore the frame and prove it plays.
+   *
+   * Held is asserted on the inline group, which is the bridge's own writing and owes nothing to
+   * whether a zero-area frame is rendered at all — that is also why `starts` is bounded here
+   * rather than pinned. Playing on restore is the half that needs the re-observe: a root that
+   * grows moves an unreachable element from ratio 0 to a ratio still under `T`, crossing no
+   * threshold, so Chromium delivers no entry of its own.
+   */
+  async function heldWhileCollapsed(
+    page: Page,
+    body: string,
+    vmId: string,
+    collapsed: { width: number; height: number },
+  ) {
+    const h = await mountBridge(page, body);
+    const frame = collapsible(page, h, collapsed);
+
+    await frame.collapse();
+    await h.send("apply", assignment(vmId, inViewOver));
     // Long enough for a wrong fire to have run the whole 200 ms animation out.
     await page.waitForTimeout(400);
 
-    // Held. The inline group is the bridge's own writing and owes nothing to whether a zero-area
-    // frame is rendered at all, which is also why `starts` is bounded rather than pinned here.
-    expect(await h.inline("vm-hero", "animation-play-state")).toBe("paused");
-    expect(await h.animations("vm-hero")).toMatchObject([{ time: 0, state: "paused" }]);
+    expect(await h.inline(vmId, "animation-play-state")).toBe("paused");
+    expect(await h.animations(vmId)).toMatchObject([{ time: 0, state: "paused" }]);
     expect(await h.starts("vm-iv-v1-0-0")).toBeLessThanOrEqual(1);
 
-    await collapse(600);
+    await frame.restore();
 
-    // And now that there is something to see it in, it plays.
-    await expect.poll(() => h.computed("vm-hero", "opacity")).toBe("1");
-    expect(await h.inline("vm-hero", "animation-play-state")).toBe("running");
-    expect((await h.animations("vm-hero"))[0]).toMatchObject({ state: "finished" });
+    await expect.poll(() => h.computed(vmId, "opacity")).toBe("1");
+    expect(await h.inline(vmId, "animation-play-state")).toBe("running");
+    expect((await h.animations(vmId))[0]).toMatchObject({ state: "finished" });
+  }
+
+  // An empty root has nothing in view, whatever ratio the browser reports — and guarding the axes
+  // one at a time does not say that. The collapsed axis yields 1, the element's own unreachable
+  // axis carries the product under `T`, and the wide track and the tall hero this rule exists for
+  // armed, played to `finished` where the designer could not see them, and were still armed when
+  // the pane came back, so they never played at all. The editor frames the clone at `size-full`
+  // inside a draggable split pane: a pane dragged to nothing, or a transient zero-height layout at
+  // `state:load`, is all it takes.
+
+  test("holds a wide track, not plays it unseen, while the frame is collapsed to no height", async ({ page }) => {
+    // `min(1, 800/5000) * min(1, 0/60)` = `0.16 * 1`: under `T` on the element's own axis.
+    await heldWhileCollapsed(
+      page,
+      `<div style="overflow-x:auto;width:600px">
+         <div data-vm-id="vm-wide" style="width:5000px;height:60px;background:#ddd">wide</div>
+       </div>`,
+      "vm-wide",
+      { width: 800, height: 0 },
+    );
+  });
+
+  test("holds a tall hero, not plays it unseen, while the frame is collapsed to no width", async ({ page }) => {
+    // The other axis of the same hole: `min(1, 0/200) * min(1, 600/4000)` = `1 * 0.15`.
+    await heldWhileCollapsed(
+      page,
+      `<div data-vm-id="vm-tall" style="height:4000px;background:#ddd">tall</div>`,
+      "vm-tall",
+      { width: 0, height: 600 },
+    );
+  });
+
+  test("holds an ordinary box while the frame is collapsed to no height", async ({ page }) => {
+    // The case a per-axis guard did already cover: `min(1, 800/200) * min(1, 0/60)` = `1 * 1`.
+    // Kept, because it is the one of the three whose ratio crosses `T` on restore and so would
+    // play even without the re-observe.
+    await heldWhileCollapsed(
+      page,
+      `<div data-vm-id="vm-hero" style="width:200px;height:60px;background:#ddd">hero</div>`,
+      "vm-hero",
+      { width: 800, height: 0 },
+    );
   });
 
   test("re-arms an unreachable element on every entry, the way the preview does for any other", async ({

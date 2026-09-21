@@ -64,8 +64,9 @@ export type FakeEntry = {
   vmId: string;
   /**
    * Whether the element intersects the root **at all**. Not "past the threshold": with the
-   * bridge's thresholds (`[0, IN_VIEW_THRESHOLD]`) a real observer reports `true` from the first
-   * pixel. Defaults to `intersectionRatio > 0`, or `true` when no ratio is given either.
+   * bridge's thresholds (`[0, IN_VIEW_THRESHOLD]`) a real observer reports `true` from zero-area
+   * contact — edge-adjacent, before a single pixel shows — which is what the reachability clause
+   * rides on. Defaults to `intersectionRatio > 0`, or `true` when no ratio is given either.
    */
   isIntersecting?: boolean;
   /** Intersected **area** over the element's whole area. Defaults to 1 intersecting, 0 not. */
@@ -84,6 +85,11 @@ export type FakeObserver = {
   targets: Set<Element>;
   options: { threshold?: number | number[] } | undefined;
   disconnected: boolean;
+  /**
+   * Every `observe` / `unobserve` in order, as `"observe:vm-heading"`. What a test asserts when it
+   * cares that the bridge re-observed something, which `targets` alone cannot show.
+   */
+  calls: string[];
   /** Deliver several entries in one callback, the way a real observer batches them. */
   fire(entries: FakeEntry[]): void;
 };
@@ -114,6 +120,13 @@ export type Harness = {
    */
   intersect(vmId: string, state?: boolean | Omit<FakeEntry, "vmId">): void;
   observers(): FakeObserver[];
+  /**
+   * The size the implicit `IntersectionObserver` root reports — `documentElement.clientWidth` /
+   * `clientHeight`, which jsdom has none of and the harness supplies.
+   */
+  rootSize(): { width: number; height: number };
+  /** Resize that root and fire `resize`, the way dragging the editor's split pane does. */
+  resize(width: number, height: number): void;
   /** Run every callback queued with `requestAnimationFrame` so far. */
   flushRaf(): void;
   mouse(type: string, target: Node, relatedTarget?: Node | null): void;
@@ -207,6 +220,7 @@ export function loadBridge(
     targets = new Set<Element>();
     options: { threshold?: number | number[] } | undefined;
     disconnected = false;
+    calls: string[] = [];
     constructor(cb: IoCallback, options?: { threshold?: number | number[] }) {
       this.options = options;
       observers.push(this);
@@ -232,9 +246,11 @@ export function loadBridge(
       );
     }
     observe(el: Element) {
+      this.calls.push(`observe:${el.getAttribute("data-vm-id") ?? "?"}`);
       this.targets.add(el);
     }
     unobserve(el: Element) {
+      this.calls.push(`unobserve:${el.getAttribute("data-vm-id") ?? "?"}`);
       this.targets.delete(el);
     }
     disconnect() {
@@ -250,6 +266,18 @@ export function loadBridge(
     configurable: true,
     writable: true,
   });
+
+  // --- a viewport for the implicit IntersectionObserver root ----------------------------------
+  // jsdom has no layout, so `document.documentElement.clientWidth` / `clientHeight` are 0 — and
+  // those are what the bridge measures the root with whenever `rootBounds` is null, which inside a
+  // cross-origin frame is always. A root with no area is not on screen at all, so without this
+  // every entry would be held. The document gets the same viewport jsdom gives `window`; a test
+  // collapses it with `resize()`, the way a pane dragged to nothing does.
+  function setRootSize(width: number, height: number) {
+    Object.defineProperty(document.documentElement, "clientWidth", { value: width, configurable: true });
+    Object.defineProperty(document.documentElement, "clientHeight", { value: height, configurable: true });
+  }
+  setRootSize(window.innerWidth, window.innerHeight);
 
   // --- controllable requestAnimationFrame ----------------------------------------------------
   let rafId = 0;
@@ -360,6 +388,13 @@ export function loadBridge(
     },
     observers() {
       return observers;
+    },
+    rootSize() {
+      return { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight };
+    },
+    resize(width, height) {
+      setRootSize(width, height);
+      window.dispatchEvent(new window.Event("resize"));
     },
     flushRaf() {
       const due = rafQueue;

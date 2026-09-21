@@ -41,18 +41,30 @@ The element is **armed exactly while that holds**, so it is held on its first ke
   `T` would never report it. Area, not height — a 4000px track in a horizontal scroller tops out at
   0.16 with a perfectly ordinary height.
 - `rootBounds` is null for an implicit root inside a cross-origin iframe, which is **every** bridge
-  there is, so `window.innerWidth` / `innerHeight` is the normal path here, not the fallback of last
-  resort it is in an export. Reading `.width` off null would throw inside the callback and leave
-  every in-view element held at `opacity: 0`.
-- A **zero-size root** is not an unreachable one, and both sizes are guarded: a frame collapsed to
-  no height reports anything touching its edge as intersecting at ratio 0, and `min(1, 0/h)` would
-  read as "it can never reach `T`" and play the element unseen — then leave it armed, so it never
-  plays when the pane comes back. `1` holds it until there is something to be in view of.
+  there is, so the fallback is the normal path here, not the fallback of last resort it is in an
+  export. Reading `.width` off null would throw inside the callback and leave every in-view element
+  held at `opacity: 0`. The fallback is `documentElement.clientWidth` / `clientHeight` — the
+  viewport *without* the scrollbar gutter, which is the box the implicit root intersects against;
+  `innerWidth` / `innerHeight` include the gutter and overstate `reachable` by ~2%. Read once per
+  callback and passed in, so `isOnScreen` reads no globals and the per-entry path stays short.
+- An **empty root** is not an unreachable one. It is tested first, before the ratio, and on both
+  axes at once: a frame collapsed to nothing reports anything touching its edge as intersecting —
+  at ratio 0, or at ratio 1 for a zero-area target — and measuring reachability against it would
+  play the page's biggest elements unseen and leave them armed, so they would never play when the
+  pane came back. Per axis is not enough: the collapsed axis yields 1 while the element's own
+  unreachable axis still carries the product under `T`, which is the wide track and the tall hero
+  exactly. `reachableFraction`'s own guards stay as a division backstop and answer for neither.
+- **Re-observed when the root stops being empty.** A root that grows crosses no threshold for an
+  unreachable element — ratio 0 to a ratio still under `T`, both inside `[0, T)` — so the browser
+  reports nothing and the element would stay held for ever. `unobserve` + `observe` queues a fresh
+  initial entry and the normal rule decides. It runs from the `resize` listener the overlay already
+  uses: no new listener, no timer, and one boolean test when the root was never empty.
 - `src/vibe-motion-export.js` fires on the same condition; the copies are separate because neither
   file can import the other, and spec §6a is the contract between them. What the preview does *not*
   copy is playing once: it re-arms on every entry so the designer can scroll back and watch again.
-  The zero-root guard lands in that copy with the Phase 7 Track C PR, which owns the file and its
-  exporter golden; until it does, the two agree on everything except that one `||`.
+  The empty-root test lands in that copy with the Phase 7 Track C PR, which owns the file and its
+  exporter golden; the re-observe has no counterpart there, because an export unobserves on firing
+  and never disarms.
 - Still uncovered on both sides, and logged as DT-184: a clip container narrower than the root
   bounds the intersection without appearing in `rootBounds`.
 
@@ -171,7 +183,7 @@ three wrong while every jsdom test passed. So `e2e/` exists for exactly that cla
 | Only provable in `e2e/` | Why jsdom cannot see it |
 |---|---|
 | `in-view` holds at the first keyframe, plays, holds again, plays again | needs a real animation with a real `currentTime` and real `animationstart` events |
-| the preview fires for an element taller than five viewports and for a track wider than the frame, and still waits for `T` for one that can reach it | needs a real `IntersectionObserver` deciding for itself what to report, real layout, and the null `rootBounds` of a cross-origin frame; jsdom's version (`test/triggers.test.ts`) states each entry by hand, so it proves the arithmetic and not the reporting |
+| the preview fires for an element taller than five viewports and for a track wider than the frame, still waits for `T` for one that can reach it, and holds both while the frame is collapsed to no height or no width — then plays them when it is restored | needs a real `IntersectionObserver` deciding for itself what to report (including what it does *not* report when a root grows), real layout, and the null `rootBounds` of a cross-origin frame; jsdom's version (`test/triggers.test.ts`) states each entry by hand, so it proves the arithmetic and not the reporting |
 | a forced `replay` ends on its own animation, not a descendant's, and after one iteration when looping | jsdom never fires `animationend` or `animationiteration` |
 | a hover-armed card stays armed over a tagged child | needs real pointer movement over a real layout |
 | the host's `animation` shorthand survives a round trip, and its longhands do not leak in | jsdom's CSSOM does not expand the shorthand at all |

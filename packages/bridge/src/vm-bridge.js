@@ -678,6 +678,8 @@
   /** Its tagged ancestors-or-self, nearest first: what hover *arming* follows (spec D3). */
   var hoverChain = /** @type {string[]} */ ([]);
   var inViewObserver = /** @type {IntersectionObserver | null} */ (null);
+  /** Whether the root had no area at the last callback: what `recoverFromEmptyRoot` watches for. */
+  var inViewRootEmpty = false;
 
   /** One observer for every in-view assignment; created on first use (spec §6). */
   function getInViewObserver() {
@@ -699,12 +701,10 @@
    * @returns {number}
    */
   function reachableFraction(size, rootSize) {
-    // A zero box never really intersects, so it never gets here; that half of the guard is against
-    // dividing by it. A zero *root* does get here: a frame collapsed to no height still reports
-    // anything touching its edge as intersecting at ratio 0, and `min(1, 0/60)` would read as "it
-    // can never reach the threshold, so play it" — playing the element where nobody can see it and
-    // leaving it armed, so it never plays when the frame comes back. Nothing is unreachable in a
-    // root that shows nothing: `1` holds it until there is something to be in view of.
+    // `rootSize / 0` is Infinity and `0 / 0` is NaN; `1` is the answer that holds an element rather
+    // than playing it. Neither guard answers for a conforming browser: a zero-*area* target that
+    // intersects is reported at `intersectionRatio: 1`, so such an entry leaves at the ratio line
+    // above, and an empty root is rejected before this is reached at all.
     if (!(size > 0) || !(rootSize > 0)) return 1;
     return Math.min(1, rootSize / size);
   }
@@ -725,30 +725,52 @@
    * An **area**, not a height: a 4000px track in a horizontal scroller reaches 0.16 with a
    * perfectly ordinary height, and a 1280x1200 element is short on neither axis alone.
    *
+   * An **empty** root — zero on either axis — shows nothing, so nothing in it is in view, whatever
+   * ratio the browser reports (a zero-area target that intersects is reported at ratio 1). That is
+   * tested before the ratio, and on the whole root rather than per axis: a root collapsed on one
+   * axis leaves the element's own unreachable axis carrying the product under the threshold, which
+   * would play the biggest elements on the page where nobody can see them and leave them armed, so
+   * they never play when the root comes back.
+   *
    * `rootBounds` is null for an implicit root inside a cross-origin iframe, which is every bridge
-   * there is, so the fallback to the frame's own viewport is the normal path here rather than the
-   * edge case it is in an export; reading `.width` off null would throw inside the observer
-   * callback and leave the element held for ever.
+   * there is, so the caller's fallback is the normal path here rather than the edge case it is in
+   * an export; reading `.width` off null would throw inside the observer callback and leave the
+   * element held for ever.
    *
    * Still not covered, and logged as DT-184 for preview and export alike: a clip container
    * narrower than the root, which bounds the intersection without appearing in `rootBounds`.
    *
    * @param {IntersectionObserverEntry} entry
+   * @param {number} fallbackWidth   the root's width when the entry reports no `rootBounds`
+   * @param {number} fallbackHeight  the root's height when the entry reports no `rootBounds`
    * @returns {boolean}
    */
-  function isOnScreen(entry) {
+  function isOnScreen(entry, fallbackWidth, fallbackHeight) {
     if (!entry.isIntersecting) return false;
+    var rootBounds = entry.rootBounds;
+    var rootWidth = rootBounds ? rootBounds.width : fallbackWidth;
+    var rootHeight = rootBounds ? rootBounds.height : fallbackHeight;
+    if (!(rootWidth > 0) || !(rootHeight > 0)) return false;
     if (entry.intersectionRatio >= IN_VIEW_THRESHOLD) return true;
     var box = entry.boundingClientRect;
-    var rootBounds = entry.rootBounds;
-    var rootWidth = rootBounds ? rootBounds.width : window.innerWidth;
-    var rootHeight = rootBounds ? rootBounds.height : window.innerHeight;
     var reachable = reachableFraction(box.width, rootWidth) * reachableFraction(box.height, rootHeight);
     return reachable <= IN_VIEW_THRESHOLD;
   }
 
   /** @param {IntersectionObserverEntry[]} entries */
   function onIntersect(entries) {
+    // The implicit root is the viewport *without* the scrollbar gutter, which is exactly what
+    // `documentElement.clientWidth` / `clientHeight` measure and `innerWidth` / `innerHeight` do
+    // not. Read once for the whole batch, before anything writes, so every entry is judged against
+    // one root and the per-entry path stays two property reads short.
+    var root = document.documentElement;
+    var rootWidth = root ? root.clientWidth : 0;
+    var rootHeight = root ? root.clientHeight : 0;
+    // Remembered for `recoverFromEmptyRoot`: while this is true every element is held, and a root
+    // that grows crosses no threshold for an unreachable one, so nothing would arrive to release
+    // them (spec §6a).
+    inViewRootEmpty = !(rootWidth > 0) || !(rootHeight > 0);
+
     var changed = /** @type {ElementRecord[]} */ ([]);
     for (var i = 0; i < entries.length; i += 1) {
       var vmId = entries[i].target.getAttribute(ID_ATTR);
@@ -761,7 +783,7 @@
       //
       // The editor deliberately re-arms on every entry so the designer can scroll back and see
       // the animation again; the export plays once (spec §6a, owner decision §9.2).
-      var next = isOnScreen(entries[i]);
+      var next = isOnScreen(entries[i], rootWidth, rootHeight);
       if (record.armed === next) continue;
       record.armed = next;
       // A preview is transient and belongs to the catalog card the pointer is on, not to the
@@ -773,6 +795,33 @@
     // Both directions, in one batch: arming has to start a new animation, and disarming has to
     // rewind to a new animation paused at t=0 rather than pausing the finished one (spec D3).
     rewind(changed);
+  }
+
+  /**
+   * Re-observe every in-view element once the root stops being empty.
+   *
+   * A root with no area holds everything (see `isOnScreen`), and a root that grows back does not
+   * on its own produce an entry for the elements that were held: an unreachable one goes from
+   * ratio 0 to a ratio still under the threshold, crossing none of `[0, T]`, and `isIntersecting`
+   * was already true while the root was flat, so there is nothing for the browser to report.
+   * `unobserve` + `observe` queues a fresh initial observation, and the normal rule decides on it.
+   *
+   * Called from the `resize` listener the overlay already uses, so there is no new listener, no
+   * timer and no per-frame work; when the root has never been empty it is one boolean test and not
+   * even a layout read. It cannot loop: only a callback sets the flag, and observing fires no
+   * resize.
+   */
+  function recoverFromEmptyRoot() {
+    if (!inViewRootEmpty || !inViewObserver) return;
+    var root = document.documentElement;
+    if (!root || !(root.clientWidth > 0) || !(root.clientHeight > 0)) return;
+    inViewRootEmpty = false;
+    var observer = inViewObserver;
+    records.forEach(function (record) {
+      if (!record.applied || record.applied.trigger !== "in-view") return;
+      observer.unobserve(record.el);
+      observer.observe(record.el);
+    });
   }
 
   /**
@@ -1120,6 +1169,16 @@
     for (var i = 0; i < keep.length; i += 1) overlayResize.observe(keep[i]);
   }
 
+  /**
+   * The one `resize` handler: the overlay's boxes move, and a root that has stopped being empty
+   * releases the in-view elements it was holding (spec §6a). Both are cheap and neither reads
+   * layout unless it has to.
+   */
+  function onResize() {
+    recoverFromEmptyRoot();
+    scheduleOverlaySync();
+  }
+
   function scheduleOverlaySync() {
     if (overlayFrame) return;
     // Read at call time so a page without rAF still repositions, just synchronously.
@@ -1337,7 +1396,7 @@
     // Capture phase and passive: scroll does not bubble out of a nested scroller, and the
     // overlay must never be the reason a scroll janks.
     document.addEventListener("scroll", scheduleOverlaySync, { capture: true, passive: true });
-    window.addEventListener("resize", scheduleOverlaySync, false);
+    window.addEventListener("resize", onResize, false);
   }
 
   /**
