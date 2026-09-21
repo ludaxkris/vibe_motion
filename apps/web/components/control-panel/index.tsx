@@ -468,8 +468,9 @@ export function ControlPanel({
   const open = guardHeld ? committedTab : (pendingTab ?? committedTab);
   const tab = open.tab;
 
-  // Guard-on-element-click and guard-on-Export/Restore are later phases; this
-  // is the tab switch only.
+  // The tab switch, which is also how Export is guarded (DT-099): the Export
+  // tab exports a saved version, so an unsaved draft has to be dealt with
+  // before it opens. Guard-on-element-click is the shell's own mounting.
   //
   // Discard reverts the *whole* draft (that is what switching to History or
   // Export requires), so the dialog only names an element when that element's
