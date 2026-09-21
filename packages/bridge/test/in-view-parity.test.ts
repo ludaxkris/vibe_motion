@@ -20,11 +20,12 @@ import { functionSource } from "./source";
  * making. Their *behaviour* is proved in a real browser by `e2e/bridge.spec.ts` and
  * `e2e/export-script.spec.ts` respectively.
  *
- * SKIPPED ON THIS BRANCH. `vm-bridge.js` here is still the single-threshold rule from Phase 4:
- * it has neither `reachableFraction` nor `isOnScreen`, because the corrected DT-095/DT-179 rule
- * for the bridge is in PR #27 (`fix/bridge-in-view-reachability`), which also adds the zero-root
- * guard this file's export copy just grew. Whoever merges second un-skips this — no other change
- * should be needed.
+ * SELF-ARMING. The corrected DT-095/DT-179 rule for the bridge is in PR #27
+ * (`fix/bridge-in-view-reachability`); until it lands, `vm-bridge.js` here is still Phase 4's
+ * single-threshold rule and has neither function, so the cross-file assertions cannot run. Rather
+ * than a blanket `describe.skip` that depends on a human remembering, this file asks the file
+ * itself: the export copy is asserted unconditionally, and only the bridge half is skipped — the
+ * moment #27 is on `main`, these run with no edit here at all.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -48,23 +49,43 @@ export function normalise(source: string): string {
     .trim();
 }
 
-describe.skip("in-view firing rule: bridge vs export (DT-190, un-skip after PR #27)", () => {
-  for (const name of SHARED_FUNCTIONS) {
-    it(`${name} is the same in vm-bridge.js and vibe-motion-export.js`, () => {
-      const bridge = normalise(functionSource(read("vm-bridge.js"), name));
-      const exported = normalise(functionSource(read("vibe-motion-export.js"), name));
+/** Whether `vm-bridge.js` has adopted the shared rule yet (PR #27). */
+function bridgeHasRule(): boolean {
+  const source = read("vm-bridge.js");
+  return SHARED_FUNCTIONS.every((name) => source.includes(`function ${name}(`));
+}
 
-      expect(bridge).toBe(exported);
-    });
-  }
+describe("in-view firing rule: bridge vs export (DT-190)", () => {
+  it("the export copy carries the guard a collapsed root needs", () => {
+    // Asserted here as well as in `export-script.test.ts` so this file says something true on
+    // every branch: whatever the bridge has adopted, the export's copy is pinned.
+    expect(normalise(functionSource(read("vibe-motion-export.js"), "reachableFraction"))).toContain(
+      "if (!(size > 0) || !(rootSize > 0)) return 1;",
+    );
+  });
 
-  it("both copies guard a root with no size", () => {
-    // The one line DT-190 was opened over: without it a collapsed root puts every element under
-    // the threshold and fires it unseen.
-    for (const file of ["vm-bridge.js", "vibe-motion-export.js"]) {
-      expect(normalise(functionSource(read(file), "reachableFraction"))).toContain(
+  if (!bridgeHasRule()) {
+    // One visibly-named skip rather than a silent pass: a reader of the output learns why, and
+    // it disappears on its own the moment the bridge adopts the rule.
+    it.skip(
+      "vm-bridge.js has not adopted the shared rule yet (PR #27 / fix/bridge-in-view-reachability) — " +
+        "these comparisons arm themselves the moment it has, with no edit here",
+      () => {},
+    );
+  } else {
+    for (const name of SHARED_FUNCTIONS) {
+      it(`${name} is the same in vm-bridge.js and vibe-motion-export.js`, () => {
+        const bridge = normalise(functionSource(read("vm-bridge.js"), name));
+        const exported = normalise(functionSource(read("vibe-motion-export.js"), name));
+
+        expect(bridge).toBe(exported);
+      });
+    }
+
+    it("the bridge copy carries the guard too", () => {
+      expect(normalise(functionSource(read("vm-bridge.js"), "reachableFraction"))).toContain(
         "if (!(size > 0) || !(rootSize > 0)) return 1;",
       );
-    }
-  });
+    });
+  }
 });
