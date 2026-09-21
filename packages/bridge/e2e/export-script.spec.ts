@@ -173,6 +173,79 @@ test("a marked element deep inside a late subtree is observed too", async ({ pag
   await expect.poll(async () => await harness.classes("#late")).toContain("vm-play");
 });
 
+test("a host re-render that rewrites class does not re-hold an element that has played", async ({
+  page,
+}) => {
+  // DT-187. Snippet mode is pasted into someone else's site, and a React/Vue
+  // host owns `class` on the elements it renders: the next re-render writes
+  // `className` back from its own state and `vm-play` is gone. The element was
+  // unobserved when it played, so nothing would ever put it back — and
+  // `.vm-in-view:not(.vm-play)` pauses it at its first keyframe for good.
+  const harness = await mountExport(page, { body: BELOW_THE_FOLD, css: CSS });
+
+  await harness.frame.evaluate(() => document.querySelector("#target")!.scrollIntoView());
+  await expect.poll(async () => (await harness.animation("#target"))?.state).toBe("running");
+
+  await harness.frame.evaluate(() => {
+    // Exactly what a framework re-render does: the whole attribute, from its
+    // own state, with no idea `vm-play` was ever there.
+    document.querySelector("#target")!.className = "box vm-a1 vm-in-view";
+  });
+
+  await expect.poll(async () => await harness.classes("#target")).toContain("vm-play");
+  expect(await harness.animation("#target")).toMatchObject({ state: "running" });
+  // Restored, not restarted: the animation is the same one, still running.
+  expect(await harness.starts(KEYFRAMES)).toBe(1);
+});
+
+test("restoring vm-play does not loop, and leaves other elements alone", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  const harness = await mountExport(page, {
+    body:
+      `<div id="played" class="box vm-a1 vm-in-view">a</div>` +
+      `<div class="spacer"></div>` +
+      `<div id="waiting" class="box vm-a1 vm-in-view">b</div>`,
+    css: CSS,
+  });
+
+  await expect.poll(async () => await harness.classes("#played")).toContain("vm-play");
+
+  await harness.frame.evaluate(() => {
+    document.querySelector("#played")!.className = "box vm-a1 vm-in-view";
+    // A class change on an element that never played must not force it open:
+    // it is below the fold and still waiting its turn.
+    document.querySelector("#waiting")!.className = "box vm-a1 vm-in-view highlighted";
+  });
+  await page.waitForTimeout(200);
+
+  expect(await harness.classes("#played")).toContain("vm-play");
+  expect(await harness.classes("#waiting")).not.toContain("vm-play");
+  expect(await harness.animation("#waiting")).toMatchObject({ state: "paused", time: 0 });
+  expect(errors).toEqual([]);
+});
+
+test("with no IntersectionObserver, a played element is still restored after a re-render", async ({
+  page,
+}) => {
+  // The fallback path plays everything; a host re-render would drop `vm-play`
+  // there too, and the hold rule applies just the same.
+  await page.addInitScript(() => {
+    // @ts-expect-error removing a browser global on purpose
+    delete window.IntersectionObserver;
+  });
+
+  const harness = await mountExport(page, { body: BELOW_THE_FOLD, css: CSS });
+  await expect.poll(async () => await harness.classes("#target")).toContain("vm-play");
+
+  await harness.frame.evaluate(() => {
+    document.querySelector("#target")!.className = "box vm-a1 vm-in-view";
+  });
+
+  await expect.poll(async () => await harness.classes("#target")).toContain("vm-play");
+});
+
 test("inside a cross-origin iframe, where rootBounds is null, it still plays", async ({ page }) => {
   const harness = await mountExport(page, { body: BELOW_THE_FOLD, css: CSS, embed: true });
 

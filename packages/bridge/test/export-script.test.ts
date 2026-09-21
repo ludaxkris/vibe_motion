@@ -78,6 +78,18 @@ describe("vibe-motion-export.js", () => {
     // Snippet mode is pasted into client-rendered sites; an element that appears later has to be
     // observed like any other rather than left hidden.
     expect(SOURCE).toContain("new window.MutationObserver(");
-    expect(SOURCE).toContain('{ childList: true, subtree: true }');
+    expect(SOURCE).toContain("childList: true");
+    expect(SOURCE).toContain("subtree: true");
+  });
+
+  it("remembers what has played, and watches `class` so a host cannot re-hold it (DT-187)", () => {
+    // A framework host that re-renders an element writes the whole `class` attribute from its own
+    // state, dropping `vm-play` from an element nothing is observing any more. Without this the
+    // hold rule pauses it on its first keyframe for good.
+    expect(SOURCE).toContain("new WeakSet()");
+    expect(SOURCE).toContain("attributeFilter: [\"class\"]");
+    expect(SOURCE).toContain("played.has(target)");
+    // Guarded, so our own repair does not write again on the record it produces.
+    expect(SOURCE).toContain("!target.classList.contains(PLAY_CLASS)");
   });
 });

@@ -16,6 +16,11 @@
  * 3. When an element is on screen, adds `vm-play` and stops observing it, so it plays **once** —
  *    a deliberate divergence from the editor preview, which re-arms on every entry
  *    (docs/plans/phase-4-bridge-protocol.md §6a).
+ * 4. Remembers what has played, and puts `vm-play` back if something removes it (DT-187). A
+ *    snippet is pasted into someone else's site, and a React/Vue host owns `class` on the elements
+ *    it renders: its next re-render writes `className` from its own state, `vm-play` disappears
+ *    from an element nothing is observing any more, and the hold rule pauses it on its first
+ *    keyframe for good.
  *
  * The overriding rule: **nothing may be left held at `opacity: 0`.** No `IntersectionObserver`, a
  * constructor that throws, a callback that throws — every one of those plays everything.
@@ -38,10 +43,26 @@
   var root = document.documentElement;
   if (root && root.classList) root.classList.add(GATE_CLASS);
 
+  /**
+   * Every element that has been released, so a `class` rewritten by the host can be repaired
+   * (DT-187). A `WeakSet` because the page owns these elements and may remove them at any time.
+   */
+  var played = new WeakSet();
+
+  /**
+   * Release one element: it plays, and it is remembered as having played.
+   *
+   * @param {Element} element
+   */
+  function play(element) {
+    played.add(element);
+    element.classList.add(PLAY_CLASS);
+  }
+
   /** Release every held element. The answer to every failure, because a hidden element is worse. */
   function playEverything() {
     var held = document.querySelectorAll(MARKER_SELECTOR);
-    for (var i = 0; i < held.length; i++) held[i].classList.add(PLAY_CLASS);
+    for (var i = 0; i < held.length; i++) play(held[i]);
   }
 
   /**
@@ -93,44 +114,51 @@
   }
 
   function start() {
+    /** @type {IntersectionObserver | null} */
+    var observer = null;
+
     if (typeof window.IntersectionObserver !== "function") {
       playEverything();
-      return;
-    }
-
-    var observer;
-    try {
-      observer = new window.IntersectionObserver(
-        // The observer arrives as the second argument, so nothing has to close over a variable
-        // that is still being assigned.
-        function (entries, self) {
-          try {
-            for (var i = 0; i < entries.length; i++) {
-              var entry = entries[i];
-              if (!isOnScreen(entry)) continue;
-              entry.target.classList.add(PLAY_CLASS);
-              // Unobserved, so it plays once and never again.
-              self.unobserve(entry.target);
+    } else {
+      try {
+        observer = new window.IntersectionObserver(
+          // The observer arrives as the second argument, so nothing has to close over a variable
+          // that is still being assigned.
+          function (entries, self) {
+            try {
+              for (var i = 0; i < entries.length; i++) {
+                var entry = entries[i];
+                if (!isOnScreen(entry)) continue;
+                play(entry.target);
+                // Unobserved, so it plays once and never again.
+                self.unobserve(entry.target);
+              }
+            } catch (callbackError) {
+              playEverything();
             }
-          } catch (callbackError) {
-            playEverything();
-          }
-        },
-        // Two thresholds: 0 so a very tall element is reported the moment it intersects at all,
-        // and the real one for everything else.
-        { threshold: [0, IN_VIEW_THRESHOLD] },
-      );
-    } catch (constructorError) {
-      playEverything();
-      return;
+          },
+          // Two thresholds: 0 so a very tall element is reported the moment it intersects at all,
+          // and the real one for everything else.
+          { threshold: [0, IN_VIEW_THRESHOLD] },
+        );
+      } catch (constructorError) {
+        playEverything();
+        observer = null;
+      }
     }
 
-    try {
-      observeWithin(observer, document);
-      watchForLateArrivals(observer);
-    } catch (observeError) {
-      playEverything();
+    if (observer !== null) {
+      try {
+        observeWithin(observer, document);
+      } catch (observeError) {
+        playEverything();
+        observer = null;
+      }
     }
+
+    // Watched whether or not there is an observer: without one everything has already been
+    // played, and a host re-render can still drop `vm-play` from it.
+    watchDom(observer);
   }
 
   /**
@@ -148,34 +176,73 @@
   }
 
   /**
-   * Pick up marked elements that arrive after `DOMContentLoaded`.
+   * Watch the document for the two things that happen to marked elements after load.
    *
-   * Snippet mode is made to be pasted into someone else's site, and those are frequently
-   * client-rendered: an element that appears later must be observed like any other — held, then
-   * played when it is reached — not force-played and not left hidden for ever.
+   * **Late arrivals.** Snippet mode is made to be pasted into someone else's site, and those are
+   * frequently client-rendered: an element that appears later must be observed like any other —
+   * held, then played when it is reached — not force-played and not left hidden for ever. With no
+   * observer to hand (nothing to observe with, so everything on the page was played already) a
+   * late arrival is played on sight, for the same reason.
+   *
+   * **A rewritten `class`.** A framework host re-renders an element by writing the whole
+   * attribute from its own state, which drops `vm-play` from an element that has already played
+   * and is no longer observed. `.vm-in-view:not(.vm-play)` would then pause it on its first
+   * keyframe for ever, so it is put back (DT-187). No loop: the element already carries the class
+   * on the record that our own write produces, so the second pass writes nothing.
    *
    * A browser with `IntersectionObserver` and no `MutationObserver` does not exist; if one did,
-   * the elements present at load would still work and only late arrivals would be missed, so
-   * there is nothing here worth playing everything over.
+   * the elements present at load would still work and only late arrivals and repairs would be
+   * missed, so there is nothing here worth playing everything over.
    *
-   * @param {IntersectionObserver} observer
+   * @param {IntersectionObserver | null} observer
    */
-  function watchForLateArrivals(observer) {
+  function watchDom(observer) {
     if (typeof window.MutationObserver !== "function") return;
 
     new window.MutationObserver(function (records) {
       try {
         for (var i = 0; i < records.length; i++) {
-          var added = records[i].addedNodes;
+          var record = records[i];
+
+          if (record.type === "attributes") {
+            var target = /** @type {Element} */ (record.target);
+            if (played.has(target) && !target.classList.contains(PLAY_CLASS)) {
+              target.classList.add(PLAY_CLASS);
+            }
+            continue;
+          }
+
+          var added = record.addedNodes;
           for (var j = 0; j < added.length; j++) {
             var node = added[j];
-            if (node.nodeType === 1) observeWithin(observer, /** @type {Element} */ (node));
+            if (node.nodeType !== 1) continue;
+            if (observer === null) playMarkedWithin(/** @type {Element} */ (node));
+            else observeWithin(observer, /** @type {Element} */ (node));
           }
         }
       } catch (mutationError) {
         playEverything();
       }
-    }).observe(document.documentElement, { childList: true, subtree: true });
+    }).observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      // Only `class`, and only to repair it: every other attribute the host owns is its own
+      // business, and a filtered observer is one comparison per record.
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+  }
+
+  /**
+   * Play every marked element in `root`, `root` itself included — the no-observer fallback's
+   * half of {@link observeWithin}.
+   *
+   * @param {Element} root
+   */
+  function playMarkedWithin(root) {
+    if (root.classList && root.classList.contains(MARKER_CLASS)) play(root);
+    var targets = root.querySelectorAll(MARKER_SELECTOR);
+    for (var i = 0; i < targets.length; i++) play(targets[i]);
   }
 
   if (document.readyState === "loading") {
